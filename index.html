@@ -3,132 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VAULT-TEC | VISION-OS v11.0</title>
+    <title>VAULT-TEC | VISION_OS v11.5 PRO</title>
     
+    <!-- Core AI Modules -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 
         :root {
             --pip-green: #1aff80;
-            --pip-green-dim: rgba(26, 255, 128, 0.2);
+            --pip-green-dim: rgba(26, 255, 128, 0.15);
             --pip-bg: #071a0e;
-            --pip-scan: rgba(26, 255, 128, 0.05);
+            --alert-red: #ff3333;
+            --crt-glow: 0 0 10px rgba(26, 255, 128, 0.5);
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'VT323', monospace; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'VT323', monospace; user-select: none; }
 
-        body {
-            background-color: #000;
-            color: var(--pip-green);
-            overflow: hidden;
-            text-transform: uppercase;
+        body, html { width: 100%; height: 100%; background: #000; overflow: hidden; color: var(--pip-green); }
+
+        /* CRT Filter Effect */
+        #crt-fx {
+            position: fixed; inset: 0; z-index: 1000; pointer-events: none;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 3px, 2px 100%;
+            opacity: 0.4;
         }
 
-        /* Эффект ЭЛТ-монитора (CRT) */
-        #crt-overlay {
-            position: fixed; inset: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
-                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            background-size: 100% 4px, 3px 100%;
-            z-index: 1000; pointer-events: none;
-            opacity: 0.3;
-        }
+        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; border: 4px solid #222; }
 
-        #container {
-            position: relative; width: 100vw; height: 100vh;
-            display: flex; flex-direction: column;
-            border: 10px solid #222;
+        /* Viewport */
+        #viewport { position: relative; flex: 1; overflow: hidden; background: #000; cursor: crosshair; }
+        video { 
+            position: absolute; width: 100%; height: 100%; object-fit: cover; 
+            filter: sepia(1) hue-rotate(65deg) brightness(0.7) contrast(1.3);
         }
-
-        #viewport {
-            position: relative; flex: 1; background: #000;
-            border: 2px solid var(--pip-green); margin: 5px;
-            overflow: hidden;
-        }
-
-        video {
-            position: absolute; width: 100%; height: 100%; object-fit: cover;
-            filter: sepia(1) hue-rotate(60deg) brightness(0.8) contrast(1.2);
-        }
-
         canvas { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 
-        /* Интерфейс Fallout */
-        #hud-top {
-            position: absolute; top: 10px; left: 10px; right: 10px;
-            display: flex; justify-content: space-between; z-index: 10;
+        /* HUD Elements */
+        #hud-overlay {
+            position: absolute; inset: 0; z-index: 10; pointer-events: none;
+            padding: 15px; display: flex; flex-direction: column; justify-content: space-between;
         }
+        .hud-panel { background: var(--pip-bg); border: 1px solid var(--pip-green); padding: 5px 12px; box-shadow: var(--crt-glow); }
+        .bar { width: 120px; height: 8px; border: 1px solid var(--pip-green); margin-top: 4px; position: relative; }
+        .bar-fill { height: 100%; background: var(--pip-green); transition: width 0.3s; }
 
-        .stat-box {
-            background: var(--pip-bg); border: 1px solid var(--pip-green);
-            padding: 5px 15px; font-size: 20px;
-            box-shadow: 0 0 10px var(--pip-green-dim);
+        /* Terminal */
+        #terminal { 
+            height: 180px; background: var(--pip-bg); border-top: 2px solid var(--pip-green); 
+            padding: 10px; overflow: hidden; font-size: 18px; position: relative;
         }
+        .term-row { margin-bottom: 2px; opacity: 0.9; animation: scanline-text 0.1s ease-out; }
+        @keyframes scanline-text { from { opacity: 0; transform: translateX(-5px); } to { opacity: 1; transform: translateX(0); } }
 
-        #terminal {
-            height: 180px; background: var(--pip-bg);
-            border: 2px solid var(--pip-green); margin: 5px;
-            padding: 10px; overflow-y: hidden;
-            font-size: 18px; line-height: 1.2;
-            box-shadow: inset 0 0 20px #000;
+        /* Loading Overlay */
+        #boot-screen {
+            position: fixed; inset: 0; background: var(--pip-bg); z-index: 2000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
-
-        .term-row { margin-bottom: 2px; border-bottom: 1px solid var(--pip-green-dim); }
-
-        #overlay {
-            position: fixed; inset: 0; background: var(--pip-bg);
-            z-index: 2000; display: flex; flex-direction: column;
-            justify-content: center; align-items: center; text-align: center;
+        .boot-btn {
+            background: var(--pip-green); color: #000; border: none; padding: 15px 40px;
+            font-size: 32px; cursor: pointer; letter-spacing: 2px;
         }
+        .boot-btn:hover { background: #fff; box-shadow: 0 0 20px var(--pip-green); }
 
-        .vault-logo { font-size: 80px; margin-bottom: 20px; animation: flicker 2s infinite; }
-
-        .btn {
-            background: var(--pip-green); color: #000;
-            border: none; padding: 10px 30px; font-size: 30px;
-            cursor: pointer; transition: 0.3s;
+        #scan-line {
+            position: absolute; width: 100%; height: 2px; background: var(--pip-green-dim);
+            z-index: 6; animation: scan 4s linear infinite;
         }
-
-        .btn:hover { background: #fff; box-shadow: 0 0 20px var(--pip-green); }
-
-        @keyframes flicker {
-            0% { opacity: 0.8; } 50% { opacity: 1; } 100% { opacity: 0.9; }
-        }
-
-        /* Стилизация полосок HP/AP */
-        .bar-container { width: 150px; height: 10px; border: 1px solid var(--pip-green); margin-top: 5px; }
-        .bar-fill { height: 100%; background: var(--pip-green); width: 80%; }
+        @keyframes scan { from { top: 0; } to { top: 100%; } }
     </style>
 </head>
 <body>
 
-<div id="crt-overlay"></div>
+<div id="crt-fx"></div>
 
-<div id="overlay">
-    <div class="vault-logo">☢ VAULT-TEC ☢</div>
-    <div style="font-size: 24px; margin-bottom: 30px;">KNOWLEDGE BASE INITIALIZATION...</div>
-    <button class="btn" onclick="initVaultSight()">[ START SYSTEM ]</button>
+<div id="boot-screen">
+    <div style="font-size: 60px; margin-bottom: 10px;">☢ VAULT-TEC ☢</div>
+    <div id="load-status" style="margin-bottom: 30px; font-size: 20px;">INITIALIZING NEURAL CORE...</div>
+    <button id="boot-btn" class="boot-btn" style="display:none;" onclick="startSystem()">[ INITIALIZE SIGHT ]</button>
 </div>
 
 <div id="container">
-    <div id="hud-top">
-        <div class="stat-box">
-            HP [||||||||||  ]
-            <div id="location-name">LOC: UNKNOWN_WASTELAND</div>
-        </div>
-        <div class="stat-box" style="text-align: right;">
-            AP [||||||||||||]
-            <div id="fps-counter">SCAN_FREQ: 00HZ</div>
-        </div>
-    </div>
-
     <div id="viewport" onclick="resetLock()">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
+        <div id="scan-line"></div>
+        
+        <div id="hud-overlay">
+            <div style="display: flex; justify-content: space-between; pointer-events: none;">
+                <div class="hud-panel">
+                    HP [||||||||||||]
+                    <div style="font-size: 14px;">RADS: 0.02 mSv/h</div>
+                </div>
+                <div class="hud-panel" style="text-align: right;">
+                    AP [||||||||    ]
+                    <div id="fps-val" style="font-size: 14px;">SCAN_FREQ: 00HZ</div>
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: flex-end; gap: 10px; pointer-events: auto;">
+                <button class="hud-panel" style="cursor:pointer; color:inherit;" onclick="event.stopPropagation(); deepAnalyze()">[ DEEP SCAN ]</button>
+            </div>
+        </div>
     </div>
 
     <div id="terminal">
@@ -142,42 +125,61 @@
     const ctx = canvas.getContext('2d');
     const termContent = document.getElementById('term-content');
     
-    let model = null;
-    let lockedObj = null;
-    let predictions = [];
+    let model = null, lockedObj = null, predictions = [], faces = [];
+    let audioCtx = null, geigerInterval = null;
     
-    // --- LOCAL DATABASE SYSTEM ---
-    const VAULT_DB = JSON.parse(localStorage.getItem('vault_knowledge_base')) || {
-        encounters: 0,
-        known_entities: {}, // ID: {name: 'person', seen: 5, first_seen: Date}
-        discovery_points: 0
-    };
+    // --- Локальное хранилище знаний ---
+    const VAULT_DB = JSON.parse(localStorage.getItem('vault_v11_db')) || { encounters: 0, entities: {} };
 
-    function saveDB() {
-        localStorage.setItem('vault_knowledge_base', JSON.stringify(VAULT_DB));
+    // --- Звуковой движок (Гейгер и Бипы) ---
+    function playSound(freq, type = 'sine', vol = 0.1, dur = 0.1) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + dur);
     }
 
-    // --- INITIALIZATION ---
-    async function initVaultSight() {
-        writeTerm("BOOTING VAULT-TEC OS v11.0...", "#fff");
-        writeTerm("LOADING TENSOR-CORE: COCO-SSD MOBILENET V2");
-        
-        try {
-            await tf.setBackend('wasm');
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: 1280 }
-            });
-            video.srcObject = stream;
-            await video.play();
-            
-            model = await cocoSsd.load();
-            document.getElementById('overlay').style.display = 'none';
-            
-            writeTerm("DATABASE CONNECTED. " + VAULT_DB.encounters + " ENTRIES FOUND.");
-            renderLoop();
-        } catch (e) {
-            writeTerm("CRITICAL ERROR: SENSOR FAILURE", "#ff0000");
+    function geigerClick() {
+        if (predictions.length > 0) {
+            const delay = Math.max(50, 500 - (predictions.length * 50));
+            playSound(Math.random() * 100 + 400, 'square', 0.02, 0.01);
+            setTimeout(geigerClick, delay + Math.random() * 200);
+        } else {
+            setTimeout(geigerClick, 1000);
         }
+    }
+
+    // --- Инициализация ---
+    async function loadResources() {
+        const status = document.getElementById('load-status');
+        try {
+            status.innerText = "LOADING COCO-SSD...";
+            model = await cocoSsd.load({ base: 'mobilenet_v2' });
+            status.innerText = "LOADING FACE-DETECTOR...";
+            await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
+            status.innerText = "ALL SYSTEMS NOMINAL.";
+            document.getElementById('boot-btn').style.display = "block";
+        } catch (e) {
+            status.innerText = "CORE ERROR: " + e.message;
+        }
+    }
+
+    async function startSystem() {
+        await tf.setBackend('wasm');
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 1280 } }
+        });
+        video.srcObject = stream;
+        await video.play();
+        document.getElementById('boot-screen').style.display = 'none';
+        writeTerm("VAULT-TEC SIGHT INITIALIZED.", "#fff");
+        geigerClick();
+        render();
     }
 
     function writeTerm(text, color = "var(--pip-green)") {
@@ -186,25 +188,16 @@
         line.style.color = color;
         line.innerText = `> ${text}`;
         termContent.prepend(line);
-        if (termContent.childNodes.length > 8) termContent.lastChild.remove();
+        if (termContent.childNodes.length > 10) termContent.lastChild.remove();
     }
 
-    // --- CORE LOGIC ---
-    function updateKnowledgeBase(label) {
-        VAULT_DB.encounters++;
-        if (!VAULT_DB.known_entities[label]) {
-            VAULT_DB.known_entities[label] = { seen: 1, first_seen: new Date().toLocaleDateString() };
-            writeTerm("NEW DATA ENTRY: " + label.toUpperCase(), "#fff");
-        } else {
-            VAULT_DB.known_entities[label].seen++;
-        }
-        saveDB();
-    }
-
-    document.getElementById('viewport').addEventListener('mousedown', (e) => {
+    // --- Логика анализа ---
+    viewport.addEventListener('mousedown', (e) => {
         const rect = video.getBoundingClientRect();
-        const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clickX = (e.clientX - rect.left) * scaleX;
+        const clickY = (e.clientY - rect.top) * scaleY;
 
         lockedObj = predictions.find(p => {
             const [x, y, w, h] = p.bbox;
@@ -212,83 +205,105 @@
         });
 
         if (lockedObj) {
-            updateKnowledgeBase(lockedObj.class);
-            displayEntityData(lockedObj);
+            playSound(800, 'square', 0.1);
+            processLock(lockedObj);
         }
     });
 
-    function displayEntityData(obj) {
-        const info = VAULT_DB.known_entities[obj.class];
-        writeTerm("--- TARGET_DATA_LOCK ---", "#fff");
-        writeTerm("ENTITY: " + obj.class.toUpperCase());
-        writeTerm("TOTAL ENCOUNTERS: " + info.seen);
-        writeTerm("THREAT LEVEL: " + (obj.class === 'person' ? "MEASURABLE" : "MINIMAL"));
-        writeTerm("COORD: " + Math.round(obj.bbox[0]) + "." + Math.round(obj.bbox[1]));
+    function processLock(obj) {
+        const label = obj.class;
+        if (!VAULT_DB.entities[label]) VAULT_DB.entities[label] = { seen: 0 };
+        VAULT_DB.entities[label].seen++;
+        VAULT_DB.encounters++;
+        localStorage.setItem('vault_v11_db', JSON.stringify(VAULT_DB));
+
+        writeTerm("--- TARGET LOCK: " + label.toUpperCase() + " ---", "#fff");
+        writeTerm(`KNOWN DATA ENTRIES: ${VAULT_DB.entities[label].seen}`);
+        writeTerm(`ESTIMATED DISTANCE: ${((950 * 0.45) / obj.bbox[2]).toFixed(1)}m`);
     }
 
-    function resetLock() { lockedObj = null; writeTerm("SCANNING WASTELAND..."); }
+    function resetLock() { 
+        if(lockedObj) playSound(200, 'sine', 0.1);
+        lockedObj = null; 
+        writeTerm("SCANNING BROAD SPECTRUM..."); 
+    }
 
-    // --- RENDER ---
-    async function renderLoop() {
+    async function deepAnalyze() {
+        writeTerm("INITIATING CLOUD RECOGNITION...", "#fff");
+        playSound(1200, 'sine', 0.05, 0.5);
+        setTimeout(() => writeTerm("ENHANCED CONTEXT: WASTE_ZONE_V3"), 800);
+    }
+
+    // --- Главный цикл отрисовки ---
+    async function render() {
+        // Оптимизация: детекция лиц и объектов
         predictions = await model.detect(video);
-        
+        faces = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Отрисовка Лиц (Vault-Tec Blue Style)
+        faces.forEach(f => {
+            const { x, y, width, height } = f.box;
+            ctx.strokeStyle = "#00aaff";
+            ctx.setLineDash([2, 4]);
+            ctx.strokeRect(x, y, width, height);
+            ctx.fillStyle = "#00aaff";
+            ctx.fillText("SUBJECT_ID_FOUND", x, y - 5);
+        });
+
+        // Отрисовка Объектов
         predictions.forEach(p => {
             const [x, y, w, h] = p.bbox;
-            const isLocked = lockedObj && lockedObj.class === p.class && Math.abs(lockedObj.bbox[0] - x) < 20;
-
+            const isLocked = lockedObj && lockedObj.class === p.class && Math.abs(lockedObj.bbox[0] - x) < 30;
+            
+            ctx.save();
             ctx.strokeStyle = isLocked ? "#fff" : "var(--pip-green)";
             ctx.lineWidth = isLocked ? 4 : 2;
             
-            // Fallout-style Brackets
-            drawVaultBrackets(x, y, w, h, isLocked);
-
-            // Текстовая метка
-            ctx.fillStyle = isLocked ? "#fff" : "var(--pip-green)";
-            ctx.font = "24px VT323";
-            ctx.fillText(`${p.class.toUpperCase()} ${Math.round(p.score*100)}%`, x + 5, y + 25);
+            // Тесла-рамки (углы)
+            drawBrackets(x, y, w, h, isLocked ? 30 : 15);
             
-            // V.A.T.S. line
+            // Текст и данные
+            ctx.fillStyle = isLocked ? "#fff" : "var(--pip-green)";
+            ctx.font = "22px VT323";
+            const dist = ((950 * 0.45) / w).toFixed(1);
+            ctx.fillText(`${p.class.toUpperCase()} [${dist}M]`, x + 5, y - 10);
+
             if (isLocked) {
+                // V.A.T.S. Indicator
                 ctx.beginPath();
                 ctx.moveTo(x + w/2, y + h/2);
-                ctx.lineTo(canvas.width/2, canvas.height);
+                ctx.lineTo(canvas.width/2, canvas.height - 200);
                 ctx.setLineDash([5, 5]);
                 ctx.stroke();
-                ctx.setLineDash([]);
+                
+                ctx.globalAlpha = 0.15;
+                ctx.fillRect(x, y, w, h);
             }
+            ctx.restore();
         });
 
-        requestAnimationFrame(renderLoop);
+        requestAnimationFrame(render);
     }
 
-    function drawVaultBrackets(x, y, w, h, locked) {
-        const s = 20; // size of corners
+    function drawBrackets(x, y, w, h, s) {
         ctx.beginPath();
-        // Top Left
-        ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
-        // Top Right
-        ctx.moveTo(x + w - s, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + s);
-        // Bottom Left
-        ctx.moveTo(x, y + h - s); ctx.lineTo(x, y + h); ctx.lineTo(x + s, y + h);
-        // Bottom Right
-        ctx.moveTo(x + w - s, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - s);
+        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
+        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
+        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
+        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
         ctx.stroke();
-        
-        if (locked) {
-            ctx.globalAlpha = 0.1;
-            ctx.fillRect(x, y, w, h);
-            ctx.globalAlpha = 1.0;
-        }
     }
 
-    // Имитация FPS
+    // FPS и Системный статус
     setInterval(() => {
-        document.getElementById('fps-counter').innerText = `SCAN_FREQ: ${Math.floor(Math.random()*5 + 24)}HZ`;
+        document.getElementById('fps-val').innerText = `SCAN_FREQ: ${Math.floor(Math.random()*3 + 28)}HZ`;
     }, 1000);
+
+    loadResources();
 </script>
 </body>
 </html>
