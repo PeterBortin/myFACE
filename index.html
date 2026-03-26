@@ -3,55 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_CORE v10.0 | PROTON</title>
+    <title>VISION_OS v10.0 | ULTIMATE AI</title>
     
+    <!-- Ядро, WASM и Face-API -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-    <!-- Библиотека для лиц -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
     <style>
         :root { 
-            --target: #ffff00; --hostile: #ff0000; --bio: #ff00ff; --face: #00d4ff; --neon: #00ff41;
+            --target: #ffff00; --hostile: #ff0000; --bio: #ff00ff; --obj: #ffffff; --plant: #00ff41;
+            --face: #00d4ff; --bg: #050505;
         }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #00ff41; }
         
-        #viewport { position: relative; width: 100vw; height: calc(100vh - 140px); overflow: hidden; cursor: crosshair; }
-        video { position: absolute; width: 100%; height: 100%; object-fit: cover; filter: brightness(0.4) contrast(1.2); z-index: 1; }
+        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+        
+        #viewport { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
+        video { 
+            position: absolute; width: 100%; height: 100%; object-fit: cover; 
+            filter: brightness(0.35) contrast(1.4) grayscale(0.1); 
+            z-index: 1; 
+        }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
 
         #terminal { 
-            height: 140px; background: #050505; border-top: 1px solid #222; 
-            padding: 15px; box-sizing: border-box; color: var(--neon); font-size: 11px; overflow-y: hidden;
+            height: 160px; background: var(--bg); border-top: 2px solid #1a1a1a; 
+            padding: 15px; box-sizing: border-box; overflow: hidden; font-size: 12px;
+            text-shadow: 0 0 5px rgba(0,255,65,0.5);
         }
+        .term-row { margin-bottom: 4px; opacity: 0.9; }
 
         #overlay {
             position: fixed; inset: 0; background: #000; z-index: 100; 
-            display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--neon);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
         button {
-            background: none; border: 1px solid var(--neon); color: var(--neon);
-            padding: 20px 50px; cursor: pointer; letter-spacing: 5px; font-weight: bold;
+            background: none; border: 1px solid #00ff41; color: #00ff41;
+            padding: 15px 40px; cursor: pointer; letter-spacing: 3px; font-weight: bold;
         }
-        .scan-anim { position: absolute; width: 100%; height: 2px; background: rgba(0, 255, 65, 0.2); top: 0; animation: scan 3s linear infinite; z-index: 6; }
-        @keyframes scan { from {top:0} to {top:100%} }
+        .scan-line { position: absolute; width: 100%; height: 1px; background: rgba(0, 255, 65, 0.3); z-index: 6; animation: scan 4s linear infinite; }
+        @keyframes scan { from { top: 0; } to { top: 100%; } }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div id="loader-msg">LOADING NEURAL MODULES...</div>
-    <button id="start-btn" style="display:none" onclick="startSystem()">INITIALIZE CORE</button>
+    <div id="status-msg" style="margin-bottom:20px; font-size:10px;">SYSTEM_V10: WAITING_FOR_KERNEL...</div>
+    <button id="boot-btn" style="display:none" onclick="initVision()">BOOT SYSTEM</button>
 </div>
 
 <div id="container">
-    <div id="viewport" onclick="unlockTarget()">
+    <div id="viewport" onclick="resetLock()">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
-        <div class="scan-anim"></div>
+        <div class="scan-line"></div>
     </div>
     <div id="terminal">
-        <div id="term-rows"></div>
+        <div id="term-content"></div>
     </div>
 </div>
 
@@ -59,15 +69,27 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const termRows = document.getElementById('term-rows');
+    const termContent = document.getElementById('term-content');
+    const statusMsg = document.getElementById('status-msg');
+    const bootBtn = document.getElementById('boot-btn');
     
-    let objModel, faceModelsLoaded = false;
-    let predictions = [], faces = [];
-    let lockedTarget = null;
-    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let model = null;
+    let lockedObj = null;
+    let predictions = [];
+    let faces = [];
+    let audioCtx = null;
 
-    // Звуковой движок (генерация "бипа")
-    function playBeep(freq = 880, type = 'square', duration = 0.1) {
+    const COLORS = {
+        'person': '#ffff00',
+        'car': '#ff0000', 'truck': '#ff0000', 'bus': '#ff0000', 'motorcycle': '#ff0000',
+        'dog': '#ff00ff', 'cat': '#ff00ff', 'bird': '#ff00ff',
+        'potted plant': '#00ff41',
+        'default': '#ffffff'
+    };
+
+    // Звуковой движок (чистый код)
+    function playSound(freq, type = 'sine', duration = 0.1) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = type;
@@ -80,120 +102,149 @@
         osc.stop(audioCtx.currentTime + duration);
     }
 
-    async function preload() {
-        const msg = document.getElementById('loader-msg');
+    async function loadModels() {
         try {
-            msg.innerText = "LOADING OBJECT_DETECTOR...";
-            objModel = await cocoSsd.load();
-            msg.innerText = "LOADING FACE_RECOGNITION...";
-            // Загрузка легковесных моделей для лиц (TinyFaceDetector)
+            statusMsg.innerText = "LOADING OBJECT_DETECTOR...";
+            model = await cocoSsd.load();
+            statusMsg.innerText = "LOADING FACE_AI...";
             await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
-            faceModelsLoaded = true;
-            msg.style.display = "none";
-            document.getElementById('start-btn').style.display = "block";
-        } catch (e) { msg.innerText = "CORS/LOAD ERROR. CHECK INTERNET."; console.error(e); }
+            statusMsg.innerText = "ALL MODULES READY.";
+            bootBtn.style.display = "block";
+        } catch (e) {
+            statusMsg.innerText = "ERROR: " + e.message;
+        }
     }
 
-    async function startSystem() {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        video.srcObject = stream;
-        await video.play();
-        document.getElementById('overlay').style.display = 'none';
-        log("SYSTEM_READY: ALL_MODULES_AFLOAT");
-        detect();
+    async function initVision() {
+        try {
+            await tf.setBackend('wasm');
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 } }
+            });
+            video.srcObject = stream;
+            await video.play();
+            
+            document.getElementById('overlay').style.display = 'none';
+            writeTerm("SYSTEM ONLINE. NEURAL_V10 ACTIVATED.");
+            render();
+        } catch (e) {
+            alert("INIT_ERROR: " + e.message);
+        }
     }
 
-    function log(text) {
-        const div = document.createElement('div');
-        div.innerText = `> ${new Date().toLocaleTimeString()}: ${text}`;
-        termRows.prepend(div);
-        if (termRows.childNodes.length > 8) termRows.lastChild.remove();
-    }
+    viewport.addEventListener('mousedown', (e) => {
+        const rect = video.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-    // Обработка клика
-    viewport.addEventListener('click', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        lockedObj = predictions.find(p => {
+            const [x, y, w, h] = p.bbox;
+            return clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h;
+        });
 
-        const found = predictions.find(p => x > p.bbox[0] && x < p.bbox[0]+p.bbox[2] && y > p.bbox[1] && y < p.bbox[1]+p.bbox[3]);
-        
-        if (found) {
-            lockedTarget = found;
-            playBeep(1200, 'sine', 0.2);
-            log(`LOCK_ON: ${found.class.toUpperCase()} | ANALYZING...`);
+        if (lockedObj) {
+            e.stopPropagation();
+            playSound(880, 'square', 0.15); // Приятный бип захвата
+            startDecrypt(lockedObj);
         }
     });
 
-    function unlockTarget() { if(!lockedTarget) return; lockedTarget = null; playBeep(440, 'sawtooth', 0.1); log("TARGET_LOST"); }
+    function resetLock() {
+        if (lockedObj) playSound(220, 'sine', 0.1);
+        lockedObj = null;
+        termContent.innerHTML = "";
+        writeTerm("SEARCHING... SCAN_MODE: BROAD");
+    }
 
-    async function detect() {
+    function writeTerm(text) {
+        const line = document.createElement('div');
+        line.className = 'term-row';
+        line.innerText = `> ${text}`;
+        termContent.prepend(line);
+        if (termContent.childNodes.length > 7) termContent.lastChild.remove();
+    }
+
+    function startDecrypt(obj) {
+        termContent.innerHTML = "";
+        const dist = ((950 * 0.5) / obj.bbox[2]).toFixed(2);
+        const lines = [
+            `LOCK_ESTABLISHED: ${obj.class.toUpperCase()}`,
+            `TELEMETRY: RANGE_${dist}m`,
+            `SIG_ANALYSIS: ${(obj.score * 100).toFixed(1)}% MATCH`,
+            `DECODING_ENCRYPTION...`,
+            `DATA: ${Math.random().toString(16).substr(2, 8).toUpperCase()}`,
+            `STATUS: TARGET_FROZEN`
+        ];
+        lines.forEach((l, i) => setTimeout(() => writeTerm(l), i * 120));
+    }
+
+    async function render() {
+        predictions = await model.detect(video);
+        
+        // Лица проверяем чуть реже или через tiny detector для скорости
+        faces = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+        
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        
-        // 1. Обнаружение объектов
-        predictions = await objModel.detect(video);
-        
-        // 2. Обнаружение лиц (каждые N кадров для экономии ресурсов)
-        if (faceModelsLoaded) {
-            faces = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
-        }
-
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Отрисовка лиц (Синий)
+        // Лица (Голубой)
         faces.forEach(f => {
             const { x, y, width, height } = f.box;
             ctx.strokeStyle = "var(--face)";
             ctx.setLineDash([2, 2]);
             ctx.strokeRect(x, y, width, height);
             ctx.fillStyle = "var(--face)";
-            ctx.font = "10px monospace";
-            ctx.fillText("HUMAN_FACE_ID", x, y - 5);
+            ctx.font = "10px Courier New";
+            ctx.fillText("FACE_SIGNATURE", x, y - 5);
         });
 
-        // Отрисовка объектов
-        predictions.forEach(p => {
-            const [x, y, w, h] = p.bbox;
-            const isLocked = lockedTarget && lockedTarget.class === p.class && Math.abs(lockedTarget.bbox[0] - x) < 50;
-            
-            let color = "white";
-            if (p.class === 'person') color = "var(--target)";
-            if (['car', 'bus'].includes(p.class)) color = "var(--hostile)";
+        // Объекты (до 15 для глубины обнаружения)
+        const activeTargets = predictions.slice(0, 15);
 
-            // Расчет дистанции (базовая калибровка)
-            const dist = ((900 * 0.6) / w).toFixed(1);
+        activeTargets.forEach(p => {
+            const [x, y, w, h] = p.bbox;
+            const label = p.class;
+            const color = COLORS[label] || COLORS['default'];
 
             ctx.save();
-            ctx.shadowBlur = isLocked ? 15 : 5;
-            ctx.shadowColor = "black";
-            ctx.strokeStyle = isLocked ? "var(--neon)" : color;
-            ctx.lineWidth = isLocked ? 4 : 2;
+            const isLocked = lockedObj && Math.abs(lockedObj.bbox[0] - x) < 50;
             
-            // Рамка
+            ctx.strokeStyle = isLocked ? "#00ff41" : color;
+            ctx.lineWidth = isLocked ? 4 : 2;
             ctx.setLineDash(isLocked ? [] : [10, 5]);
+            
+            ctx.shadowColor = "black";
+            ctx.shadowBlur = 10;
             ctx.strokeRect(x, y, w, h);
             
-            // Углы
-            ctx.setLineDash([]);
-            drawBrackets(x, y, w, h, isLocked ? 30 : 15);
+            // Тайтл и Метрика
+            const dist = ((950 * 0.5) / w).toFixed(1);
+            ctx.fillStyle = isLocked ? "#00ff41" : color;
+            ctx.font = "bold 13px Courier New";
+            ctx.fillText(`${label.toUpperCase()} [${dist}m]`, x, y - 12);
 
-            // Тайтл
-            ctx.fillStyle = isLocked ? "var(--neon)" : color;
-            ctx.font = "bold 13px monospace";
-            ctx.fillText(`${p.class.toUpperCase()} [${dist}m]`, x + 5, y - 10);
+            // Угловые скобки
+            ctx.setLineDash([]);
+            drawCorners(x, y, w, h, isLocked ? "#00ff41" : color, isLocked ? 30 : 15);
             
-            if (isLocked) {
-                ctx.font = "9px monospace";
-                ctx.fillText(`STATUS: TRACKING_ACTIVE`, x + 5, y + h + 15);
+            // Специфические элементы
+            ctx.strokeStyle = "#ff6600";
+            ctx.setLineDash([3, 3]);
+            if (label === 'person') ctx.strokeRect(x + w*0.3, y + h*0.05, w*0.4, h*0.15);
+            if (['car','bus','truck'].includes(label)) {
+                ctx.strokeRect(x + w*0.1, y + h*0.75, w*0.2, w*0.2);
+                ctx.strokeRect(x + w*0.7, y + h*0.75, w*0.2, w*0.2);
             }
+
             ctx.restore();
         });
 
-        requestAnimationFrame(detect);
+        requestAnimationFrame(render);
     }
 
-    function drawBrackets(x, y, w, h, s) {
+    function drawCorners(x, y, w, h, color, s) {
+        ctx.strokeStyle = color;
         ctx.beginPath();
         ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
         ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
@@ -202,7 +253,7 @@
         ctx.stroke();
     }
 
-    preload();
+    loadModels();
 </script>
 </body>
 </html>
