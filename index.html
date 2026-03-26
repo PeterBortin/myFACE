@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ULTIMATE AI SURVEILLANCE</title>
+    <title>NEURAL ANALYZER v5.1</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-    <!-- Используем проверенную сборку face-api -->
     <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
     <style>
         :root { --green: #00ff41; --blue: #0084ff; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--green); }
         #container { position: relative; width: 100vw; height: 100vh; }
         video { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
@@ -20,38 +19,31 @@
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 100; display: flex; 
-            flex-direction: column; justify-content: center; align-items: center; color: var(--green);
+            flex-direction: column; justify-content: center; align-items: center;
         }
         button {
             background: rgba(0, 255, 65, 0.1); border: 1px solid var(--green);
             color: var(--green); padding: 20px 40px; font-size: 1rem; cursor: pointer;
             box-shadow: 0 0 15px rgba(0, 255, 65, 0.3); text-transform: uppercase;
         }
-        #log { font-size: 10px; margin-top: 20px; color: #666; width: 80%; text-align: left; max-height: 150px; overflow-y: auto; }
-        .hud { position: absolute; z-index: 10; color: var(--green); font-size: 11px; pointer-events: none; padding: 20px; width: 100%; box-sizing: border-box; text-shadow: 1px 1px #000; }
-        .bottom-ui { bottom: 0; background: rgba(0,0,0,0.4); display: flex; justify-content: space-between; }
+        #log { font-size: 10px; margin-top: 20px; color: #555; width: 85%; text-align: left; line-height: 1.4; }
+        .hud-line { position: absolute; width: 100%; height: 1px; background: rgba(0,255,65,0.2); z-index: 10; }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div style="font-size: 20px; letter-spacing: 3px; margin-bottom: 10px;">NEURAL ANALYZER v5.0</div>
-    <button id="start-btn">INITIALIZE SYSTEM</button>
-    <div id="log">SYSTEM READY...</div>
+    <div style="font-size: 22px; letter-spacing: 5px; margin-bottom: 20px;">NEURAL_ANALYZER_v5.1</div>
+    <button onclick="initSystem()">GRANT ACCESS</button>
+    <div id="log">SYSTEM STATUS: STANDBY<br>> REQUIRED: HTTPS & USER_PERMISSION</div>
 </div>
 
 <div id="container">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="canvas"></canvas>
     
-    <div class="hud" style="top:0">
-        <div>OS: AI_SURVEILLANCE_PRO</div>
-        <div id="fps-info">SCANNING...</div>
-    </div>
-    <div class="hud bottom-ui">
-        <span>BIO_DETECTOR: ON</span>
-        <span>OBJECT_LOG: ACTIVE</span>
-        <span style="color:#ff004c; animation: blink 1s infinite;">● LIVE FEED</span>
+    <div style="position:absolute; top:20px; left:20px; z-index:10; font-size:10px;">
+        OS: NEURAL_CORE_v5<br>SCAN_MODE: MULTIMODAL<br>LATENCY: <span id="ms">0</span>ms
     </div>
 </div>
 
@@ -59,132 +51,94 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
-    const startBtn = document.getElementById('start-btn');
     const log = document.getElementById('log');
+    let objModel, faceModel;
 
-    let objModel = null;
-    const FOCAL_LENGTH = 900; 
-
-    function writeLog(msg) { 
-        log.innerHTML += `<br>> ${msg}`;
-        log.scrollTop = log.scrollHeight;
-    }
-
-    async function initAI() {
-        startBtn.style.display = 'none';
+    async function initSystem() {
+        log.innerHTML = "> ACCESSING CAMERA...";
         try {
-            writeLog("ACCESSING CAMERA...");
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 } },
-                audio: false
+                video: { facingMode: 'environment', width: { ideal: 1280 } }
             });
             video.srcObject = stream;
-            await new Promise(r => video.onloadedmetadata = () => video.play().then(r));
+            
+            // Ждем готовности видео
+            await new Promise(r => video.onloadedmetadata = r);
+            await video.play();
 
-            writeLog("LOADING COCO-SSD...");
-            objModel = await cocoSsd.load();
+            log.innerHTML += "<br>> LOADING NEURAL NETWORKS (COCO & FACE)...";
+            [objModel] = await Promise.all([
+                cocoSsd.load(),
+                faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/'),
+                faceapi.nets.faceLandmark68Net.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/'),
+                faceapi.nets.ageGenderNet.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/')
+            ]);
 
-            writeLog("LOADING FACE-API MODELS...");
-            // Исправленные названия сетей для этой библиотеки
-            const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-            await faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL); // Исправлено имя
-
-            writeLog("SYNCHRONIZING...");
-            setTimeout(() => { overlay.style.display = 'none'; render(); }, 1000);
+            document.getElementById('overlay').style.display = 'none';
+            render();
         } catch (e) {
-            writeLog("CRITICAL ERROR: " + e.message);
-            console.error(e);
+            log.style.color = "#ff004c";
+            log.innerHTML += `<br>> ERROR: ${e.message}<br>> USE SAFARI & CHECK PERMISSIONS`;
         }
     }
 
     async function render() {
-        if (canvas.width !== video.videoWidth) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-        }
-
+        const t0 = performance.now();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        try {
-            // Запускаем параллельно детекцию объектов и лиц
-            const [objects, faces] = await Promise.all([
-                objModel.detect(video),
-                faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withAgeAndGender()
-            ]);
+        // Параллельная детекция
+        const [objects, faces] = await Promise.all([
+            objModel.detect(video),
+            faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withAgeAndGender()
+        ]);
 
-            objects.forEach(obj => {
-                const [x, y, w, h] = obj.bbox;
-                const label = obj.class;
-                
-                // Дистанция и цвета
-                let realWidth = 0.6;
-                if (label === 'car' || label === 'truck') realWidth = 1.8;
-                const distance = (realWidth * FOCAL_LENGTH) / w;
-                const color = label === 'person' ? '#00ff41' : '#0084ff';
+        objects.forEach(obj => {
+            const [x, y, w, h] = obj.bbox;
+            const label = obj.class;
+            
+            // 1. Определение типа
+            let type = "OBJECT";
+            let color = "#0084ff";
+            if (label === 'person') { type = "HUMAN"; color = "#00ff41"; }
+            else if (['car','bus','truck','motorcycle'].includes(label)) { type = "VEHICLE"; color = "#ffaa00"; }
+            else if (['dog','cat','bird','horse'].includes(label)) { type = "ANIMAL"; color = "#ff00ff"; }
 
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x, y, w, h);
+            // Рисуем рамку
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x, y, w, h);
 
-                // Заголовок
-                ctx.fillStyle = color;
-                ctx.font = 'bold 12px monospace';
-                let typeText = label === 'person' ? "HUMAN" : "OBJECT";
-                ctx.fillText(`${typeText}: ${label.toUpperCase()}`, x, y - 10);
-                ctx.fillText(`DIST: ${distance.toFixed(1)}m`, x, y - 25);
+            // Тэг и габариты
+            ctx.fillStyle = color;
+            ctx.font = "bold 14px monospace";
+            ctx.fillText(`[${type}] ${label.toUpperCase()}`, x, y - 10);
+            
+            // Расчет объема (условный: ширина * высота * средняя глубина)
+            const volume = (w * h * ((w+h)/2) * 0.00001).toFixed(3);
+            ctx.fillStyle = "#fff";
+            ctx.font = "10px monospace";
+            ctx.fillText(`VOL_EST: ${volume} m3`, x, y + h + 15);
+            ctx.fillText(`DIST_EST: ${((800 * 0.5) / w).toFixed(1)}m`, x, y + h + 28);
+        });
 
-                // Объем для предметов
-                if (label !== 'person') {
-                    const volume = (w * h * ((w + h) / 2) * 0.00005).toFixed(2);
-                    ctx.fillStyle = "#fff";
-                    ctx.fillText(`VOL_EST: ${volume} m³`, x, y + h + 15);
-                }
+        // Данные лиц (Пол, Возраст, Рост)
+        faces.forEach(f => {
+            const { x, y, width, height } = f.detection.box;
+            ctx.strokeStyle = "#fff";
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(x, y, width, height);
+            ctx.setLineDash([]);
+            
+            ctx.fillStyle = "#fff";
+            const gender = f.gender === 'male' ? 'M' : 'F';
+            ctx.fillText(`BIO: ${gender} / ~${Math.round(f.age)}yr`, x, y + height + 45);
+        });
 
-                drawBrackets(x, y, w, h);
-            });
-
-            // Данные лиц
-            faces.forEach(f => {
-                const { x, y, width, height } = f.detection.box;
-                ctx.strokeStyle = '#fff';
-                ctx.setLineDash([4, 4]);
-                ctx.strokeRect(x, y, width, height);
-                ctx.setLineDash([]);
-
-                ctx.fillStyle = '#fff';
-                ctx.font = '10px monospace';
-                const gender = f.gender === 'male' ? 'MALE' : 'FEMALE';
-                ctx.fillText(`BIO: ${gender} / ${Math.round(f.age)}yrs`, x, y + height + 15);
-                // Примерный рост на основе пропорций лица
-                const estHeight = Math.round((7.5 * height) * (FOCAL_LENGTH / 1000));
-                ctx.fillText(`H_EST: ~${estHeight}cm`, x, y + height + 28);
-            });
-
-        } catch (err) {
-            console.warn("Frame skip", err);
-        }
-
+        document.getElementById('ms').innerText = Math.round(performance.now() - t0);
         requestAnimationFrame(render);
     }
-
-    function drawBrackets(x, y, w, h) {
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        const s = 15;
-        ctx.beginPath();
-        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
-        ctx.stroke();
-    }
-
-    startBtn.addEventListener('click', initAI);
 </script>
-
-<style>
-    @keyframes blink { 50% { opacity: 0.3; } }
-</style>
 </body>
 </html>
