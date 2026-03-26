@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v9.0 | LOW-SPEC AI</title>
+    <title>myEYE</title>
     
     <!-- Подключаем ядро и WASM для старых CPU -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
@@ -23,7 +23,7 @@
         #viewport { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
         video { 
             position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: brightness(0.35) contrast(1.3) grayscale(0.2); 
+            filter: brightness(0.35) contrast(1.3) grayscale(0.1); 
             z-index: 1; 
         }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
@@ -49,8 +49,8 @@
 <body>
 
 <div id="overlay">
-    <div style="margin-bottom:20px; font-size:10px;">CORE_V9: COMPATIBILITY_MODE_ACTIVE</div>
-    <button onclick="initVision()">BOOT SYSTEM</button>
+    <div style="margin-bottom:20px; font-size:10px;">myEYE Detector System</div>
+    <button onclick="initVision()">доступ к камере</button>
 </div>
 
 <div id="container">
