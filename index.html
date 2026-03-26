@@ -3,70 +3,77 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI TERMINAL v7.1 FIXED</title>
+    <title>NEURAL ARBITER v8.0</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
     <style>
         :root { 
-            --white: #ffffff;
-            --yellow: #ffff00;
-            --orange: #ff6600;
-            --red: #ff0000;
-            --terminal-bg: rgba(0, 5, 0, 0.95);
+            --white: #ffffff; --yellow: #ffff00; --orange: #ff6600; --red: #ff0000; --neon: #00ff41;
         }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        
         #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
         
-        #video-wrapper { position: relative; flex: 1; width: 100%; overflow: hidden; }
-        video { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+        /* Визуальные эффекты интерфейса */
+        #video-wrapper { position: relative; flex: 1; width: 100%; overflow: hidden; border-bottom: 2px solid #1a1a1a; }
+        #video-wrapper::after { 
+            content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: radial-gradient(circle, transparent 50%, rgba(0,0,0,0.4) 100%); 
+            pointer-events: none; z-index: 2; 
+        }
+        
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 1; filter: contrast(1.1) brightness(0.9); }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
         
+        /* Сетка */
+        .grid { position: absolute; width: 100%; height: 100%; background-image: linear-gradient(rgba(0,255,65,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,65,0.05) 1px, transparent 1px); background-size: 30px 30px; z-index: 3; pointer-events: none; }
+
         #terminal { 
-            height: 100px; 
-            width: 100%; 
-            background: var(--terminal-bg); 
-            border-top: 1px solid #222; 
-            z-index: 20; 
-            padding: 20px; 
-            box-sizing: border-box; 
-            display: flex;
-            align-items: center;
+            height: 120px; width: 100%; background: #050505; 
+            z-index: 20; padding: 15px 25px; box-sizing: border-box; 
+            border-top: 1px solid var(--neon); display: flex; flex-direction: column; justify-content: center;
         }
 
-        #term-line {
-            color: #00ff41;
-            font-size: 13px;
-            letter-spacing: 1px;
-            white-space: nowrap;
-        }
+        .term-header { color: #555; font-size: 10px; margin-bottom: 5px; letter-spacing: 2px; }
+        #term-line { color: var(--neon); font-size: 14px; letter-spacing: 1px; text-shadow: 0 0 5px rgba(0,255,65,0.5); }
 
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 100; display: flex; 
-            flex-direction: column; justify-content: center; align-items: center; color: #00ff41;
+            flex-direction: column; justify-content: center; align-items: center;
         }
         button {
-            background: transparent; border: 1px solid #00ff41;
-            color: #00ff41; padding: 15px 30px; font-size: 14px; cursor: pointer;
-            text-transform: uppercase;
+            background: transparent; border: 1px solid var(--neon);
+            color: var(--neon); padding: 20px 40px; font-size: 16px; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 4px; transition: 0.3s;
         }
+        button:hover { background: rgba(0, 255, 65, 0.1); box-shadow: 0 0 20px rgba(0, 255, 65, 0.2); }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <button onclick="startApp()">CONNECTING TO CORE...</button>
+    <div style="color:var(--neon); font-size:12px; margin-bottom:20px; letter-spacing:5px;">NEURAL NETWORK ARBITER v8.0</div>
+    <button onclick="startApp()">ENGAGE SYSTEM</button>
 </div>
 
 <div id="container">
     <div id="video-wrapper">
+        <div class="grid"></div>
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
+        
+        <!-- HUD Elements -->
+        <div style="position:absolute; top:20px; left:20px; z-index:10; color:var(--neon); font-size:10px; line-height:1.5; background:rgba(0,0,0,0.5); padding:10px; border-left:1px solid var(--neon);">
+            SENSOR_MODE: AUTO<br>DEEP_SCAN: ACTIVE<br>ENCRYPTION: AES_256
+        </div>
     </div>
+    
     <div id="terminal">
-        <div id="term-line">> ИНИЦИАЛИЗАЦИЯ...</div>
+        <div class="term-header">ACTIVE_LOG_STREAM</div>
+        <div id="term-line">SYSTEM_IDLE... ОЖИДАНИЕ ЗАХВАТА ЦЕЛИ</div>
     </div>
 </div>
 
@@ -77,10 +84,7 @@
     const termLine = document.getElementById('term-line');
     
     let model = null;
-
-    function updateTerminal(text) {
-        termLine.innerText = "> " + text;
-    }
+    const FOCAL_LENGTH = 850; // Для расчета дистанции
 
     async function startApp() {
         try {
@@ -89,95 +93,112 @@
             });
             video.srcObject = stream;
             await video.play();
+            
+            termLine.innerText = "> ЗАГРУЗКА ЯДРА НЕЙРОСЕТИ...";
             model = await cocoSsd.load();
+            
             document.getElementById('overlay').style.display = 'none';
             detectFrame();
         } catch (e) {
-            updateTerminal("ERROR: NO_CAMERA");
+            alert("CRITICAL ERROR: NO SENSOR DATA ACCESS");
         }
+    }
+
+    function drawObject(p) {
+        const [x, y, w, h] = p.bbox;
+        const label = p.class;
+        
+        let color = "var(--white)";
+        let isPerson = label === 'person';
+        let isAuto = ['car', 'truck', 'bus', 'motorcycle'].includes(label);
+
+        if (isPerson) color = "var(--yellow)";
+        if (isAuto) color = "var(--red)";
+
+        // Расчет телеметрии
+        const distance = ((FOCAL_LENGTH * (isAuto ? 1.8 : 0.6)) / w).toFixed(1);
+        const dimX = (w * 0.1).toFixed(1);
+        const dimY = (h * 0.1).toFixed(1);
+
+        ctx.save();
+        
+        // Тень для читаемости
+        ctx.shadowColor = "black";
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+
+        // 1. Основная рамка (Пунктир)
+        ctx.strokeStyle = color;
+        ctx.setLineDash([10, 5]);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+
+        // 2. Углы (Жирные)
+        ctx.lineWidth = 4;
+        const s = 25;
+        ctx.beginPath();
+        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
+        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
+        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
+        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
+        ctx.stroke();
+
+        // 3. Тайтл с параметрами
+        ctx.fillStyle = color;
+        ctx.font = "bold 14px Courier New";
+        ctx.fillText(`${label.toUpperCase()}`, x + 5, y - 25);
+        ctx.font = "10px Courier New";
+        ctx.fillText(`DIST: ${distance}m | DIM: ${dimX}x${dimY}u`, x + 5, y - 10);
+
+        // 4. Оранжевые под-детекторы (Голова / Колеса)
+        ctx.strokeStyle = "var(--orange)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+
+        if (isPerson) {
+            const hW = w * 0.3;
+            const hH = h * 0.15;
+            ctx.strokeRect(x + (w/2) - (hW/2), y + (h * 0.05), hW, hH);
+        }
+        if (isAuto) {
+            const wh = w * 0.15;
+            ctx.strokeRect(x + (w * 0.12), y + (h * 0.78), wh, wh);
+            ctx.strokeRect(x + (w * 0.72), y + (h * 0.78), wh, wh);
+        }
+
+        ctx.restore();
+        return { label, distance, dimX, dimY, area: w * h };
     }
 
     async function detectFrame() {
         const predictions = await model.detect(video);
+        
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        if (predictions.length > 0) {
-            const p = predictions[0];
-            updateTerminal(`TARGET: ${p.class.toUpperCase()} | POS: ${Math.round(p.bbox[0])},${Math.round(p.bbox[1])} | STATUS: SCANNING`);
-        }
+        let priorityObject = null;
+        let maxArea = 0;
 
         predictions.forEach(p => {
-            const [x, y, w, h] = p.bbox;
-            const label = p.class;
+            const stats = drawObject(p);
             
-            // Настройка цветов
-            let color = "#ffffff"; // Предмет (Белый)
-            if (label === 'person') color = "#ffff00"; // Человек (Желтый)
-            if (['car', 'truck', 'bus', 'motorcycle'].includes(label)) color = "#ff0000"; // Авто (Красный)
-
-            // Контур с тенью
-            ctx.save();
-            ctx.shadowBlur = 4;
-            ctx.shadowColor = "black";
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
-
-            // 1. Основной пунктирный квадрат
-            ctx.strokeStyle = color;
-            ctx.setLineDash([10, 5]);
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x, y, w, h);
-            ctx.setLineDash([]); // Сброс пунктира для углов
-
-            // 2. Углы (Сплошные)
-            drawCorners(x, y, w, h, color);
-
-            // 3. Тайтл объекта
-            ctx.fillStyle = color;
-            ctx.font = "bold 16px Courier New";
-            ctx.fillText(label.toUpperCase(), x + 5, y - 12);
-            ctx.restore();
-
-            // 4. Дополнительные детекторы (Оранжевый пунктир)
-            ctx.strokeStyle = "#ff6600";
-            ctx.setLineDash([4, 4]);
-            ctx.lineWidth = 1.5;
-
-            if (label === 'person') {
-                // Распознавание головы
-                const hW = w * 0.35;
-                const hH = h * 0.18;
-                ctx.strokeRect(x + (w/2) - (hW/2), y + (h * 0.04), hW, hH);
+            // Выбор приоритетного объекта для терминала (самый крупный в кадре)
+            if (stats.area > maxArea) {
+                maxArea = stats.area;
+                priorityObject = stats;
             }
-
-            if (['car', 'truck', 'bus'].includes(label)) {
-                // Распознавание колес
-                const wh = w * 0.18;
-                ctx.strokeRect(x + (w * 0.1), y + (h * 0.75), wh, wh);
-                ctx.strokeRect(x + (w * 0.72), y + (h * 0.75), wh, wh);
-            }
-            ctx.setLineDash([]);
         });
 
-        requestAnimationFrame(detectFrame);
-    }
+        if (priorityObject) {
+            termLine.innerText = `[TARGET_LOCKED]: ${priorityObject.label.toUpperCase()} | RANGE: ${priorityObject.distance}m | SCAN_DATA: ${priorityObject.dimX}x${priorityObject.dimY} | STATUS: ANALYSIS_COMPLETE`;
+        } else {
+            termLine.innerText = `SYSTEM_STATUS: SCANNING_ENVIRONMENT... NO_TARGETS_IN_RANGE`;
+        }
 
-    function drawCorners(x, y, w, h, color) {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 4;
-        const s = 25;
-        ctx.beginPath();
-        // Top Left
-        ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
-        // Top Right
-        ctx.moveTo(x + w - s, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + s);
-        // Bottom Left
-        ctx.moveTo(x, y + h - s); ctx.lineTo(x, y + h); ctx.lineTo(x + s, y + h);
-        // Bottom Right
-        ctx.moveTo(x + w - s, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - s);
-        ctx.stroke();
+        requestAnimationFrame(detectFrame);
     }
 </script>
 </body>
