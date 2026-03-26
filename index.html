@@ -3,163 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI SURVEILLANCE SYSTEM v1.0</title>
+    <title>AI SCANNER PRO</title>
     
-    <!-- Подключение библиотек AI -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
     <style>
-        :root {
-            --neon-green: #00ff41;
-            --neon-blue: #0084ff;
-            --alert-red: #ff004c;
-            --panel-bg: rgba(0, 0, 0, 0.7);
+        :root { --green: #00ff41; --blue: #0084ff; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: monospace; }
+        
+        #container { position: relative; width: 100vw; height: 100vh; }
+        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Кнопка запуска для iOS */
+        #start-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 100; display: flex; 
+            flex-direction: column; justify-content: center; align-items: center;
+            color: var(--green); text-align: center; padding: 20px;
         }
 
-        body, html {
-            margin: 0; padding: 0;
-            width: 100%; height: 100%;
-            background-color: #000;
-            color: var(--neon-green);
-            font-family: 'Courier New', monospace;
-            overflow: hidden;
-            text-transform: uppercase;
+        button {
+            background: transparent; border: 1px solid var(--green);
+            color: var(--green); padding: 15px 30px; font-size: 1.2rem;
+            cursor: pointer; text-transform: uppercase; margin-top: 20px;
+            box-shadow: 0 0 10px var(--green);
         }
 
-        /* Контейнер видеопотока */
-        #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        video, canvas {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        /* Интерфейс поверх видео */
-        #hud {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 10;
-        }
-
-        /* Верхняя панель */
-        .header {
-            position: absolute;
-            top: 20px; width: 100%;
-            display: flex; justify-content: space-between;
-            padding: 0 20px; box-sizing: border-box;
-            font-size: 14px; text-shadow: 0 0 5px var(--neon-green);
-        }
-
-        .rec-indicator {
-            color: var(--alert-red);
-            animation: blink 1s steps(2) infinite;
-        }
-
-        @keyframes blink { 0% { opacity: 1; } 100% { opacity: 0; } }
-
-        /* Сетчатый сканер */
-        .scanner-line {
-            position: absolute;
-            width: 100%; height: 2px;
-            background: linear-gradient(90deg, transparent, var(--neon-green), transparent);
-            box-shadow: 0 0 15px var(--neon-green);
-            top: 0;
-            animation: scan 4s linear infinite;
-        }
-
-        @keyframes scan {
-            0% { top: 0; }
-            100% { top: 100%; }
-        }
-
-        /* Нижняя статус-панель */
-        .footer {
-            position: absolute;
-            bottom: 20px; width: 100%;
-            display: flex; justify-content: space-around;
-            font-size: 10px; background: var(--panel-bg);
-            padding: 10px 0; border-top: 1px solid var(--neon-green);
-        }
-
-        /* Экран загрузки */
-        #overlay {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: #000;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            z-index: 100;
-        }
-
-        .loading-bar {
-            width: 200px; height: 4px;
-            background: #222; margin-top: 15px;
-            position: relative;
-        }
-
-        .loading-progress {
-            position: absolute;
-            width: 0%; height: 100%;
-            background: var(--neon-green);
-            transition: width 0.5s;
-        }
+        .hud-top { position: absolute; top: 10px; width: 100%; display: flex; justify-content: space-between; color: var(--green); padding: 0 15px; box-sizing: border-box; font-size: 12px; z-index: 20; }
+        .scan-line { position: absolute; width: 100%; height: 2px; background: var(--green); opacity: 0.5; top: 0; animation: scan 3s linear infinite; z-index: 20; }
+        @keyframes scan { from {top: 0%} to {top: 100%} }
     </style>
 </head>
 <body>
 
-<div id="overlay">
-    <div id="status-text">SYSTEM BOOTING...</div>
-    <div class="loading-bar"><div id="progress" class="loading-progress"></div></div>
+<div id="start-screen">
+    <div style="font-size: 24px; letter-spacing: 5px;">SYSTEM OFFLINE</div>
+    <p>ТРЕБУЕТСЯ АВТОРИЗАЦИЯ ВИДЕОПОТОКА</p>
+    <button id="auth-btn">АКТИВИРОВАТЬ КАМЕРУ</button>
 </div>
 
 <div id="container">
     <video id="video" autoplay muted playsinline></video>
     <canvas id="canvas"></canvas>
-    
-    <div id="hud">
-        <div class="header">
-            <div>NODE_SURVEILLANCE_v1.03</div>
-            <div class="rec-indicator">● LIVE FEED</div>
-        </div>
-
-        <div class="scanner-line"></div>
-
-        <div class="footer">
-            <div>BIO: <span style="color:#fff">ACTIVE</span></div>
-            <div>OBJ_TRACKING: <span style="color:#fff">ENABLED</span></div>
-            <div>THREAT_LVL: <span style="color:#fff">NULL</span></div>
-        </div>
+    <div class="hud-top">
+        <span>CAM_03 // ACTIVE</span>
+        <span style="color: #ff0000">● REC</span>
     </div>
+    <div class="scan-line"></div>
 </div>
 
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
-    const progress = document.getElementById('progress');
-    const statusText = document.getElementById('status-text');
+    const startScreen = document.getElementById('start-screen');
+    const authBtn = document.getElementById('auth-btn');
 
     let model = null;
 
-    // 1. Инициализация камеры
-    async function initCamera() {
+    // Функция запроса камеры (вызывается по кнопке для iOS)
+    async function setupCamera() {
         const constraints = {
             video: {
-                facingMode: 'environment', // Задняя камера
+                facingMode: 'environment', // Основная камера
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
             },
@@ -169,106 +76,78 @@
         try {
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = stream;
-            return new Promise(resolve => video.onloadedmetadata = resolve);
+            
+            // Важно для iOS: дожидаемся возможности играть видео
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.play();
+                    resolve();
+                };
+            });
         } catch (err) {
-            statusText.innerText = "CAMERA ACCESS DENIED";
-            statusText.style.color = "red";
+            console.error(err);
+            alert("ОШИБКА: Доступ запрещен или камера занята. Проверьте настройки Safari.");
             throw err;
         }
     }
 
-    // 2. Загрузка модели AI
-    async function loadModel() {
-        statusText.innerText = "LOADING NEURAL NETWORK...";
-        progress.style.width = "50%";
-        model = await cocoSsd.load();
-        progress.style.width = "100%";
-        statusText.innerText = "INITIALIZING CORE...";
-        setTimeout(() => overlay.style.display = 'none', 1000);
+    async function startDetection() {
+        authBtn.innerText = "ЗАГРУЗКА AI...";
+        authBtn.disabled = true;
+
+        try {
+            // 1. Сначала просим камеру
+            await setupCamera();
+            // 2. Затем грузим модель
+            model = await cocoSsd.load();
+            
+            startScreen.style.display = 'none';
+            render();
+        } catch (e) {
+            authBtn.innerText = "ОШИБКА ЗАПУСКА";
+            authBtn.disabled = false;
+        }
     }
 
-    // 3. Цикл детекции
-    async function detect() {
-        if (!model) return;
+    async function render() {
+        // Синхронизация размеров под экран
+        if (canvas.width !== video.videoWidth) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
 
         const predictions = await model.detect(video);
-        
-        // Подгоняем размер холста под видео
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         predictions.forEach(p => {
             if (p.class === 'person') {
-                const [x, y, width, height] = p.bbox;
+                const [x, y, w, h] = p.bbox;
 
-                // Отрисовка основной рамки (стиль как на фото 1)
+                // Рамка (Green)
                 ctx.strokeStyle = '#00ff41';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(x, y, width, height);
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x, y, w, h);
 
-                // Верхний ярлык
-                ctx.fillStyle = '#00ff41';
-                ctx.fillRect(x, y - 25, 120, 20);
-                ctx.fillStyle = '#000';
-                ctx.font = 'bold 12px monospace';
-                ctx.fillText(`ID: SUBJECT_${Math.floor(p.score * 1000)}`, x + 5, y - 10);
-
-                // Декоративные элементы (стиль фото 2/3)
-                drawTargetBrackets(x, y, width, height);
-                drawMetaInfo(x + width + 10, y, p.score);
+                // Тэг (Blue)
+                ctx.fillStyle = '#0084ff';
+                ctx.font = 'bold 20px monospace';
+                ctx.fillText(`TARGET: IDENTIFIED`, x, y > 30 ? y - 10 : 30);
+                
+                // Декоративные линии (White)
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x + w/2, y); ctx.lineTo(x + w/2, 0); // Линия наверх
+                ctx.stroke();
             }
         });
 
-        requestAnimationFrame(detect);
+        requestAnimationFrame(render);
     }
 
-    function drawTargetBrackets(x, y, w, h) {
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        const size = 30;
+    // Событие нажатия — критично для iOS
+    authBtn.addEventListener('click', startDetection);
 
-        // Углы
-        ctx.beginPath();
-        // Top Left
-        ctx.moveTo(x, y + size); ctx.lineTo(x, y); ctx.lineTo(x + size, y);
-        // Bottom Right
-        ctx.moveTo(x + w - size, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - size);
-        ctx.stroke();
-    }
-
-    function drawMetaInfo(x, y, score) {
-        ctx.fillStyle = '#0084ff'; // Синий цвет как на фото 1
-        ctx.font = '10px monospace';
-        const rows = [
-            `MATCH: ${(score * 100).toFixed(2)}%`,
-            `DIST: ~${(5 + Math.random()).toFixed(1)}m`,
-            `STATUS: ANALYZING...`
-        ];
-        rows.forEach((text, i) => {
-            ctx.fillText(text, x, y + (i * 15));
-        });
-    }
-
-    // Запуск системы
-    async function start() {
-        try {
-            await initCamera();
-            await loadModel();
-            detect();
-        } catch (e) {
-            console.error(e);
-        }
-    }
-
-    // Обработка изменения размера окна
-    window.addEventListener('resize', () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    });
-
-    start();
 </script>
 </body>
 </html>
