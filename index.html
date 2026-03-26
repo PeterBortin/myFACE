@@ -10,582 +10,663 @@
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 <style>
-:root {
-  --g: #00ff41; --g2: #00cc33; --g3: #003310;
-  --y: #ffff00; --o: #ff9900; --r: #ff2244;
-  --b: #00aaff; --w: #e0ffe0; --bg: #020804;
-  --panel: rgba(2,8,4,0.92); --border: rgba(0,255,65,0.25);
+:root{
+  --g:#00ff41;--g2:#00cc33;--g3:#003a12;
+  --y:#ffff00;--o:#ff9900;--r:#ff2244;--b:#00aaff;
+  --bg:#020804;--panel:rgba(2,8,4,.94);--border:rgba(0,255,65,.22);
 }
+*{margin:0;padding:0;box-sizing:border-box;}
+body,html{width:100%;height:100%;background:#000;overflow:hidden;
+  font-family:'Share Tech Mono',monospace;color:var(--g);
+  user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;}
 
-- { margin: 0; padding: 0; box-sizing: border-box; }
+/* BOOT */
+#boot{position:fixed;inset:0;background:#000;z-index:300;display:flex;
+flex-direction:column;justify-content:center;align-items:center;}
+#boot-logo{font-family:‘Orbitron’,monospace;font-weight:900;
+font-size:clamp(30px,8vw,54px);letter-spacing:.18em;color:var(–g);
+text-shadow:0 0 30px var(–g),0 0 60px #004400;animation:gpulse 2s ease-in-out infinite;}
+#boot-sub{font-size:9px;letter-spacing:.45em;color:var(–g2);margin:6px 0 32px;}
+#boot-log{width:min(360px,86vw);font-size:9.5px;color:var(–g2);min-height:115px;line-height:1.9;}
+#boot-log .bl{opacity:0;animation:fi .22s forwards;}
+#pb-wrap{width:min(360px,86vw);height:2px;background:#0a1a0a;margin-top:18px;}
+#pb{height:100%;width:0;background:var(–g);box-shadow:0 0 8px var(–g);transition:width .3s;}
+#btn-start{margin-top:28px;display:none;background:none;border:1px solid var(–g);
+color:var(–g);font-family:‘Orbitron’,monospace;font-size:11px;
+letter-spacing:.3em;padding:13px 42px;cursor:pointer;transition:all .2s;}
+#btn-start:hover,#btn-start:active{background:var(–g);color:#000;box-shadow:0 0 20px var(–g);}
 
-body, html {
-width: 100%; height: 100%; background: var(–bg);
-overflow: hidden; font-family: ‘Share Tech Mono’, monospace;
-color: var(–g); user-select: none; -webkit-user-select: none;
-}
+/* LAYOUT */
+#app{position:fixed;inset:0;display:flex;flex-direction:column;}
+#vp{position:relative;flex:1 1 auto;overflow:hidden;background:#000;}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;
+filter:brightness(.55) contrast(1.38) saturate(.88);}
+canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;}
 
-/* ── BOOT SCREEN ─────────────────────────────────── */
-#boot {
-position: fixed; inset: 0; background: #000; z-index: 200;
-display: flex; flex-direction: column; justify-content: center;
-align-items: center; gap: 0;
-}
-#boot-logo {
-font-family: ‘Orbitron’, monospace; font-weight: 900;
-font-size: clamp(28px, 8vw, 56px); letter-spacing: 0.15em;
-color: var(–g); text-shadow: 0 0 30px var(–g), 0 0 60px #004400;
-animation: pulse-glow 2s ease-in-out infinite;
-}
-#boot-sub {
-font-size: 10px; letter-spacing: 0.4em; color: var(–g2);
-margin-top: 6px; margin-bottom: 40px;
-}
-#boot-log {
-width: min(380px, 88vw); font-size: 10px; color: var(–g2);
-min-height: 90px; line-height: 1.8;
-}
-#boot-log .bl { opacity: 0; animation: fadeIn 0.3s forwards; }
-#progress-bar-wrap {
-width: min(380px, 88vw); height: 3px; background: #0a1a0a;
-margin-top: 20px; position: relative; overflow: hidden;
-}
-#progress-bar {
-height: 100%; width: 0%; background: var(–g);
-transition: width 0.3s ease;
-box-shadow: 0 0 8px var(–g);
-}
-#btn-start {
-margin-top: 30px; display: none;
-background: none; border: 1px solid var(–g); color: var(–g);
-font-family: ‘Orbitron’, monospace; font-size: 11px;
-letter-spacing: 0.3em; padding: 14px 44px; cursor: pointer;
-transition: all 0.2s; text-transform: uppercase;
-}
-#btn-start:hover { background: var(–g); color: #000; box-shadow: 0 0 20px var(–g); }
+/* scanlines */
+#vp::after{content:’’;position:absolute;inset:0;z-index:5;pointer-events:none;
+background:repeating-linear-gradient(0deg,transparent,transparent 3px,
+rgba(0,255,65,.016) 3px,rgba(0,255,65,.016) 4px);
+animation:scanroll 10s linear infinite;}
 
-/* ── MAIN LAYOUT ─────────────────────────────────── */
-#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+/* HUD corners */
+.hc{position:absolute;width:52px;height:52px;z-index:10;pointer-events:none;}
+.hc::before,.hc::after{content:’’;position:absolute;background:var(–g);box-shadow:0 0 5px var(–g);}
+.hc::before{width:2px;height:20px;}.hc::after{width:20px;height:2px;}
+#hc-tl{top:0;left:0;}#hc-tl::before{top:0;left:0;}#hc-tl::after{top:0;left:0;}
+#hc-tr{top:0;right:0;}#hc-tr::before{top:0;right:0;}#hc-tr::after{top:0;right:0;}
+#hc-bl{bottom:0;left:0;}#hc-bl::before{bottom:0;left:0;}#hc-bl::after{bottom:0;left:0;}
+#hc-br{bottom:0;right:0;}#hc-br::before{bottom:0;right:0;}#hc-br::after{bottom:0;right:0;}
+/* crosshair */
+#xhair{position:absolute;top:50%;left:50%;z-index:8;pointer-events:none;
+width:22px;height:22px;margin:-11px;}
+#xhair::before{content:’’;position:absolute;top:10px;left:0;width:22px;height:2px;
+background:rgba(0,255,65,.3);}
+#xhair::after{content:’’;position:absolute;left:10px;top:0;width:2px;height:22px;
+background:rgba(0,255,65,.3);}
+/* radar */
+#radar{position:absolute;top:50%;left:50%;z-index:7;width:6px;height:6px;margin:-3px;
+border-radius:50%;background:var(–g);pointer-events:none;
+box-shadow:0 0 0 0 rgba(0,255,65,.5);animation:rpulse 4s ease-out infinite;}
 
-#viewport { position: relative; flex: 1 1 auto; overflow: hidden; background: #000; }
-video {
-position: absolute; inset: 0; width: 100%; height: 100%;
-object-fit: cover; z-index: 1;
-filter: brightness(0.55) contrast(1.35) saturate(0.9);
-}
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
+/* TOP BAR */
+#topbar{position:absolute;top:0;left:0;right:0;z-index:15;pointer-events:none;
+display:flex;align-items:center;justify-content:space-between;padding:10px 14px;}
+#sys-id{font-family:‘Orbitron’,monospace;font-size:13px;font-weight:700;
+letter-spacing:.2em;color:var(–g);text-shadow:0 0 12px var(–g);}
+#badges{display:flex;gap:5px;}
+.badge{font-size:8px;letter-spacing:.12em;padding:3px 8px;
+border:1px solid var(–border);background:var(–panel);color:var(–g2);}
+.badge.hi{border-color:var(–g);color:var(–g);}
+.badge.al{border-color:var(–r);color:var(–r);}
+.badge.wn{border-color:var(–o);color:var(–o);}
 
-/* ── HUD CORNERS ─────────────────────────────────── */
-.hud-corner {
-position: absolute; width: 60px; height: 60px; z-index: 10; pointer-events: none;
-}
-.hud-corner::before, .hud-corner::after {
-content: ‘’; position: absolute; background: var(–g);
-box-shadow: 0 0 6px var(–g);
-}
-.hud-corner::before { width: 2px; height: 24px; }
-.hud-corner::after  { width: 24px; height: 2px; }
-#hc-tl { top: 0; left: 0; }
-#hc-tl::before { top: 0; left: 0; }
-#hc-tl::after  { top: 0; left: 0; }
-#hc-tr { top: 0; right: 0; }
-#hc-tr::before { top: 0; right: 0; }
-#hc-tr::after  { top: 0; right: 0; }
-#hc-bl { bottom: 0; left: 0; }
-#hc-bl::before { bottom: 0; left: 0; }
-#hc-bl::after  { bottom: 0; left: 0; }
-#hc-br { bottom: 0; right: 0; }
-#hc-br::before { bottom: 0; right: 0; }
-#hc-br::after  { bottom: 0; right: 0; }
+/* NIGHT BTN */
+#night-btn{position:absolute;top:10px;left:14px;z-index:20;background:none;
+border:1px solid var(–border);color:var(–g2);font-family:‘Share Tech Mono’,monospace;
+font-size:8px;padding:4px 10px;cursor:pointer;letter-spacing:.1em;}
+#night-btn:hover,#night-btn:active{border-color:var(–b);color:var(–b);}
 
-/* Scanline overlay */
-#viewport::after {
-content: ‘’; position: absolute; inset: 0; z-index: 5; pointer-events: none;
-background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,255,65,0.018) 3px, rgba(0,255,65,0.018) 4px);
-animation: scanroll 8s linear infinite;
-}
+/* RIGHT PANEL */
+#rpanel{position:absolute;top:50%;right:10px;transform:translateY(-50%);
+z-index:15;display:flex;flex-direction:column;gap:4px;pointer-events:none;}
+.rs{font-size:7px;letter-spacing:.1em;padding:4px 9px;border:1px solid var(–border);
+background:var(–panel);color:var(–g2);text-align:right;min-width:84px;}
+.rs span{display:block;color:var(–g);font-size:10px;}
 
-/* ── TOP BAR ─────────────────────────────────────── */
-#topbar {
-position: absolute; top: 0; left: 0; right: 0; z-index: 15;
-display: flex; align-items: center; justify-content: space-between;
-padding: 10px 14px; pointer-events: none;
-}
-#sys-id {
-font-family: ‘Orbitron’, monospace; font-size: 13px; font-weight: 700;
-letter-spacing: 0.2em; color: var(–g);
-text-shadow: 0 0 12px var(–g);
-}
-#sys-badges { display: flex; gap: 6px; }
-.badge {
-font-size: 8px; letter-spacing: 0.15em; padding: 3px 8px;
-border: 1px solid var(–border); background: var(–panel); color: var(–g2);
-}
-.badge.active { border-color: var(–g); color: var(–g); }
+/* BOTTOM STAT BAR */
+#statbar{position:absolute;bottom:0;left:0;right:0;z-index:15;
+display:flex;gap:1px;pointer-events:none;}
+.sc{flex:1;padding:5px 5px;background:var(–panel);
+border-top:1px solid var(–border);font-size:7px;
+letter-spacing:.07em;color:var(–g2);text-align:center;}
+.sc span{display:block;color:var(–g);font-size:10px;font-weight:bold;}
 
-/* ── RIGHT PANEL ─────────────────────────────────── */
-#rpanel {
-position: absolute; top: 50%; right: 12px;
-transform: translateY(-50%); z-index: 15;
-display: flex; flex-direction: column; gap: 5px;
-pointer-events: none;
-}
-.rstat {
-font-size: 8px; letter-spacing: 0.1em; padding: 5px 10px;
-border: 1px solid var(–border); background: var(–panel);
-color: var(–g2); text-align: right; min-width: 90px;
-}
-.rstat span { display: block; color: var(–g); font-size: 11px; }
+/* INFO PANEL */
+#info-panel{position:absolute;bottom:0;left:0;right:0;z-index:25;
+background:rgba(2,8,4,.97);border-top:2px solid var(–g);
+padding:12px 16px 10px;transform:translateY(100%);
+transition:transform .28s cubic-bezier(.22,1,.36,1);pointer-events:none;}
+#info-panel.open{transform:translateY(0);pointer-events:all;}
+#info-close{position:absolute;top:10px;right:14px;background:none;
+border:1px solid var(–g2);color:var(–g2);font-family:‘Share Tech Mono’,monospace;
+font-size:9px;padding:3px 10px;cursor:pointer;letter-spacing:.1em;}
+#info-close:hover,#info-close:active{border-color:var(–r);color:var(–r);}
+#info-title{font-family:‘Orbitron’,monospace;font-size:13px;font-weight:700;
+letter-spacing:.2em;color:var(–g);margin-bottom:8px;}
+#info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;font-size:9px;}
+.ik{color:var(–g2);}.iv{color:var(–g);}
+#info-desc{margin-top:8px;font-size:9px;color:var(–g2);line-height:1.6;
+border-top:1px solid var(–border);padding-top:6px;}
 
-/* ── BOTTOM STATS BAR ────────────────────────────── */
-#statbar {
-position: absolute; bottom: 0; left: 0; right: 0; z-index: 15;
-display: flex; gap: 1px; pointer-events: none;
-}
-.stat-cell {
-flex: 1; padding: 6px 8px; background: var(–panel);
-border-top: 1px solid var(–border); font-size: 8px;
-letter-spacing: 0.1em; color: var(–g2); text-align: center;
-}
-.stat-cell span { display: block; color: var(–g); font-size: 11px; font-weight: bold; }
+/* TERMINAL */
+#terminal{flex:0 0 auto;height:108px;background:var(–bg);
+border-top:1px solid var(–border);padding:7px 14px;overflow:hidden;z-index:20;}
+#term-hdr{font-family:‘Orbitron’,monospace;font-size:7px;letter-spacing:.28em;
+color:var(–g3);margin-bottom:5px;display:flex;align-items:center;gap:8px;}
+#term-hdr::before{content:’’;flex:1;height:1px;background:var(–g3);}
+#term-lines{font-size:9px;line-height:1.72;}
+.tl{opacity:0;animation:si .18s forwards;}
+.tok{color:var(–g);}.twarn{color:var(–o);}.talert{color:var(–r);}.tinfo{color:var(–b);}.ttap{color:var(–y);}
 
-/* Radar pulse (center screen) */
-#radar-ring {
-position: absolute; top: 50%; left: 50%; z-index: 8;
-width: 4px; height: 4px; margin: -2px; pointer-events: none;
-border-radius: 50%; background: var(–g);
-box-shadow: 0 0 0 0 rgba(0,255,65,0.6);
-animation: radar-pulse 3s ease-out infinite;
-}
-
-/* ── TERMINAL ────────────────────────────────────── */
-#terminal {
-flex: 0 0 auto; height: 120px;
-background: var(–bg); border-top: 1px solid var(–border);
-padding: 10px 14px; overflow: hidden; z-index: 30;
-position: relative;
-}
-#term-header {
-font-family: ‘Orbitron’, monospace; font-size: 7px;
-letter-spacing: 0.3em; color: var(–g3); margin-bottom: 8px;
-display: flex; justify-content: space-between; align-items: center;
-}
-#term-header::before { content: ‘’; flex: 1; height: 1px; background: var(–g3); margin-right: 10px; }
-#term-lines { font-size: 9.5px; line-height: 1.75; }
-.tl { opacity: 0; animation: slideIn 0.2s forwards; padding-left: 2px; }
-.tl-warn  { color: var(–o); }
-.tl-alert { color: var(–r); }
-.tl-info  { color: var(–b); }
-.tl-ok    { color: var(–g); }
-
-/* ── ANIMATIONS ──────────────────────────────────── */
-@keyframes pulse-glow {
-0%,100% { text-shadow: 0 0 20px var(–g), 0 0 40px #003300; }
-50% { text-shadow: 0 0 40px var(–g), 0 0 80px #00aa44, 0 0 120px #004400; }
-}
-@keyframes fadeIn { to { opacity: 1; } }
-@keyframes slideIn { from { opacity:0; transform:translateX(-6px); } to { opacity:0.9; transform:none; } }
-@keyframes scanroll { from { background-position: 0 0; } to { background-position: 0 100px; } }
-@keyframes radar-pulse {
-0%   { box-shadow: 0 0 0 0 rgba(0,255,65,0.5); }
-70%  { box-shadow: 0 0 0 60px rgba(0,255,65,0); }
-100% { box-shadow: 0 0 0 0 rgba(0,255,65,0); }
-}
-@keyframes blink { 50% { opacity: 0.3; } }
+/* ANIMATIONS */
+@keyframes gpulse{0%,100%{text-shadow:0 0 20px var(–g),0 0 40px #003300;}
+50%{text-shadow:0 0 45px var(–g),0 0 90px #00aa44;}}
+@keyframes fi{to{opacity:1;}}
+@keyframes si{from{opacity:0;transform:translateX(-5px);}to{opacity:.93;transform:none;}}
+@keyframes scanroll{from{background-position:0 0;}to{background-position:0 120px;}}
+@keyframes rpulse{0%{box-shadow:0 0 0 0 rgba(0,255,65,.5);}
+70%{box-shadow:0 0 0 70px rgba(0,255,65,0);}100%{box-shadow:0 0 0 0 rgba(0,255,65,0);}}
 </style>
 
 </head>
 <body>
 
-<!-- BOOT -->
-
 <div id="boot">
   <div id="boot-logo">myEYE</div>
-  <div id="boot-sub">VISION OS // v2.0</div>
+  <div id="boot-sub">VISION OS // v3.0</div>
   <div id="boot-log"></div>
-  <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+  <div id="pb-wrap"><div id="pb"></div></div>
   <button id="btn-start" onclick="initCamera()">[ ACTIVATE ]</button>
 </div>
 
-<!-- APP -->
-
 <div id="app" style="display:none;">
-  <div id="viewport">
+  <div id="vp">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="canvas"></canvas>
+    <div class="hc" id="hc-tl"></div><div class="hc" id="hc-tr"></div>
+    <div class="hc" id="hc-bl"></div><div class="hc" id="hc-br"></div>
+    <div id="xhair"></div><div id="radar"></div>
 
 ```
-<!-- HUD corners -->
-<div class="hud-corner" id="hc-tl"></div>
-<div class="hud-corner" id="hc-tr"></div>
-<div class="hud-corner" id="hc-bl"></div>
-<div class="hud-corner" id="hc-br"></div>
+<button id="night-btn" onclick="toggleNight()">☾ NIGHT</button>
 
-<!-- Radar -->
-<div id="radar-ring"></div>
-
-<!-- Top bar -->
 <div id="topbar">
   <div id="sys-id">myEYE</div>
-  <div id="sys-badges">
-    <div class="badge active" id="b-fps">-- FPS</div>
-    <div class="badge active" id="b-obj">0 OBJ</div>
+  <div id="badges">
+    <div class="badge hi" id="b-fps">-- FPS</div>
+    <div class="badge hi" id="b-obj">0 OBJ</div>
     <div class="badge" id="b-mode">SCAN</div>
+    <div class="badge" id="b-rng">STD</div>
   </div>
 </div>
 
-<!-- Right panel -->
 <div id="rpanel">
-  <div class="rstat">PERSONS<span id="cnt-person">0</span></div>
-  <div class="rstat">VEHICLES<span id="cnt-vehicle">0</span></div>
-  <div class="rstat">OBJECTS<span id="cnt-other">0</span></div>
+  <div class="rs">HUMANS<span id="cp">0</span></div>
+  <div class="rs">VEHICLES<span id="cv">0</span></div>
+  <div class="rs">ANIMALS<span id="ca">0</span></div>
+  <div class="rs">OBJECTS<span id="co">0</span></div>
 </div>
 
-<!-- Bottom stats -->
 <div id="statbar">
-  <div class="stat-cell">MAX DIST<span id="s-dist">---</span></div>
-  <div class="stat-cell">THREATS<span id="s-threat">0</span></div>
-  <div class="stat-cell">CONF AVG<span id="s-conf">---%</span></div>
-  <div class="stat-cell">ZONE<span id="s-zone">---</span></div>
+  <div class="sc">FARTHEST<span id="s-dist">---</span></div>
+  <div class="sc">THREATS<span id="s-thr">0</span></div>
+  <div class="sc">CONF AVG<span id="s-conf">---%</span></div>
+  <div class="sc">TRACKED<span id="s-trk">0</span></div>
+</div>
+
+<div id="info-panel">
+  <button id="info-close" onclick="closeInfo()">✕ CLOSE</button>
+  <div id="info-title">---</div>
+  <div id="info-grid"></div>
+  <div id="info-desc"></div>
 </div>
 ```
 
   </div>
 
   <div id="terminal">
-    <div id="term-header">
-      <span>NEURAL_FEED</span>
-    </div>
+    <div id="term-hdr"><span>NEURAL_FEED // TAP BOX → OBJECT REPORT</span></div>
     <div id="term-lines"></div>
   </div>
 </div>
 
 <script>
-// ── CONFIG ────────────────────────────────────────────
-const CFG = {
-  FOCAL: 700,       // px — калибровка дальности
-  OBJ_H: {          // реальная высота объектов (м) для расчёта дистанции
-    person:1.75, car:1.5, truck:2.8, bus:3.2, motorcycle:1.1,
-    bicycle:1.0, traffic_light:0.4, stop_sign:0.75, bench:0.9,
-    chair:0.9, dog:0.45, cat:0.35, bird:0.25, horse:1.6,
-    backpack:0.5, suitcase:0.65, bottle:0.28, cup:0.12,
-    'cell phone':0.15, laptop:0.03, keyboard:0.04,
-    tv:0.6, clock:0.35, book:0.22,
-    default:1.0
-  },
-  THREAT: new Set(['person','car','truck','bus','motorcycle']),
-  DRAW_CONF: 0.22,   // порог отрисовки (ниже — не рисуем)
-  MAX_DETECT: 40,
-  FRAME_SKIP: 2,     // детектить каждые N кадров
+// ═══════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════
+const CFG={
+  FOCAL:900,        // увеличен для лучшей дальности
+  CONF:0.17,        // агрессивный порог
+  MAX_DET:50,
+  SKIP:2,           // детекция каждые 2 кадра
+  SMOOTH:0.5,       // сила сглаживания bbox
+  TTL:20,           // кадров удерживать трек
+  IOU:0.2           // порог сопоставления
 };
 
-// Цвета по классу
-const COL = {
-  person:'#ffff00', car:'#ff2244', truck:'#ff2244', bus:'#ff2244',
-  motorcycle:'#ff6600', bicycle:'#ffaa00',
-  'traffic light':'#ff9900', 'stop sign':'#ff9900',
-  bench:'#aaaaaa', chair:'#aaaaaa',
-  dog:'#ff88ff', cat:'#ff88ff', bird:'#ff88ff', horse:'#ff88ff',
-  backpack:'#00ffff', suitcase:'#00ffff',
-  bottle:'#88ff88', cup:'#88ff88',
-  'cell phone':'#88aaff', laptop:'#88aaff', tv:'#88aaff',
-  clock:'#cccccc', book:'#cccccc',
-  _default:'#00ff41'
+// ─── РАСШИРЕННАЯ БАЗА ──────────────
+const OBJ_H={
+  // люди
+  person:1.75,
+  // транспорт
+  car:1.55,truck:2.9,bus:3.3,motorcycle:1.15,bicycle:1.05,
+  'fire hydrant':0.65,'stop sign':0.8,'parking meter':1.3,
+  'traffic light':0.45,
+  // животные
+  bird:0.22,cat:0.32,dog:0.50,horse:1.65,sheep:0.85,
+  cow:1.45,elephant:2.8,bear:1.2,zebra:1.5,giraffe:4.5,
+  // мебель
+  chair:0.9,couch:0.85,bench:0.95,'potted plant':0.7,
+  bed:0.55,'dining table':0.78,toilet:0.42,
+  // электроника
+  tv:0.65,laptop:0.04,mouse:0.04,remote:0.03,
+  keyboard:0.04,'cell phone':0.15,microwave:0.35,
+  oven:0.65,toaster:0.22,sink:0.25,refrigerator:1.8,
+  // кухня / еда
+  bottle:0.28,cup:0.12,fork:0.2,knife:0.22,spoon:0.18,
+  bowl:0.12,banana:0.2,apple:0.08,sandwich:0.08,orange:0.08,
+  broccoli:0.25,carrot:0.2,hotdog:0.15,pizza:0.05,donut:0.06,cake:0.15,
+  // разное
+  backpack:0.55,umbrella:0.9,handbag:0.35,tie:0.02,suitcase:0.7,
+  frisbee:0.03,skis:0.18,snowboard:0.25,'sports ball':0.22,kite:0.5,
+  'baseball bat':0.9,'baseball glove':0.25,skateboard:0.15,
+  surfboard:0.6,'tennis racket':0.7,book:0.22,clock:0.35,
+  vase:0.3,scissors:0.2,'teddy bear':0.35,'hair drier':0.18,toothbrush:0.2,
+  default:1.0
 };
 
-function getColor(cls){ return COL[cls] || COL._default; }
+const CAT={
+  HUMAN:['person'],
+  VEHICLE:['car','truck','bus','motorcycle','bicycle'],
+  ANIMAL:['bird','cat','dog','horse','sheep','cow','elephant','bear','zebra','giraffe']
+};
+const THREAT=new Set(['person','car','truck','bus','motorcycle']);
 
-// Метки угрозы
-const THREAT_LABEL = {
-  person:'HUMAN', car:'VEHICLE', truck:'HVY_VEHICLE',
-  bus:'HVY_VEHICLE', motorcycle:'MOTO'
+const COL={
+  person:'#ffff00',
+  car:'#ff2244',truck:'#ff2244',bus:'#ff4466',motorcycle:'#ff6600',bicycle:'#ffaa00',
+  'traffic light':'#ff9900','stop sign':'#ff9900','fire hydrant':'#ff6666',
+  bird:'#ff88ff',cat:'#ff88ff',dog:'#ff99ff',horse:'#ffaaff',
+  sheep:'#ddaaff',cow:'#ddaaff',elephant:'#cc88ff',bear:'#bb66ff',
+  zebra:'#ddddff',giraffe:'#ffddaa',
+  chair:'#888888',couch:'#888888',bench:'#aaaaaa','potted plant':'#44ff88',
+  bottle:'#88ff88',cup:'#88ff88',backpack:'#00ffff',
+  'cell phone':'#88aaff',laptop:'#88aaff',tv:'#88aaff',
+  book:'#cccccc',clock:'#cccccc',
+  _d:'#00ff41'
 };
 
-// Дистанция по bbox
-function calcDist(bbox, cls){
-  const [,, w, h] = bbox;
-  const realH = CFG.OBJ_H[cls] || CFG.OBJ_H.default;
-  const px = Math.max(w, h);
-  if(px < 4) return 999;
-  return Math.min(999, (CFG.FOCAL * realH / px).toFixed(1));
+const DESC={
+  person:'Обнаружен человек. Оценка позы и траектории активна.',
+  car:'Легковой автомобиль. Классификация по габаритам кузова.',
+  truck:'Грузовой транспорт. Повышенная зона риска вблизи.',
+  bus:'Пассажирский автобус. Возможно скопление людей.',
+  motorcycle:'Двухколёсный моторизованный транспорт.',
+  bicycle:'Немоторизованный двухколёсный транспорт.',
+  dog:'Собака. Классифицировано по силуэту.',
+  cat:'Кошка. Малогабаритное животное.',
+  bird:'Птица. Малый объект.',
+  'cell phone':'Мобильное устройство.',
+  laptop:'Портативный компьютер.',
+  bottle:'Ёмкость бутылочного типа.',
+  backpack:'Рюкзак / носимый груз.',
+  'traffic light':'Светофор. Элемент дорожной инфраструктуры.',
+  'stop sign':'Дорожный знак СТОП.',
+  chair:'Предмет мебели — стул.',
+  couch:'Предмет мебели — диван.',
+  tv:'Экранное устройство — телевизор.',
+  elephant:'Крупное животное. Опасная дистанция менее 20м.',
+  horse:'Лошадь. Крупное животное.',
+  _d:'Объект идентифицирован нейросетью COCO-SSD.'
+};
+
+function getCol(c){return COL[c]||COL._d;}
+function getDesc(c){return DESC[c]||DESC._d;}
+function dist(bbox,cls){
+  const rh=OBJ_H[cls]||OBJ_H.default;
+  const px=Math.max(bbox[2],bbox[3]);
+  if(px<3) return 999;
+  return Math.min(999,+(CFG.FOCAL*rh/px).toFixed(1));
+}
+function hexA(hex,a){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function iou(a,b){
+  const ix=Math.max(a[0],b[0]),iy=Math.max(a[1],b[1]);
+  const iw=Math.min(a[0]+a[2],b[0]+b[2])-ix,ih=Math.min(a[1]+a[3],b[1]+b[3])-iy;
+  if(iw<=0||ih<=0) return 0;
+  return (iw*ih)/(a[2]*a[3]+b[2]*b[3]-iw*ih);
+}
+function lerp(a,b,t){return a+(b-a)*t;}
+
+// ═══════════════════════════════════
+//  TRACKER — стабильные рамки
+// ═══════════════════════════════════
+class Tracker{
+  constructor(){this.tracks={};this.nid=1;}
+  update(preds){
+    // age all
+    for(const k of Object.keys(this.tracks)){
+      const t=this.tracks[k];
+      t.age++;t.seen=false;
+      if(t.age>CFG.TTL) delete this.tracks[k];
+    }
+    for(const p of preds){
+      let best=null,bs=CFG.IOU;
+      for(const t of Object.values(this.tracks)){
+        if(t.cls!==p.class) continue;
+        const s=iou(t.sm,p.bbox);
+        if(s>bs){bs=s;best=t;}
+      }
+      if(best){
+        // smooth interpolation
+        best.sm=best.sm.map((v,i)=>lerp(v,p.bbox[i],CFG.SMOOTH));
+        best.score=p.score;best.age=0;best.seen=true;
+        p._tid=best.id;
+      } else {
+        const id=this.nid++;
+        this.tracks[id]={id,cls:p.class,sm:[...p.bbox],score:p.score,age:0,seen:true,born:Date.now()};
+        p._tid=id;
+      }
+    }
+    return preds;
+  }
+  sm(tid){return this.tracks[tid]?.sm;}
+  alive(tid){return Math.round((Date.now()-(this.tracks[tid]?.born||Date.now()))/1000);}
 }
 
-// ── STATE ─────────────────────────────────────────────
-const video  = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx    = canvas.getContext('2d');
-const termEl = document.getElementById('term-lines');
+// ═══════════════════════════════════
+//  STATE
+// ═══════════════════════════════════
+const video=document.getElementById('video');
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const termEl=document.getElementById('term-lines');
+let model=null,running=false,frameN=0;
+let lastPred=[],lastFpsT=0,fpsCnt=0;
+let termQ=[],logThr={};
+let nightMode=false,selTid=null;
+const tracker=new Tracker();
 
-let model = null, running = false, frameN = 0;
-let lastPred = [], lastFpsTime = 0, fpsAccum = 0, fpsCnt = 0;
-let termQueue = [];
-
-// ── BOOT SEQUENCE ─────────────────────────────────────
-const bootLog = document.getElementById('boot-log');
-const progressBar = document.getElementById('progress-bar');
-const bootLines = [
-  [0,   "INIT VISION_OS v2.0..."],
-  [400, "TENSORFLOW_LITE: LOAD"],
-  [700, "COCO-SSD ENGINE: LOADING..."],
-  [900, "OBJECT_DB: 80 CLASSES REGISTERED"],
-  [1100,"MOTION_SENSOR: CALIBRATED"],
-  [1300,"DISTANCE_MODULE: READY"],
-  [1500,"THREAT_CLASSIFIER: ACTIVE"],
+// ═══════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════
+const bootLog=document.getElementById('boot-log');
+const pbEl=document.getElementById('pb');
+const BOOT=[
+  [0,   "INIT VISION_OS v3.0..."],
+  [300, "TENSORFLOW_JS: LOADING"],
+  [550, "WEBGL_BACKEND: ACTIVE"],
+  [800, "COCO-SSD: FETCHING MODEL..."],
+  [1050,"OBJECT_DB: 80 CLASSES + META EXTENDED"],
+  [1250,"TRACKER: SMOOTH_BOX INTERPOLATION ON"],
+  [1450,"RANGE_MODULE: FOCAL=900px READY"],
+  [1650,"NIGHT_VISION: STANDBY"],
+  [1850,"TAP_INSPECTOR: READY"],
 ];
-
-async function bootSequence(){
-  // show lines with animation
-  let p = 0;
-  for(const [delay, text] of bootLines){
-    await sleep(delay - p);
-    p = delay;
-    addBootLine(text);
-    progressBar.style.width = ((bootLines.indexOf([delay,text])+1)/bootLines.length*70)+'%';
+async function bootSeq(){
+  let prev=0;
+  for(let i=0;i<BOOT.length;i++){
+    const[d,t]=BOOT[i];
+    await sl(d-prev);prev=d;
+    bline(t);pbEl.style.width=((i+1)/BOOT.length*65)+'%';
   }
-  // load model
-  try {
+  try{
     await tf.ready();
-    tf.env().set('WEBGL_CPU_FORWARD', false);
-    model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-    addBootLine("NEURAL_ENGINE: ONLINE ✓");
-    progressBar.style.width = '100%';
-    await sleep(300);
-    document.getElementById('btn-start').style.display = 'block';
-  } catch(e){
-    addBootLine("ERR: BOOT_FAILURE — "+e.message);
-  }
+    tf.env().set('WEBGL_CPU_FORWARD',false);
+    model=await cocoSsd.load({base:'lite_mobilenet_v2'});
+    bline("NEURAL ENGINE: ONLINE ✓");
+    pbEl.style.width='100%';
+    await sl(300);
+    document.getElementById('btn-start').style.display='block';
+  }catch(e){bline("ERR: "+e.message);}
 }
-
-function addBootLine(txt){
-  const d = document.createElement('div');
-  d.className = 'bl'; d.textContent = '> '+txt;
-  bootLog.appendChild(d);
+function bline(t){
+  const d=document.createElement('div');
+  d.className='bl';d.textContent='> '+t;
+  bootLog.appendChild(d);bootLog.scrollTop=bootLog.scrollHeight;
 }
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function sl(ms){return new Promise(r=>setTimeout(r,ms));}
 
-// ── CAMERA INIT ───────────────────────────────────────
+// ═══════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════
 async function initCamera(){
   document.getElementById('btn-start').style.display='none';
-  addBootLine("CAMERA: REQUESTING ACCESS...");
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720},
-              frameRate:{ideal:30} }
+  bline("CAMERA: REQUESTING...");
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}}
     });
-    video.srcObject = stream;
-    video.onloadedmetadata = () => {
+    video.srcObject=s;
+    video.onloadedmetadata=()=>{
       video.play();
-      document.getElementById('boot').style.transition='opacity 0.5s';
-      document.getElementById('boot').style.opacity='0';
-      setTimeout(()=>{
-        document.getElementById('boot').style.display='none';
-        document.getElementById('app').style.display='flex';
-      },500);
-      running = true;
-      log("SYSTEM ONLINE // VISION_OS v2.0", 'ok');
-      log("COCO-SSD ENGINE: 80 OBJECT CLASSES", 'info');
-      log("AWAITING SCENE DATA...", 'ok');
+      const boot=document.getElementById('boot');
+      boot.style.transition='opacity .5s';boot.style.opacity='0';
+      setTimeout(()=>{boot.style.display='none';document.getElementById('app').style.display='flex';},500);
+      running=true;
+      log("VISION_OS v3.0 ONLINE",'ok');
+      log("SMOOTH_TRACKER: ACTIVE | 80 CLASSES",'info');
+      log("TAP ANY BOX → FULL OBJECT REPORT",'info');
       requestAnimationFrame(renderLoop);
     };
-  } catch(err){
-    addBootLine("ERR: CAMERA ACCESS DENIED");
+  }catch(e){
+    bline("ERR: "+e.message);
     document.getElementById('btn-start').style.display='block';
   }
 }
 
-// ── TERMINAL ──────────────────────────────────────────
-function log(txt, type='ok'){
-  termQueue.push({txt, type});
-  if(termQueue.length > 30) termQueue.shift();
-  renderTerm();
-}
-function renderTerm(){
-  const lines = termQueue.slice(-6);
-  termEl.innerHTML = '';
-  lines.forEach(({txt, type}) => {
-    const d = document.createElement('div');
-    d.className = 'tl tl-'+type;
-    d.textContent = '> '+txt;
+// ═══════════════════════════════════
+//  TERMINAL
+// ═══════════════════════════════════
+function log(txt,type='ok'){
+  termQ.push({txt,type});
+  if(termQ.length>40) termQ.shift();
+  const lines=termQ.slice(-5);
+  termEl.innerHTML='';
+  lines.forEach(({txt:t,type:tp})=>{
+    const d=document.createElement('div');
+    d.className='tl t'+tp;d.textContent='> '+t;
     termEl.appendChild(d);
   });
 }
-
-// ── DETECTION CATEGORIES ─────────────────────────────
-let logThrottle = {};
-function shouldLogClass(cls){
-  const now = Date.now();
-  if(!logThrottle[cls] || now-logThrottle[cls] > 3000){
-    logThrottle[cls] = now; return true;
-  }
+function canLog(cls){
+  const now=Date.now();
+  if(!logThr[cls]||now-logThr[cls]>4000){logThr[cls]=now;return true;}
   return false;
 }
 
-// ── RENDER LOOP ───────────────────────────────────────
+// ═══════════════════════════════════
+//  NIGHT MODE
+// ═══════════════════════════════════
+function toggleNight(){
+  nightMode=!nightMode;
+  video.style.filter=nightMode
+    ?'brightness(.4) contrast(1.7) saturate(0) sepia(.9) hue-rotate(80deg)'
+    :'brightness(.55) contrast(1.38) saturate(.88)';
+  document.getElementById('night-btn').textContent=nightMode?'☀ DAY':'☾ NIGHT';
+  log('NIGHT_MODE: '+(nightMode?'ON':'OFF'),nightMode?'warn':'ok');
+}
+
+// ═══════════════════════════════════
+//  TAP → INFO PANEL
+// ═══════════════════════════════════
+canvas.addEventListener('click',handleTap);
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  const t=e.touches[0];
+  handleTap({clientX:t.clientX,clientY:t.clientY});
+},{passive:false});
+
+function handleTap(e){
+  if(!lastPred.length){closeInfo();return;}
+  const rect=canvas.getBoundingClientRect();
+  const sx=canvas.width/rect.width,sy=canvas.height/rect.height;
+  const cx=(e.clientX-rect.left)*sx,cy=(e.clientY-rect.top)*sy;
+  let hit=null,ba=Infinity;
+  for(const p of lastPred){
+    const b=tracker.sm(p._tid)||p.bbox;
+    const[x,y,w,h]=b;
+    if(cx>=x&&cx<=x+w&&cy>=y&&cy<=y+h){
+      const a=w*h;if(a<ba){ba=a;hit=p;}
+    }
+  }
+  if(hit) showInfo(hit);
+  else closeInfo();
+}
+
+function showInfo(p){
+  selTid=p._tid;
+  const b=tracker.sm(p._tid)||p.bbox;
+  const[x,y,w,h]=b;
+  const cls=p.class,conf=Math.round(p.score*100);
+  const d=dist(b,cls),dTxt=d<999?d+'m':'>300m';
+  const col=getCol(cls);
+  const alive=tracker.alive(p._tid);
+  const zone=`${Math.round(x+w/2)}×${Math.round(y+h/2)}`;
+  const sz=`${Math.round(w)}×${Math.round(h)}px`;
+  const isThr=THREAT.has(cls);
+  const cat=CAT.HUMAN.includes(cls)?'HUMAN':CAT.VEHICLE.includes(cls)?'VEHICLE':
+             CAT.ANIMAL.includes(cls)?'ANIMAL':'OBJECT';
+  const rows=[
+    ['CLASS',cls.toUpperCase()],['CATEGORY',cat],
+    ['DISTANCE',dTxt],['CONFIDENCE',conf+'%'],
+    ['THREAT',isThr?'⚠ YES':'NO'],
+    ['BBOX',sz],['CENTER',zone],
+    ['TRACK ID','#'+p._tid],['ALIVE',alive+'s'],
+  ];
+  document.getElementById('info-title').textContent=cls.toUpperCase();
+  document.getElementById('info-title').style.color=col;
+  document.getElementById('info-grid').innerHTML=
+    rows.map(([k,v])=>`<div class="ik">${k}</div><div class="iv">${v}</div>`).join('');
+  document.getElementById('info-desc').textContent=getDesc(cls);
+  document.getElementById('info-panel').classList.add('open');
+  log(`[TAP] ${cls.toUpperCase()} #${p._tid} — ${dTxt} CONF:${conf}% ALIVE:${alive}s`,'tap');
+}
+function closeInfo(){
+  selTid=null;
+  document.getElementById('info-panel').classList.remove('open');
+}
+
+// ═══════════════════════════════════
+//  RENDER LOOP
+// ═══════════════════════════════════
 async function renderLoop(now){
-  if(!running){ requestAnimationFrame(renderLoop); return; }
-
-  // FPS
+  if(!running){requestAnimationFrame(renderLoop);return;}
   fpsCnt++;
-  if(now - lastFpsTime > 800){
-    const fps = Math.round(fpsCnt*1000/(now-lastFpsTime));
-    document.getElementById('b-fps').textContent = fps+' FPS';
-    fpsCnt = 0; lastFpsTime = now;
+  if(now-lastFpsT>700){
+    document.getElementById('b-fps').textContent=Math.round(fpsCnt*1000/(now-lastFpsT))+' FPS';
+    fpsCnt=0;lastFpsT=now;
   }
-
   frameN++;
-  if(frameN % CFG.FRAME_SKIP === 0 && video.readyState === 4){
-    canvas.width  = video.videoWidth  || 640;
-    canvas.height = video.videoHeight || 480;
-
-    try {
-      lastPred = await model.detect(video, CFG.MAX_DETECT, CFG.DRAW_CONF);
-    } catch(e){}
-
-    drawScene(lastPred);
-    updateHUD(lastPred);
+  if(frameN%CFG.SKIP===0&&video.readyState===4){
+    canvas.width=video.videoWidth||640;
+    canvas.height=video.videoHeight||480;
+    try{
+      const raw=await model.detect(video,CFG.MAX_DET,CFG.CONF);
+      lastPred=tracker.update(raw);
+    }catch(e){}
+    draw();
+    updateHUD();
   }
-
   requestAnimationFrame(renderLoop);
 }
 
-// ── DRAW ──────────────────────────────────────────────
-function drawScene(preds){
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  preds.forEach(p => {
-    const [x, y, w, h] = p.bbox;
-    const cls   = p.class;
-    const conf  = p.score;
-    const dist  = calcDist(p.bbox, cls);
-    const color = getColor(cls);
-    const isThreat = CFG.THREAT.has(cls);
-    const isFar = dist > 60;
+// ═══════════════════════════════════
+//  DRAW
+// ═══════════════════════════════════
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(const p of lastPred){
+    const sm=tracker.sm(p._tid)||p.bbox;
+    const[x,y,w,h]=sm;
+    const cls=p.class,conf=p.score;
+    const d=dist(sm,cls);
+    const col=getCol(cls);
+    const isThr=THREAT.has(cls);
+    const isFar=d>80;
+    const isSel=p._tid===selTid;
 
     ctx.save();
 
-    // Box
-    ctx.lineWidth   = isThreat ? 2 : 1.5;
-    ctx.strokeStyle = color;
-    if(isFar){
-      ctx.setLineDash([6,4]);
-      ctx.globalAlpha = 0.7;
-    } else {
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
+    // fill
+    ctx.fillStyle=hexA(col,isSel?.15:.05);
+    ctx.fillRect(x,y,w,h);
+
+    // box stroke
+    ctx.globalAlpha=isFar?.62:1;
+    ctx.lineWidth=isThr?2.5:1.8;
+    ctx.strokeStyle=col;
+    ctx.setLineDash(isFar?[7,4]:[]);
+    ctx.strokeRect(x,y,w,h);
+    ctx.setLineDash([]);ctx.globalAlpha=1;
+
+    // selection glow
+    if(isSel){
+      ctx.strokeStyle=col;ctx.lineWidth=4;ctx.globalAlpha=.3;
+      ctx.strokeRect(x-3,y-3,w+6,h+6);
+      ctx.globalAlpha=1;
     }
 
-    // Filled bg
-    ctx.fillStyle = hexAlpha(color, 0.06);
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
+    // corner brackets
+    corners(x,y,w,h,col,isThr?3:2);
 
-    // Corners
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
-    drawCorners(x, y, w, h, color, isThreat ? 3 : 2);
+    // label bg
+    const lh=32,pad=4,lw2=Math.min(w,195);
+    const ly=y>lh+2?y-lh:y+h;
+    ctx.fillStyle='rgba(0,0,0,.8)';ctx.fillRect(x,ly,lw2,lh);
+    ctx.fillStyle=col;ctx.fillRect(x,ly,2,lh); // accent bar
 
-    // Label bg
-    const labelH = 34, padding = 4;
-    const labelY = y > labelH + 2 ? y - labelH : y + h;
-    ctx.fillStyle = hexAlpha('#000000', 0.75);
-    ctx.fillRect(x, labelY, Math.min(w, 180), labelH);
+    // label: class name
+    ctx.fillStyle=col;
+    ctx.font=`bold ${isThr?11:10}px 'Share Tech Mono',monospace`;
+    ctx.fillText(cls.toUpperCase(),x+pad+2,ly+12);
 
-    // Label text
-    ctx.fillStyle = color;
-    ctx.font = `bold ${isThreat ? 11 : 10}px 'Share Tech Mono', monospace`;
-    ctx.fillText((THREAT_LABEL[cls] || cls).toUpperCase(), x+padding, labelY+13);
+    // label: dist · conf · id
+    ctx.fillStyle='rgba(200,255,200,.78)';
+    ctx.font='8.5px monospace';
+    const dTxt=d<999?d+'m':'>300m';
+    ctx.fillText(`${dTxt} · ${Math.round(conf*100)}% · #${p._tid}`,x+pad+2,ly+24);
 
-    ctx.fillStyle = 'rgba(200,255,200,0.8)';
-    ctx.font = `9px 'Share Tech Mono', monospace`;
-    const distTxt = dist < 999 ? `${dist}m` : '>200m';
-    ctx.fillText(`DIST:${distTxt}  CONF:${Math.round(conf*100)}%`, x+padding, labelY+26);
-
-    // Threat indicator
-    if(isThreat){
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3,3]);
-      ctx.beginPath();
-      ctx.moveTo(x+w/2, y); ctx.lineTo(x+w/2, Math.max(0, y-20));
-      ctx.stroke();
+    // threat spike
+    if(isThr){
+      ctx.strokeStyle=col;ctx.lineWidth=1;ctx.setLineDash([3,3]);
+      ctx.beginPath();ctx.moveTo(x+w/2,y);ctx.lineTo(x+w/2,Math.max(0,y-16));
+      ctx.stroke();ctx.setLineDash([]);
     }
+
+    // tap dot (bottom-right)
+    ctx.fillStyle=hexA(col,.5);
+    ctx.beginPath();ctx.arc(x+w-5,y+h-5,3,0,Math.PI*2);ctx.fill();
 
     ctx.restore();
-  });
-}
-
-function drawCorners(x, y, w, h, color, lw){
-  const s = Math.min(16, w*0.25, h*0.25);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lw;
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  // TL
-  ctx.moveTo(x,y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-  // TR
-  ctx.moveTo(x+w-s,y); ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+s);
-  // BL
-  ctx.moveTo(x,y+h-s); ctx.lineTo(x,y+h); ctx.lineTo(x+s,y+h);
-  // BR
-  ctx.moveTo(x+w-s,y+h); ctx.lineTo(x+w,y+h); ctx.lineTo(x+w,y+h-s);
-  ctx.stroke();
-}
-
-function hexAlpha(hex, a){
-  const r=parseInt(hex.slice(1,3),16);
-  const g=parseInt(hex.slice(3,5),16);
-  const b=parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-// ── HUD UPDATE ────────────────────────────────────────
-let logTimer = 0;
-function updateHUD(preds){
-  const total = preds.length;
-  document.getElementById('b-obj').textContent = total+' OBJ';
-
-  let persons=0, vehicles=0, other=0, threats=0;
-  let maxDist=0, confSum=0;
-
-  preds.forEach(p => {
-    const cls = p.class;
-    const dist = parseFloat(calcDist(p.bbox, cls));
-    confSum += p.score;
-    if(dist > maxDist) maxDist = dist;
-    if(cls==='person') persons++;
-    else if(['car','truck','bus','motorcycle','bicycle'].includes(cls)) vehicles++;
-    else other++;
-    if(CFG.THREAT.has(cls)) threats++;
-
-    // Log notable detections
-    if(shouldLogClass(cls)){
-      const d = dist < 999 ? dist+'m' : '>200m';
-      const type = CFG.THREAT.has(cls)?'warn':'info';
-      log(`${(THREAT_LABEL[cls]||cls).toUpperCase()} DETECTED — DIST: ${d} CONF: ${Math.round(p.score*100)}%`, type);
-    }
-  });
-
-  document.getElementById('cnt-person').textContent  = persons;
-  document.getElementById('cnt-vehicle').textContent = vehicles;
-  document.getElementById('cnt-other').textContent   = other;
-  document.getElementById('s-dist').textContent    = maxDist > 0 ? maxDist.toFixed(0)+'m' : '---';
-  document.getElementById('s-threat').textContent  = threats;
-  document.getElementById('s-conf').textContent    = total > 0 ? Math.round(confSum/total*100)+'%' : '---%';
-  document.getElementById('s-zone').textContent    = canvas.width ? Math.round(canvas.width)+'x'+Math.round(canvas.height) : '---';
-
-  // Mode badge
-  const modeEl = document.getElementById('b-mode');
-  if(threats > 0){
-    modeEl.textContent = 'THREAT'; modeEl.style.borderColor='var(--r)'; modeEl.style.color='var(--r)';
-  } else if(total > 0){
-    modeEl.textContent = 'ACTIVE'; modeEl.style.borderColor='var(--g)'; modeEl.style.color='var(--g)';
-  } else {
-    modeEl.textContent = 'SCAN'; modeEl.style.borderColor=''; modeEl.style.color='';
   }
 }
 
-// ── START ─────────────────────────────────────────────
-bootSequence();
+function corners(x,y,w,h,col,lw){
+  const s=Math.min(18,w*.28,h*.28);
+  ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(x,y+s);ctx.lineTo(x,y);ctx.lineTo(x+s,y);
+  ctx.moveTo(x+w-s,y);ctx.lineTo(x+w,y);ctx.lineTo(x+w,y+s);
+  ctx.moveTo(x,y+h-s);ctx.lineTo(x,y+h);ctx.lineTo(x+s,y+h);
+  ctx.moveTo(x+w-s,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w,y+h-s);
+  ctx.stroke();
+}
+
+// ═══════════════════════════════════
+//  HUD
+// ═══════════════════════════════════
+function updateHUD(){
+  const total=lastPred.length;
+  document.getElementById('b-obj').textContent=total+' OBJ';
+  let P=0,V=0,A=0,O=0,thr=0,maxD=0,cSum=0;
+  lastPred.forEach(p=>{
+    const cls=p.class;
+    const d=parseFloat(dist(tracker.sm(p._tid)||p.bbox,cls));
+    cSum+=p.score;if(d>maxD) maxD=d;
+    if(CAT.HUMAN.includes(cls)) P++;
+    else if(CAT.VEHICLE.includes(cls)) V++;
+    else if(CAT.ANIMAL.includes(cls)) A++;
+    else O++;
+    if(THREAT.has(cls)) thr++;
+    if(canLog(cls)){
+      const dTxt=d<999?d+'m':'>300m';
+      log(`${cls.toUpperCase()} — ${dTxt} CONF:${Math.round(p.score*100)}%`,THREAT.has(cls)?'warn':'info');
+    }
+  });
+  document.getElementById('cp').textContent=P;
+  document.getElementById('cv').textContent=V;
+  document.getElementById('ca').textContent=A;
+  document.getElementById('co').textContent=O;
+  document.getElementById('s-dist').textContent=maxD>0?maxD.toFixed(0)+'m':'---';
+  document.getElementById('s-thr').textContent=thr;
+  document.getElementById('s-conf').textContent=total>0?Math.round(cSum/total*100)+'%':'---%';
+  document.getElementById('s-trk').textContent=Object.keys(tracker.tracks).length;
+  // range badge
+  const rb=document.getElementById('b-rng');
+  rb.textContent=maxD>150?'LONG':(maxD>60?'MED':'STD');
+  rb.className=maxD>150?'badge wn':(maxD>60?'badge hi':'badge');
+  // mode badge
+  const mb=document.getElementById('b-mode');
+  if(thr>0){mb.textContent='THREAT';mb.className='badge al';}
+  else if(total>0){mb.textContent='ACTIVE';mb.className='badge hi';}
+  else{mb.textContent='SCAN';mb.className='badge';}
+}
+
+bootSeq();
 </script>
 
 </body>
