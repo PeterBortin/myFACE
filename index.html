@@ -3,166 +3,182 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI SCANNER ULTIMATE</title>
+    <title>AI TERMINAL v7.1 FIXED</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
     <style>
-        :root { --green: #00ff41; --blue: #0084ff; }
+        :root { 
+            --white: #ffffff;
+            --yellow: #ffff00;
+            --orange: #ff6600;
+            --red: #ff0000;
+            --terminal-bg: rgba(0, 5, 0, 0.95);
+        }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
         
-        #container { position: relative; width: 100vw; height: 100vh; background: #000; }
-        video { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 1; z-index: 1; }
+        #video-wrapper { position: relative; flex: 1; width: 100%; overflow: hidden; }
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
         
+        #terminal { 
+            height: 100px; 
+            width: 100%; 
+            background: var(--terminal-bg); 
+            border-top: 1px solid #222; 
+            z-index: 20; 
+            padding: 20px; 
+            box-sizing: border-box; 
+            display: flex;
+            align-items: center;
+        }
+
+        #term-line {
+            color: #00ff41;
+            font-size: 13px;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 100; display: flex; 
-            flex-direction: column; justify-content: center; align-items: center;
-            color: var(--green); text-align: center;
+            flex-direction: column; justify-content: center; align-items: center; color: #00ff41;
         }
-
         button {
-            background: rgba(0, 255, 65, 0.1); border: 1px solid var(--green);
-            color: var(--green); padding: 20px 40px; font-size: 1rem;
-            cursor: pointer; text-transform: uppercase; letter-spacing: 2px;
-            box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+            background: transparent; border: 1px solid #00ff41;
+            color: #00ff41; padding: 15px 30px; font-size: 14px; cursor: pointer;
+            text-transform: uppercase;
         }
-
-        #log { font-size: 10px; margin-top: 20px; color: #666; width: 80%; }
-        
-        .ui-element { position: absolute; color: var(--green); z-index: 10; font-size: 12px; pointer-events: none; }
-        .top-left { top: 20px; left: 20px; border-left: 2px solid var(--green); padding-left: 10px; }
-        .top-right { top: 20px; right: 20px; color: #ff004c; animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div id="status">SURVEILLANCE SYSTEM v2.0</div>
-    <button id="start-btn">ИНДИВИДУАЛЬНЫЙ ДОСТУП</button>
-    <div id="log">ОЖИДАНИЕ ИНИЦИАЛИЗАЦИИ...</div>
+    <button onclick="startApp()">CONNECTING TO CORE...</button>
 </div>
 
 <div id="container">
-    <!-- playsinline, muted, autoplay — критичны для iPhone -->
-    <video id="video" playsinline muted autoplay></video>
-    <canvas id="canvas"></canvas>
-    
-    <div class="ui-element top-left">
-        SYSTEM: ACTIVE<br>
-        STREAM: 1080p<br>
-        ENCRYPTION: AES-256
+    <div id="video-wrapper">
+        <video id="video" playsinline muted autoplay></video>
+        <canvas id="canvas"></canvas>
     </div>
-    <div class="ui-element top-right">● LIVE FEED</div>
+    <div id="terminal">
+        <div id="term-line">> ИНИЦИАЛИЗАЦИЯ...</div>
+    </div>
 </div>
 
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
-    const startBtn = document.getElementById('start-btn');
-    const log = document.getElementById('log');
-
+    const termLine = document.getElementById('term-line');
+    
     let model = null;
 
-    function writeLog(msg) {
-        log.innerHTML += `<br>> ${msg}`;
+    function updateTerminal(text) {
+        termLine.innerText = "> " + text;
     }
 
-    async function startSystem() {
-        startBtn.style.display = 'none';
-        writeLog("ЗАПРОС КАМЕРЫ...");
-
+    async function startApp() {
         try {
-            // 1. Настройка видеопотока
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 } },
-                audio: false
+                video: { facingMode: 'environment', width: { ideal: 1280 } }
             });
-            
             video.srcObject = stream;
-            
-            // ПРИНУДИТЕЛЬНЫЙ ЗАПУСК (важно для iOS)
-            await new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    video.play().then(resolve);
-                };
-            });
-
-            writeLog("ПОТОК ПОДКЛЮЧЕН. ЗАГРУЗКА НЕЙРОСЕТИ...");
-
-            // 2. Загрузка модели
+            await video.play();
             model = await cocoSsd.load();
-            writeLog("AI ГОТОВ. ЗАПУСК ВИЗУАЛИЗАЦИИ...");
-
-            // Убираем оверлей и начинаем рендер
-            setTimeout(() => {
-                overlay.style.display = 'none';
-                render();
-            }, 500);
-
-        } catch (err) {
-            writeLog(`ОШИБКА: ${err.name}`);
-            console.error(err);
-            alert("Камера недоступна. Убедитесь, что используете Safari на iOS и HTTPS.");
+            document.getElementById('overlay').style.display = 'none';
+            detectFrame();
+        } catch (e) {
+            updateTerminal("ERROR: NO_CAMERA");
         }
     }
 
-    function render() {
-        // Синхронизация холста с видео
-        if (canvas.width !== video.videoWidth) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-        }
-
+    async function detectFrame() {
+        const predictions = await model.detect(video);
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Детекция
-        model.detect(video).then(predictions => {
-            predictions.forEach(p => {
-                if (p.class === 'person') {
-                    const [x, y, w, h] = p.bbox;
+        if (predictions.length > 0) {
+            const p = predictions[0];
+            updateTerminal(`TARGET: ${p.class.toUpperCase()} | POS: ${Math.round(p.bbox[0])},${Math.round(p.bbox[1])} | STATUS: SCANNING`);
+        }
 
-                    // Зеленая рамка (стиль фото 1)
-                    ctx.strokeStyle = '#00ff41';
-                    ctx.lineWidth = 3;
-                    ctx.strokeRect(x, y, w, h);
+        predictions.forEach(p => {
+            const [x, y, w, h] = p.bbox;
+            const label = p.class;
+            
+            // Настройка цветов
+            let color = "#ffffff"; // Предмет (Белый)
+            if (label === 'person') color = "#ffff00"; // Человек (Желтый)
+            if (['car', 'truck', 'bus', 'motorcycle'].includes(label)) color = "#ff0000"; // Авто (Красный)
 
-                    // Сетка внутри рамки (стиль фото 2)
-                    ctx.fillStyle = 'rgba(0, 255, 65, 0.1)';
-                    ctx.fillRect(x, y, w, h);
+            // Контур с тенью
+            ctx.save();
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = "black";
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
 
-                    // Метаданные (стиль фото 1 - синий текст)
-                    ctx.fillStyle = '#0084ff';
-                    ctx.font = '14px monospace';
-                    ctx.fillText(`ID: USER_${Math.floor(p.score * 10000)}`, x + 5, y + 20);
-                    ctx.fillText(`CONFIDENCE: ${Math.round(p.score * 100)}%`, x + 5, y + 40);
+            // 1. Основной пунктирный квадрат
+            ctx.strokeStyle = color;
+            ctx.setLineDash([10, 5]);
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
+            ctx.setLineDash([]); // Сброс пунктира для углов
 
-                    // Угловые скобки (стиль фото 3)
-                    drawBrackets(x, y, w, h);
-                }
-            });
-            requestAnimationFrame(render);
+            // 2. Углы (Сплошные)
+            drawCorners(x, y, w, h, color);
+
+            // 3. Тайтл объекта
+            ctx.fillStyle = color;
+            ctx.font = "bold 16px Courier New";
+            ctx.fillText(label.toUpperCase(), x + 5, y - 12);
+            ctx.restore();
+
+            // 4. Дополнительные детекторы (Оранжевый пунктир)
+            ctx.strokeStyle = "#ff6600";
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1.5;
+
+            if (label === 'person') {
+                // Распознавание головы
+                const hW = w * 0.35;
+                const hH = h * 0.18;
+                ctx.strokeRect(x + (w/2) - (hW/2), y + (h * 0.04), hW, hH);
+            }
+
+            if (['car', 'truck', 'bus'].includes(label)) {
+                // Распознавание колес
+                const wh = w * 0.18;
+                ctx.strokeRect(x + (w * 0.1), y + (h * 0.75), wh, wh);
+                ctx.strokeRect(x + (w * 0.72), y + (h * 0.75), wh, wh);
+            }
+            ctx.setLineDash([]);
         });
+
+        requestAnimationFrame(detectFrame);
     }
 
-    function drawBrackets(x, y, w, h) {
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        const s = 20;
+    function drawCorners(x, y, w, h, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        const s = 25;
         ctx.beginPath();
-        // Сверху-слева
+        // Top Left
         ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
-        // Снизу-справа
+        // Top Right
+        ctx.moveTo(x + w - s, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + s);
+        // Bottom Left
+        ctx.moveTo(x, y + h - s); ctx.lineTo(x, y + h); ctx.lineTo(x + s, y + h);
+        // Bottom Right
         ctx.moveTo(x + w - s, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - s);
         ctx.stroke();
     }
-
-    startBtn.addEventListener('click', startSystem);
 </script>
 </body>
 </html>
