@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>myEYE</title>
+    <title>VISION_OS v9.5 | LiDAR_UPDATE</title>
     
     <!-- Подключаем ядро и WASM для старых CPU -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
@@ -19,16 +19,28 @@
         
         #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
         
-        /* Затемненный видеопоток для контраста */
         #viewport { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
         video { 
             position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: brightness(0.35) contrast(1.3) grayscale(0.1); 
+            filter: brightness(0.35) contrast(1.3) grayscale(0.2); 
             z-index: 1; 
+            transition: filter 0.5s ease;
         }
+        /* Стиль для LiDAR режима (почти полная темнота видео) */
+        video.lidar-mode { filter: brightness(0.05) contrast(2) saturate(0); }
+
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
 
-        /* Терминал дешифровки */
+        /* Панель управления */
+        #ui-layer {
+            position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; gap: 10px;
+        }
+        .ui-btn {
+            background: rgba(0,0,0,0.7); border: 1px solid #00ff41; color: #00ff41;
+            padding: 8px 12px; font-size: 10px; cursor: pointer; text-transform: uppercase;
+        }
+        .ui-btn.active { background: #00ff41; color: #000; }
+
         #terminal { 
             height: 160px; background: var(--bg); border-top: 2px solid #1a1a1a; 
             padding: 15px; box-sizing: border-box; overflow: hidden; font-size: 12px;
@@ -40,7 +52,7 @@
             position: fixed; inset: 0; background: #000; z-index: 100; 
             display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
-        button {
+        #overlay button {
             background: none; border: 1px solid #00ff41; color: #00ff41;
             padding: 15px 40px; cursor: pointer; letter-spacing: 3px;
         }
@@ -49,16 +61,20 @@
 <body>
 
 <div id="overlay">
-    <div style="margin-bottom:20px; font-size:10px;">myEYE Detector System</div>
-    <button onclick="initVision()">доступ к камере</button>
+    <div style="margin-bottom:20px; font-size:10px;">CORE_V9: COMPATIBILITY_MODE_ACTIVE</div>
+    <button onclick="initVision()">BOOT SYSTEM</button>
 </div>
 
 <div id="container">
+    <div id="ui-layer">
+        <button id="btn-std" class="ui-btn active" onclick="setMode('STD')">Vision: STD</button>
+        <button id="btn-lidar" class="ui-btn" onclick="setMode('LIDAR')">Vision: LiDAR</button>
+    </div>
     <div id="viewport" onclick="resetLock()">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
     </div>
-    <div id="terminal" id="term-box">
+    <div id="terminal">
         <div id="term-content"></div>
     </div>
 </div>
@@ -72,6 +88,7 @@
     let model = null;
     let lockedObj = null;
     let predictions = [];
+    let currentMode = 'STD'; // STD или LIDAR
 
     const COLORS = {
         'person': '#ffff00',
@@ -83,7 +100,6 @@
 
     async function initVision() {
         try {
-            // Переключаем на WASM для слабых процессоров
             await tf.setBackend('wasm');
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1280 } }
@@ -102,8 +118,16 @@
         }
     }
 
+    function setMode(mode) {
+        currentMode = mode;
+        document.getElementById('btn-std').classList.toggle('active', mode === 'STD');
+        document.getElementById('btn-lidar').classList.toggle('active', mode === 'LIDAR');
+        video.className = (mode === 'LIDAR') ? 'lidar-mode' : '';
+        writeTerm(`SWITCHING_MODE: ${mode}... OK`);
+    }
+
     // Слушатель клика по рамке
-    viewport.addEventListener('mousedown', (e) => {
+    document.getElementById('viewport').addEventListener('mousedown', (e) => {
         const rect = video.getBoundingClientRect();
         const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
         const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
@@ -153,56 +177,90 @@
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Ограничиваем захват до 10 объектов для производительности
+        // Рисуем сетку LiDAR в фоне, если включен режим
+        if (currentMode === 'LIDAR') {
+            drawLidarGrid();
+        }
+
         const activeTargets = predictions.slice(0, 10);
 
         activeTargets.forEach(p => {
             const [x, y, w, h] = p.bbox;
             const label = p.class;
-            const color = COLORS[label] || COLORS['default'];
+            const dist = ((850 * 0.5) / w); // Расчет дистанции
+            
+            // Цвет в LiDAR зависит от дистанции (от красного-близко до синего-далеко)
+            let color;
+            if (currentMode === 'LIDAR') {
+                const hue = Math.min(240, dist * 20); // 0 (красный) -> 240 (синий)
+                color = `hsl(${240 - hue}, 100%, 50%)`;
+            } else {
+                color = COLORS[label] || COLORS['default'];
+            }
 
             ctx.save();
-            
-            // Если объект выбран - рисуем жирную рамку
             const isLocked = lockedObj && Math.abs(lockedObj.bbox[0] - x) < 5;
             
             ctx.strokeStyle = color;
             ctx.lineWidth = isLocked ? 4 : 2;
-            ctx.setLineDash(isLocked ? [] : [8, 4]);
             
-            // Тень рамок
-            ctx.shadowColor = "black";
-            ctx.shadowBlur = 8;
+            if (currentMode === 'LIDAR') {
+                // В режиме LiDAR рисуем заполненный градиент глубины
+                ctx.globalAlpha = 0.2;
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, w, h);
+                ctx.globalAlpha = 1.0;
+                // Эффект сканирующих линий
+                ctx.beginPath();
+                for(let i=0; i<h; i+=4) {
+                    ctx.moveTo(x, y+i); ctx.lineTo(x+w, y+i);
+                }
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+            } else {
+                ctx.setLineDash(isLocked ? [] : [8, 4]);
+                ctx.strokeRect(x, y, w, h);
+            }
             
-            ctx.strokeRect(x, y, w, h);
-            
-            // Отрисовка данных
+            // Текст данных
             ctx.fillStyle = color;
             ctx.font = "bold 12px Courier New";
             ctx.fillText(`${label.toUpperCase()}`, x, y - 10);
-            
-            // Доп. инфо в тайтле
-            const dist = ((850 * 0.5) / w).toFixed(1);
             ctx.font = "9px Courier New";
-            ctx.fillText(`D:${dist}m | W:${(w*0.1).toFixed(1)}u`, x, y - 22);
+            ctx.fillText(`DIST: ${dist.toFixed(2)}m`, x, y - 22);
 
-            // Специфические элементы (Голова/Колеса/Центр)
-            ctx.setLineDash([2, 2]);
-            ctx.strokeStyle = "#ff6600";
-            if (label === 'person') ctx.strokeRect(x + w*0.3, y + h*0.05, w*0.4, h*0.15);
-            if (['car','bus'].includes(label)) {
-                ctx.strokeRect(x + w*0.1, y + h*0.7, w*0.2, w*0.2);
-                ctx.strokeRect(x + w*0.7, y + h*0.7, w*0.2, w*0.2);
-            }
-
-            // Угловые скобки (всегда сплошные)
+            // Угловые скобки
             ctx.setLineDash([]);
+            ctx.lineWidth = 2;
             drawCorners(x, y, w, h, color, isLocked ? 30 : 15);
             
             ctx.restore();
         });
 
         requestAnimationFrame(render);
+    }
+
+    function drawLidarGrid() {
+        ctx.save();
+        ctx.strokeStyle = '#003311';
+        ctx.lineWidth = 1;
+        const step = 40;
+        
+        // Вертикальные линии перспективы
+        for (let x = 0; x <= canvas.width; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+        }
+        // Горизонтальные линии
+        for (let y = 0; y <= canvas.height; y += step) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 
     function drawCorners(x, y, w, h, color, s) {
