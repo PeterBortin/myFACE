@@ -3,60 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI SCANNER ULTIMATE</title>
+    <title>ADVANCED AI SURVEILLANCE</title>
     
+    <!-- Основной AI движок -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <!-- Детектор объектов (авто, животные, предметы) -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <!-- Детектор лиц, пола, возраста -->
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
     <style>
-        :root { --green: #00ff41; --blue: #0084ff; }
+        :root { --green: #00ff41; --blue: #0084ff; --white: #ffffff; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-        
-        #container { position: relative; width: 100vw; height: 100vh; background: #000; }
-        video { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 1; z-index: 1; }
+        #container { position: relative; width: 100vw; height: 100vh; }
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
         
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 100; display: flex; 
-            flex-direction: column; justify-content: center; align-items: center;
-            color: var(--green); text-align: center;
+            flex-direction: column; justify-content: center; align-items: center; color: var(--green);
         }
-
         button {
             background: rgba(0, 255, 65, 0.1); border: 1px solid var(--green);
-            color: var(--green); padding: 20px 40px; font-size: 1rem;
-            cursor: pointer; text-transform: uppercase; letter-spacing: 2px;
-            box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+            color: var(--green); padding: 20px 40px; font-size: 1rem; cursor: pointer;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.3); text-transform: uppercase;
         }
-
-        #log { font-size: 10px; margin-top: 20px; color: #666; width: 80%; }
-        
-        .ui-element { position: absolute; color: var(--green); z-index: 10; font-size: 12px; pointer-events: none; }
-        .top-left { top: 20px; left: 20px; border-left: 2px solid var(--green); padding-left: 10px; }
-        .top-right { top: 20px; right: 20px; color: #ff004c; animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0; } }
+        #log { font-size: 10px; margin-top: 20px; color: #666; width: 80%; text-align: left; }
+        .hud { position: absolute; z-index: 10; color: var(--green); font-size: 12px; pointer-events: none; padding: 20px; width: 100%; box-sizing: border-box; }
+        .bottom-ui { bottom: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div id="status">SURVEILLANCE SYSTEM v2.0</div>
+    <div style="font-size: 20px; margin-bottom: 10px;">MULTIMODAL AI ANALYZER</div>
     <button id="start-btn">ИНДИВИДУАЛЬНЫЙ ДОСТУП</button>
-    <div id="log">ОЖИДАНИЕ ИНИЦИАЛИЗАЦИИ...</div>
+    <div id="log">LOADER: ОЖИДАНИЕ...</div>
 </div>
 
 <div id="container">
-    <!-- playsinline, muted, autoplay — критичны для iPhone -->
     <video id="video" playsinline muted autoplay></video>
     <canvas id="canvas"></canvas>
     
-    <div class="ui-element top-left">
-        SYSTEM: ACTIVE<br>
-        STREAM: 1080p<br>
-        ENCRYPTION: AES-256
+    <div class="hud" style="top:0">
+        <div>CORE: v4.0.2 [STABLE]</div>
+        <div id="distance-info">DEPTH_SCAN: ACTIVE</div>
     </div>
-    <div class="ui-element top-right">● LIVE FEED</div>
+    <div class="hud bottom-ui">
+        <span>SENSOR: ON</span>
+        <span>FACE_RECOGNITION: ENABLED</span>
+        <span style="color:red">● REC</span>
+    </div>
 </div>
 
 <script>
@@ -67,53 +65,40 @@
     const startBtn = document.getElementById('start-btn');
     const log = document.getElementById('log');
 
-    let model = null;
+    let objModel = null;
+    const FOCAL_LENGTH = 800; // Примерное фокусное расстояние для расчета дистанции
 
-    function writeLog(msg) {
-        log.innerHTML += `<br>> ${msg}`;
-    }
+    function writeLog(msg) { log.innerHTML += `<br>> ${msg}`; }
 
-    async function startSystem() {
+    async function initAI() {
         startBtn.style.display = 'none';
-        writeLog("ЗАПРОС КАМЕРЫ...");
-
         try {
-            // 1. Настройка видеопотока
+            writeLog("ЗАПРОС КАМЕРЫ...");
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1280 } },
                 audio: false
             });
-            
             video.srcObject = stream;
-            
-            // ПРИНУДИТЕЛЬНЫЙ ЗАПУСК (важно для iOS)
-            await new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    video.play().then(resolve);
-                };
-            });
+            await new Promise(r => video.onloadedmetadata = () => video.play().then(r));
 
-            writeLog("ПОТОК ПОДКЛЮЧЕН. ЗАГРУЗКА НЕЙРОСЕТИ...");
+            writeLog("ЗАГРУЗКА COCO-SSD (ОБЪЕКТЫ)...");
+            objModel = await cocoSsd.load();
 
-            // 2. Загрузка модели
-            model = await cocoSsd.load();
-            writeLog("AI ГОТОВ. ЗАПУСК ВИЗУАЛИЗАЦИИ...");
+            writeLog("ЗАГРУЗКА FACE-API (ЛИЦА/ПОЛ/ВОЗРАСТ)...");
+            // Загружаем веса моделей из CDN
+            const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceAgeGenderNet.loadFromUri(MODEL_URL);
 
-            // Убираем оверлей и начинаем рендер
-            setTimeout(() => {
-                overlay.style.display = 'none';
-                render();
-            }, 500);
-
-        } catch (err) {
-            writeLog(`ОШИБКА: ${err.name}`);
-            console.error(err);
-            alert("Камера недоступна. Убедитесь, что используете Safari на iOS и HTTPS.");
+            writeLog("СИСТЕМА ГОТОВА.");
+            setTimeout(() => { overlay.style.display = 'none'; render(); }, 800);
+        } catch (e) {
+            writeLog("КРИТИЧЕСКАЯ ОШИБКА: " + e.message);
         }
     }
 
-    function render() {
-        // Синхронизация холста с видео
+    async function render() {
         if (canvas.width !== video.videoWidth) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -121,48 +106,79 @@
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Детекция
-        model.detect(video).then(predictions => {
-            predictions.forEach(p => {
-                if (p.class === 'person') {
-                    const [x, y, w, h] = p.bbox;
+        // 1. Детекция общих объектов
+        const objects = await objModel.detect(video);
+        
+        // 2. Детекция лиц (одновременно)
+        const faces = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+                                   .withFaceLandmarks()
+                                   .withAgeAndGender();
 
-                    // Зеленая рамка (стиль фото 1)
-                    ctx.strokeStyle = '#00ff41';
-                    ctx.lineWidth = 3;
-                    ctx.strokeRect(x, y, w, h);
+        objects.forEach(obj => {
+            const [x, y, w, h] = obj.bbox;
+            const label = obj.class;
+            
+            // Расчет примерного расстояния (D = (W_real * Focal) / W_pixel)
+            // Допустим, средняя ширина человека 0.5м, машины 2м
+            let realWidth = 0.5;
+            if (label === 'car' || label === 'truck') realWidth = 2.0;
+            const distance = (realWidth * FOCAL_LENGTH) / w;
 
-                    // Сетка внутри рамки (стиль фото 2)
-                    ctx.fillStyle = 'rgba(0, 255, 65, 0.1)';
-                    ctx.fillRect(x, y, w, h);
+            // Стилизация под ваши фото
+            ctx.strokeStyle = label === 'person' ? '#00ff41' : '#0084ff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
 
-                    // Метаданные (стиль фото 1 - синий текст)
-                    ctx.fillStyle = '#0084ff';
-                    ctx.font = '14px monospace';
-                    ctx.fillText(`ID: USER_${Math.floor(p.score * 10000)}`, x + 5, y + 20);
-                    ctx.fillText(`CONFIDENCE: ${Math.round(p.score * 100)}%`, x + 5, y + 40);
+            // Тэг объекта
+            ctx.fillStyle = label === 'person' ? '#00ff41' : '#0084ff';
+            ctx.font = '12px monospace';
+            
+            let title = "ПРЕДМЕТ: " + label.toUpperCase();
+            if (label === 'person') title = "ЧЕЛОВЕК (TARGET)";
+            if (['car', 'bus', 'truck', 'motorcycle'].includes(label)) title = "ТРАНСПОРТ";
+            if (['cat', 'dog', 'bird'].includes(label)) title = "БИО-ОБЪЕКТ";
 
-                    // Угловые скобки (стиль фото 3)
-                    drawBrackets(x, y, w, h);
-                }
-            });
-            requestAnimationFrame(render);
+            ctx.fillText(`${title}`, x, y > 20 ? y - 25 : 20);
+            ctx.fillText(`DIST: ${distance.toFixed(1)}m | CONF: ${Math.round(obj.score*100)}%`, x, y > 20 ? y - 10 : 35);
+
+            // Оценка габаритов (объем)
+            if (label !== 'person') {
+                const volume = (w * h * ((w+h)/2) * 0.0001).toFixed(2);
+                ctx.fillStyle = '#fff';
+                ctx.fillText(`EST_VOLUME: ${volume} units`, x, y + h + 15);
+            }
+
+            drawBrackets(x, y, w, h);
         });
+
+        // Отрисовка данных лица (тип: пол, возраст)
+        faces.forEach(f => {
+            const { x, y, width, height } = f.detection.box;
+            ctx.strokeStyle = '#fff';
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(x, y, width, height);
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#fff';
+            ctx.fillText(`GENDER: ${f.gender.toUpperCase()}`, x, y + height + 15);
+            ctx.fillText(`AGE: ~${Math.round(f.age)}`, x, y + height + 30);
+            ctx.fillText(`HEIGHT_EST: ~${(f.detection.box.height * 0.6).toFixed(0)}cm`, x, y + height + 45);
+        });
+
+        requestAnimationFrame(render);
     }
 
     function drawBrackets(x, y, w, h) {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1;
-        const s = 20;
+        const s = 15;
         ctx.beginPath();
-        // Сверху-слева
-        ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
-        // Снизу-справа
-        ctx.moveTo(x + w - s, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - s);
+        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
+        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
         ctx.stroke();
     }
 
-    startBtn.addEventListener('click', startSystem);
+    startBtn.addEventListener('click', initAI);
 </script>
 </body>
 </html>
