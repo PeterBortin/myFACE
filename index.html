@@ -3,190 +3,166 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v5.0</title>
+    <title>AI SCANNER ULTIMATE</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body, html { 
-            width: 100%; height: 100%; 
-            background: #000; 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden; 
-            color: #fff;
-        }
-
-        #viewport { position: relative; width: 100vw; height: 100vh; }
+        :root { --green: #00ff41; --blue: #0084ff; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         
-        video { 
-            position: absolute; width: 100%; height: 100%; 
-            object-fit: cover; z-index: 1; 
-        }
+        #container { position: relative; width: 100vw; height: 100vh; background: #000; }
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 1; z-index: 1; }
+        canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
         
-        canvas { 
-            position: absolute; inset: 0; 
-            z-index: 2; pointer-events: none; 
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 100; display: flex; 
+            flex-direction: column; justify-content: center; align-items: center;
+            color: var(--green); text-align: center;
         }
 
-        /* HUD Элементы */
-        #hud {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 3; pointer-events: none;
-            display: flex; flex-direction: column; justify-content: space-between;
-            padding: 15px;
+        button {
+            background: rgba(0, 255, 65, 0.1); border: 1px solid var(--green);
+            color: var(--green); padding: 20px 40px; font-size: 1rem;
+            cursor: pointer; text-transform: uppercase; letter-spacing: 2px;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
         }
 
-        .stats {
-            background: rgba(0, 0, 0, 0.6);
-            padding: 8px 12px;
-            border-left: 3px solid #fff;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            align-self: flex-start;
-        }
-
-        #log {
-            background: rgba(0, 0, 0, 0.8);
-            padding: 10px;
-            height: 120px;
-            overflow: hidden;
-            font-family: monospace;
-            font-size: 12px;
-            border-top: 1px solid rgba(255, 255, 255, 0.3);
-            pointer-events: auto;
-        }
-
-        .log-msg { color: #00ff00; margin-bottom: 2px; }
-
-        /* Экран загрузки */
-        #loader {
-            position: fixed; inset: 0; background: #000;
-            z-index: 100; display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-        }
+        #log { font-size: 10px; margin-top: 20px; color: #666; width: 80%; }
         
-        .start-btn {
-            background: #fff; color: #000; border: none;
-            padding: 15px 40px; font-weight: bold; cursor: pointer;
-            text-transform: uppercase;
-        }
+        .ui-element { position: absolute; color: var(--green); z-index: 10; font-size: 12px; pointer-events: none; }
+        .top-left { top: 20px; left: 20px; border-left: 2px solid var(--green); padding-left: 10px; }
+        .top-right { top: 20px; right: 20px; color: #ff004c; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-<div id="loader">
-    <div style="margin-bottom: 20px; letter-spacing: 4px;">VISION_OS_v5</div>
-    <button class="start-btn" onclick="boot()">Запуск системы</button>
+<div id="overlay">
+    <div id="status">SURVEILLANCE SYSTEM v2.0</div>
+    <button id="start-btn">ИНДИВИДУАЛЬНЫЙ ДОСТУП</button>
+    <div id="log">ОЖИДАНИЕ ИНИЦИАЛИЗАЦИИ...</div>
 </div>
 
-<div id="viewport">
+<div id="container">
+    <!-- playsinline, muted, autoplay — критичны для iPhone -->
     <video id="video" playsinline muted autoplay></video>
     <canvas id="canvas"></canvas>
     
-    <div id="hud">
-        <div class="stats">
-            System: Active<br>
-            Objects in DB: <span id="db-count">0</span>
-        </div>
-        
-        <div id="log"></div>
+    <div class="ui-element top-left">
+        SYSTEM: ACTIVE<br>
+        STREAM: 1080p<br>
+        ENCRYPTION: AES-256
     </div>
+    <div class="ui-element top-right">● LIVE FEED</div>
 </div>
 
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const logBox = document.getElementById('log');
-    
-    let model = null;
-    let memory = JSON.parse(localStorage.getItem('v5_memory')) || {};
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('start-btn');
+    const log = document.getElementById('log');
 
-    function addLog(text) {
-        const div = document.createElement('div');
-        div.className = 'log-msg';
-        div.innerText = `> ${text}`;
-        logBox.prepend(div);
-        if (logBox.childNodes.length > 6) logBox.lastChild.remove();
+    let model = null;
+
+    function writeLog(msg) {
+        log.innerHTML += `<br>> ${msg}`;
     }
 
-    async function boot() {
-        addLog("Загрузка ядра ИИ...");
+    async function startSystem() {
+        startBtn.style.display = 'none';
+        writeLog("ЗАПРОС КАМЕРЫ...");
+
         try {
-            model = await cocoSsd.load();
+            // 1. Настройка видеопотока
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' }
+                video: { facingMode: 'environment', width: { ideal: 1280 } },
+                audio: false
             });
+            
             video.srcObject = stream;
             
-            video.onloadedmetadata = () => {
-                video.play();
-                document.getElementById('loader').style.display = 'none';
-                addLog("Сенсоры онлайн. Режим v5.0");
-                updateStats();
-                detect();
-            };
+            // ПРИНУДИТЕЛЬНЫЙ ЗАПУСК (важно для iOS)
+            await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.play().then(resolve);
+                };
+            });
+
+            writeLog("ПОТОК ПОДКЛЮЧЕН. ЗАГРУЗКА НЕЙРОСЕТИ...");
+
+            // 2. Загрузка модели
+            model = await cocoSsd.load();
+            writeLog("AI ГОТОВ. ЗАПУСК ВИЗУАЛИЗАЦИИ...");
+
+            // Убираем оверлей и начинаем рендер
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                render();
+            }, 500);
+
         } catch (err) {
-            alert("Ошибка доступа: " + err.message);
+            writeLog(`ОШИБКА: ${err.name}`);
+            console.error(err);
+            alert("Камера недоступна. Убедитесь, что используете Safari на iOS и HTTPS.");
         }
     }
 
-    function updateStats() {
-        document.getElementById('db-count').innerText = Object.keys(memory).length;
-    }
+    function render() {
+        // Синхронизация холста с видео
+        if (canvas.width !== video.videoWidth) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
 
-    async function detect() {
-        const predictions = await model.detect(video);
-        
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        predictions.forEach(p => {
-            const [x, y, w, h] = p.bbox;
+        // Детекция
+        model.detect(video).then(predictions => {
+            predictions.forEach(p => {
+                if (p.class === 'person') {
+                    const [x, y, w, h] = p.bbox;
 
-            // Логика памяти
-            if (!memory[p.class]) {
-                memory[p.class] = { seen: 1, date: new Date().toLocaleDateString() };
-                addLog(`Обнаружен новый тип: ${p.class}`);
-                localStorage.setItem('v5_memory', JSON.stringify(memory));
-                updateStats();
-            } else if (p.score > 0.8) {
-                memory[p.class].seen++;
-            }
+                    // Зеленая рамка (стиль фото 1)
+                    ctx.strokeStyle = '#00ff41';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x, y, w, h);
 
-            // Отрисовка
-            drawFrame(x, y, w, h, p.class, p.score);
+                    // Сетка внутри рамки (стиль фото 2)
+                    ctx.fillStyle = 'rgba(0, 255, 65, 0.1)';
+                    ctx.fillRect(x, y, w, h);
+
+                    // Метаданные (стиль фото 1 - синий текст)
+                    ctx.fillStyle = '#0084ff';
+                    ctx.font = '14px monospace';
+                    ctx.fillText(`ID: USER_${Math.floor(p.score * 10000)}`, x + 5, y + 20);
+                    ctx.fillText(`CONFIDENCE: ${Math.round(p.score * 100)}%`, x + 5, y + 40);
+
+                    // Угловые скобки (стиль фото 3)
+                    drawBrackets(x, y, w, h);
+                }
+            });
+            requestAnimationFrame(render);
         });
-
-        requestAnimationFrame(detect);
     }
 
-    function drawFrame(x, y, w, h, label, score) {
-        // Белая рамка
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x, y, w, h);
-
-        // Уголки
-        const s = 15;
+    function drawBrackets(x, y, w, h) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        const s = 20;
         ctx.beginPath();
-        ctx.lineWidth = 4;
+        // Сверху-слева
         ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
-        ctx.moveTo(x + w - s, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + s);
-        ctx.moveTo(x, y + h - s); ctx.lineTo(x, y + h); ctx.lineTo(x + s, y + h);
+        // Снизу-справа
         ctx.moveTo(x + w - s, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - s);
         ctx.stroke();
-
-        // Текст
-        ctx.fillStyle = "white";
-        ctx.font = "bold 14px Arial";
-        const seenStr = memory[label] ? ` | Seen: ${memory[label].seen}` : "";
-        ctx.fillText(`${label.toUpperCase()} ${Math.round(score*100)}%${seenStr}`, x, y - 10);
     }
+
+    startBtn.addEventListener('click', startSystem);
 </script>
 </body>
 </html>
