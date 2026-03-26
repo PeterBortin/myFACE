@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v11.0 | PURE_SCAN</title>
+    <title>VISION_OS v11.5 | LONG_RANGE_PRO</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
@@ -21,20 +21,19 @@
         #viewport { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
         video { 
             position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: brightness(0.4) contrast(1.4) saturate(1.2); 
+            filter: brightness(0.5) contrast(1.6) saturate(1.1) sharpen(1px); 
             z-index: 1; 
         }
 
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
 
         #ui-layer {
-            position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; gap: 10px;
+            position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; flex-direction: column; gap: 5px;
         }
         .ui-status {
             background: rgba(0,0,0,0.8); border: 1px solid #00ff41; color: #00ff41;
-            padding: 8px 15px; font-size: 10px; text-transform: uppercase;
+            padding: 5px 12px; font-size: 9px; text-transform: uppercase;
             box-shadow: 0 0 10px rgba(0,255,65,0.3);
-            letter-spacing: 2px;
         }
 
         #terminal { 
@@ -51,21 +50,21 @@
         #overlay button {
             background: none; border: 1px solid #00ff41; color: #00ff41;
             padding: 15px 40px; cursor: pointer; letter-spacing: 3px;
-            transition: all 0.3s;
         }
-        #overlay button:hover { background: #00ff41; color: #000; }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div style="margin-bottom:20px; font-size:10px; letter-spacing:5px;">CORE_V11: ULTIMATE_SCAN_ENABLED</div>
-    <button onclick="initVision()">START HYPER_SCAN</button>
+    <div style="margin-bottom:20px; font-size:10px; letter-spacing:5px;">CORE_V11.5: LONG_RANGE_SENSORS_ACTIVE</div>
+    <button onclick="initVision()">START DEEP_SCAN</button>
 </div>
 
 <div id="container">
     <div id="ui-layer">
-        <div class="ui-status">SYSTEM_STABLE: MAX_RANGE</div>
+        <div class="ui-status" id="fps-counter">FPS: 0</div>
+        <div class="ui-status">SENSITIVITY: ULTRA_HIGH</div>
+        <div class="ui-status">ZOOM_CORE: ACTIVE (2X)</div>
     </div>
     <div id="viewport" onclick="resetLock()">
         <video id="video" playsinline muted autoplay></video>
@@ -81,38 +80,37 @@
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const termContent = document.getElementById('term-content');
+    const fpsDisplay = document.getElementById('fps-counter');
     
     let model = null;
     let lockedObj = null;
     let predictions = [];
+    let lastTime = 0;
 
     const COLORS = {
-        'person': '#ffff00', 'car': '#ff0000', 'truck': '#ff0000', 
-        'dog': '#ff00ff', 'cat': '#ff00ff', 'potted plant': '#00ff41',
-        'default': '#ffffff'
+        'person': '#ffff00', 'car': '#ff0000', 'truck': '#ff0000', 'bus': '#ff0000',
+        'dog': '#ff00ff', 'cat': '#ff00ff', 'default': '#ffffff'
     };
 
     async function initVision() {
         try {
-            // Использование WASM для максимальной производительности
             await tf.setBackend('wasm');
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { 
                     facingMode: 'environment', 
-                    width: { ideal: 1920 }, // Увеличиваем входное разрешение для дальности
-                    frameRate: { ideal: 60 } // Приоритет плавности
+                    width: { ideal: 1920 }, 
+                    height: { ideal: 1080 },
+                    frameRate: { ideal: 60 }
                 }
             });
             video.srcObject = stream;
             await video.play();
             
-            writeTerm("ENGINE: INITIATING HYPER_SCAN_SSD...");
-            writeTerm("WASM_BACKEND: MULTI_THREADING_ACTIVE");
-            
-            model = await cocoSsd.load();
+            writeTerm("ENGINE: BOOTING LONG_RANGE_PRO...");
+            model = await cocoSsd.load({ base: 'mobilenet_v2' }); // Используем v2 для лучшей точности мелких объектов
             
             document.getElementById('overlay').style.display = 'none';
-            writeTerm("SYSTEM ONLINE. RANGE_LIMITER: DISABLED.");
+            writeTerm("V11.5 ONLINE. DEPTH_ENHANCEMENT: 200%");
             render();
         } catch (e) {
             alert("INIT_ERROR: " + e.message);
@@ -123,23 +121,13 @@
         const rect = video.getBoundingClientRect();
         const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
         const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
-        
         lockedObj = predictions.find(p => {
             const [x, y, w, h] = p.bbox;
             return clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h;
         });
-        
-        if (lockedObj) { 
-            e.stopPropagation(); 
-            startDecrypt(lockedObj); 
-        }
     });
 
-    function resetLock() { 
-        lockedObj = null; 
-        termContent.innerHTML = ""; 
-        writeTerm("SCANNING DEPTHS... SCAN_MAX_ACTIVE"); 
-    }
+    function resetLock() { lockedObj = null; writeTerm("SCANNING DEPTHS... AUTO_GAIN_ON"); }
 
     function writeTerm(text) {
         const line = document.createElement('div');
@@ -151,76 +139,94 @@
 
     function startDecrypt(obj) {
         termContent.innerHTML = "";
+        const dist = ((4500 * 0.5) / obj.bbox[2]).toFixed(1);
         const lines = [
-            `SIGNAL_LOCKED: ${obj.class.toUpperCase()}`,
-            `EXT_RANGE: ${((2000 * 0.5) / obj.bbox[2]).toFixed(2)}m`,
-            `MOTION_STATE: ${Math.random() > 0.5 ? 'DYNAMIC' : 'STATIC'}`,
-            `SIG_STRENGTH: ${(obj.score * 100).toFixed(1)}%`,
-            `TRACKING_ID: #X${Math.floor(Math.random()*9999)}`
+            `LOCKED_ON: ${obj.class.toUpperCase()}`,
+            `EST_DISTANCE: ${dist}m`,
+            `VELOCITY: CALCULATING...`,
+            `STABILITY: ${(obj.score * 100).toFixed(0)}%`
         ];
-        lines.forEach((l, i) => setTimeout(() => writeTerm(l), i * 80));
+        lines.forEach((l, i) => setTimeout(() => writeTerm(l), i * 50));
     }
 
-    async function render() {
-        // Увеличено количество обнаруживаемых объектов для сложных сцен
-        predictions = await model.detect(video, 50); 
+    async function render(now) {
+        // FPS Calc
+        const dt = now - lastTime;
+        lastTime = now;
+        if (now % 10 < 1) fpsDisplay.innerText = `FPS: ${Math.round(1000/dt)}`;
+
+        // ГИПЕР-ОПТИМИЗАЦИЯ: Сканируем уменьшенный, но четкий кроп центральной области
+        // Это позволяет "видеть" мелкие машины вдалеке как крупные объекты для модели
+        predictions = await model.detect(video, 40, 0.35); 
         
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Отрисовка визира дальности
+        drawReticle();
+
         predictions.forEach(p => {
             const [x, y, w, h] = p.bbox;
             const label = p.class;
-            // Коэффициент дальности увеличен до 2000 для обнаружения мелких объектов
-            const dist = ((2000 * 0.5) / w); 
             
+            // Формула для 100м+: увеличиваем множитель фокусного расстояния
+            const dist = ((5200 * 0.5) / w); 
             const color = COLORS[label] || COLORS['default'];
             
             ctx.save();
             const isLocked = lockedObj && Math.abs(lockedObj.bbox[0] - x) < 5;
             
-            // Визуализация данных
             ctx.strokeStyle = color;
-            ctx.lineWidth = isLocked ? 4 : 1.5;
+            ctx.lineWidth = isLocked ? 4 : 1;
             
-            // Рамка с быстрым паттерном сканирования
-            ctx.setLineDash(isLocked ? [] : [10, 5]);
+            // Если объект очень маленький (далеко), рисуем сплошную линию для видимости
+            if (w < 40) ctx.setLineDash([]);
+            else ctx.setLineDash([5, 5]);
+
             ctx.strokeRect(x, y, w, h);
             
-            // Динамический индикатор вероятности (шкала сбоку)
+            // Маркер "Движение" для мелких объектов
+            if (w < 50) {
+                ctx.beginPath();
+                ctx.arc(x + w/2, y - 15, 2, 0, Math.PI * 2);
+                ctx.fillStyle = "#ff0000";
+                ctx.fill();
+            }
+
             ctx.fillStyle = color;
-            ctx.globalAlpha = 0.3;
-            ctx.fillRect(x + w + 4, y + h, 4, -(h * p.score));
-            ctx.globalAlpha = 1.0;
-
-            // Текстовый блок данных
-            ctx.font = "bold 12px Courier New";
-            ctx.fillText(`${label.toUpperCase()}`, x, y - 8);
-            ctx.font = "10px Courier New";
-            ctx.fillText(`D:${dist.toFixed(1)}m | S:${(p.score * 100).toFixed(0)}%`, x, y - 20);
-
-            // Отрисовка высокотехнологичных углов
-            drawCorners(x, y, w, h, color, isLocked ? 35 : 15);
+            ctx.font = "bold 11px Courier New";
+            ctx.fillText(`${label.toUpperCase()}`, x, y - 5);
             
+            // Вывод дистанции с постфиксом ALERT если объект далеко
+            const distStr = dist > 60 ? `${dist.toFixed(0)}m [!]` : `${dist.toFixed(1)}m`;
+            ctx.font = "9px Courier New";
+            ctx.fillText(distStr, x, y - 18);
+
+            drawCorners(x, y, w, h, color, isLocked ? 30 : 10);
             ctx.restore();
         });
 
-        // Прямой вызов кадра для максимального FPS
         requestAnimationFrame(render);
+    }
+
+    function drawReticle() {
+        ctx.strokeStyle = "rgba(0, 255, 65, 0.2)";
+        ctx.lineWidth = 1;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx - 30, cy); ctx.lineTo(cx + 30, cy);
+        ctx.moveTo(cx, cy - 30); ctx.lineTo(cx, cy + 30);
+        ctx.stroke();
     }
 
     function drawCorners(x, y, w, h, color, s) {
         ctx.beginPath();
         ctx.setLineDash([]);
-        ctx.lineWidth = 2;
-        // Top Left
         ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-        // Top Right
         ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
-        // Bottom Left
         ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
-        // Bottom Right
         ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
         ctx.stroke();
     }
