@@ -1,182 +1,592 @@
 <!DOCTYPE html>
+
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v12.0 | PARTIAL_SCAN</title>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>myEYE // VISION OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+<style>
+:root {
+  --g: #00ff41; --g2: #00cc33; --g3: #003310;
+  --y: #ffff00; --o: #ff9900; --r: #ff2244;
+  --b: #00aaff; --w: #e0ffe0; --bg: #020804;
+  --panel: rgba(2,8,4,0.92); --border: rgba(0,255,65,0.25);
+}
 
-    <style>
-        :root { 
-            --target: #ffff00; --hostile: #ff0000; --motion: #ff9900; 
-            --neon: #00ff41; --bg: #050505; --structure: #00aaff;
-        }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
-        
-        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-        #viewport { position: relative; flex: 1; overflow: hidden; background: #000; }
-        video { position: absolute; width: 100%; height: 100%; object-fit: cover; filter: brightness(0.6) contrast(1.4); z-index: 1; }
-        canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
+- { margin: 0; padding: 0; box-sizing: border-box; }
 
-        #ui-layer { position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; flex-direction: column; gap: 5px; }
-        .ui-status { background: rgba(0,0,0,0.8); border: 1px solid var(--neon); color: var(--neon); padding: 5px 12px; font-size: 9px; text-transform: uppercase; }
+body, html {
+width: 100%; height: 100%; background: var(–bg);
+overflow: hidden; font-family: ‘Share Tech Mono’, monospace;
+color: var(–g); user-select: none; -webkit-user-select: none;
+}
 
-        #terminal { 
-            height: 140px; background: var(--bg); border-top: 2px solid #1a1a1a; 
-            padding: 12px; box-sizing: border-box; overflow: hidden; font-size: 10px; z-index: 30;
-        }
-        .term-row { margin-bottom: 3px; opacity: 0.9; }
+/* ── BOOT SCREEN ─────────────────────────────────── */
+#boot {
+position: fixed; inset: 0; background: #000; z-index: 200;
+display: flex; flex-direction: column; justify-content: center;
+align-items: center; gap: 0;
+}
+#boot-logo {
+font-family: ‘Orbitron’, monospace; font-weight: 900;
+font-size: clamp(28px, 8vw, 56px); letter-spacing: 0.15em;
+color: var(–g); text-shadow: 0 0 30px var(–g), 0 0 60px #004400;
+animation: pulse-glow 2s ease-in-out infinite;
+}
+#boot-sub {
+font-size: 10px; letter-spacing: 0.4em; color: var(–g2);
+margin-top: 6px; margin-bottom: 40px;
+}
+#boot-log {
+width: min(380px, 88vw); font-size: 10px; color: var(–g2);
+min-height: 90px; line-height: 1.8;
+}
+#boot-log .bl { opacity: 0; animation: fadeIn 0.3s forwards; }
+#progress-bar-wrap {
+width: min(380px, 88vw); height: 3px; background: #0a1a0a;
+margin-top: 20px; position: relative; overflow: hidden;
+}
+#progress-bar {
+height: 100%; width: 0%; background: var(–g);
+transition: width 0.3s ease;
+box-shadow: 0 0 8px var(–g);
+}
+#btn-start {
+margin-top: 30px; display: none;
+background: none; border: 1px solid var(–g); color: var(–g);
+font-family: ‘Orbitron’, monospace; font-size: 11px;
+letter-spacing: 0.3em; padding: 14px 44px; cursor: pointer;
+transition: all 0.2s; text-transform: uppercase;
+}
+#btn-start:hover { background: var(–g); color: #000; box-shadow: 0 0 20px var(–g); }
 
-        #overlay { position: fixed; inset: 0; background: #000; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        button { background: none; border: 1px solid var(--neon); color: var(--neon); padding: 15px 40px; cursor: pointer; letter-spacing: 3px; font-family: inherit; }
-    </style>
+/* ── MAIN LAYOUT ─────────────────────────────────── */
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+#viewport { position: relative; flex: 1 1 auto; overflow: hidden; background: #000; }
+video {
+position: absolute; inset: 0; width: 100%; height: 100%;
+object-fit: cover; z-index: 1;
+filter: brightness(0.55) contrast(1.35) saturate(0.9);
+}
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
+
+/* ── HUD CORNERS ─────────────────────────────────── */
+.hud-corner {
+position: absolute; width: 60px; height: 60px; z-index: 10; pointer-events: none;
+}
+.hud-corner::before, .hud-corner::after {
+content: ‘’; position: absolute; background: var(–g);
+box-shadow: 0 0 6px var(–g);
+}
+.hud-corner::before { width: 2px; height: 24px; }
+.hud-corner::after  { width: 24px; height: 2px; }
+#hc-tl { top: 0; left: 0; }
+#hc-tl::before { top: 0; left: 0; }
+#hc-tl::after  { top: 0; left: 0; }
+#hc-tr { top: 0; right: 0; }
+#hc-tr::before { top: 0; right: 0; }
+#hc-tr::after  { top: 0; right: 0; }
+#hc-bl { bottom: 0; left: 0; }
+#hc-bl::before { bottom: 0; left: 0; }
+#hc-bl::after  { bottom: 0; left: 0; }
+#hc-br { bottom: 0; right: 0; }
+#hc-br::before { bottom: 0; right: 0; }
+#hc-br::after  { bottom: 0; right: 0; }
+
+/* Scanline overlay */
+#viewport::after {
+content: ‘’; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,255,65,0.018) 3px, rgba(0,255,65,0.018) 4px);
+animation: scanroll 8s linear infinite;
+}
+
+/* ── TOP BAR ─────────────────────────────────────── */
+#topbar {
+position: absolute; top: 0; left: 0; right: 0; z-index: 15;
+display: flex; align-items: center; justify-content: space-between;
+padding: 10px 14px; pointer-events: none;
+}
+#sys-id {
+font-family: ‘Orbitron’, monospace; font-size: 13px; font-weight: 700;
+letter-spacing: 0.2em; color: var(–g);
+text-shadow: 0 0 12px var(–g);
+}
+#sys-badges { display: flex; gap: 6px; }
+.badge {
+font-size: 8px; letter-spacing: 0.15em; padding: 3px 8px;
+border: 1px solid var(–border); background: var(–panel); color: var(–g2);
+}
+.badge.active { border-color: var(–g); color: var(–g); }
+
+/* ── RIGHT PANEL ─────────────────────────────────── */
+#rpanel {
+position: absolute; top: 50%; right: 12px;
+transform: translateY(-50%); z-index: 15;
+display: flex; flex-direction: column; gap: 5px;
+pointer-events: none;
+}
+.rstat {
+font-size: 8px; letter-spacing: 0.1em; padding: 5px 10px;
+border: 1px solid var(–border); background: var(–panel);
+color: var(–g2); text-align: right; min-width: 90px;
+}
+.rstat span { display: block; color: var(–g); font-size: 11px; }
+
+/* ── BOTTOM STATS BAR ────────────────────────────── */
+#statbar {
+position: absolute; bottom: 0; left: 0; right: 0; z-index: 15;
+display: flex; gap: 1px; pointer-events: none;
+}
+.stat-cell {
+flex: 1; padding: 6px 8px; background: var(–panel);
+border-top: 1px solid var(–border); font-size: 8px;
+letter-spacing: 0.1em; color: var(–g2); text-align: center;
+}
+.stat-cell span { display: block; color: var(–g); font-size: 11px; font-weight: bold; }
+
+/* Radar pulse (center screen) */
+#radar-ring {
+position: absolute; top: 50%; left: 50%; z-index: 8;
+width: 4px; height: 4px; margin: -2px; pointer-events: none;
+border-radius: 50%; background: var(–g);
+box-shadow: 0 0 0 0 rgba(0,255,65,0.6);
+animation: radar-pulse 3s ease-out infinite;
+}
+
+/* ── TERMINAL ────────────────────────────────────── */
+#terminal {
+flex: 0 0 auto; height: 120px;
+background: var(–bg); border-top: 1px solid var(–border);
+padding: 10px 14px; overflow: hidden; z-index: 30;
+position: relative;
+}
+#term-header {
+font-family: ‘Orbitron’, monospace; font-size: 7px;
+letter-spacing: 0.3em; color: var(–g3); margin-bottom: 8px;
+display: flex; justify-content: space-between; align-items: center;
+}
+#term-header::before { content: ‘’; flex: 1; height: 1px; background: var(–g3); margin-right: 10px; }
+#term-lines { font-size: 9.5px; line-height: 1.75; }
+.tl { opacity: 0; animation: slideIn 0.2s forwards; padding-left: 2px; }
+.tl-warn  { color: var(–o); }
+.tl-alert { color: var(–r); }
+.tl-info  { color: var(–b); }
+.tl-ok    { color: var(–g); }
+
+/* ── ANIMATIONS ──────────────────────────────────── */
+@keyframes pulse-glow {
+0%,100% { text-shadow: 0 0 20px var(–g), 0 0 40px #003300; }
+50% { text-shadow: 0 0 40px var(–g), 0 0 80px #00aa44, 0 0 120px #004400; }
+}
+@keyframes fadeIn { to { opacity: 1; } }
+@keyframes slideIn { from { opacity:0; transform:translateX(-6px); } to { opacity:0.9; transform:none; } }
+@keyframes scanroll { from { background-position: 0 0; } to { background-position: 0 100px; } }
+@keyframes radar-pulse {
+0%   { box-shadow: 0 0 0 0 rgba(0,255,65,0.5); }
+70%  { box-shadow: 0 0 0 60px rgba(0,255,65,0); }
+100% { box-shadow: 0 0 0 0 rgba(0,255,65,0); }
+}
+@keyframes blink { 50% { opacity: 0.3; } }
+</style>
+
 </head>
 <body>
 
-<div id="overlay">
-    <div id="status-msg" style="margin-bottom:20px; font-size:10px; letter-spacing:4px;">CORE_V12.0: FRAGMENT_LOGIC_READY</div>
-    <button id="start-btn" style="display:none;" onclick="initSystem()">BOOT_SCANNER</button>
+<!-- BOOT -->
+
+<div id="boot">
+  <div id="boot-logo">myEYE</div>
+  <div id="boot-sub">VISION OS // v2.0</div>
+  <div id="boot-log"></div>
+  <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+  <button id="btn-start" onclick="initCamera()">[ ACTIVATE ]</button>
 </div>
 
-<div id="container">
-    <div id="ui-layer">
-        <div class="ui-status" id="fps-val">FPS: --</div>
-        <div class="ui-status">MOD: PARTIAL_RECOGNITION</div>
+<!-- APP -->
+
+<div id="app" style="display:none;">
+  <div id="viewport">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="canvas"></canvas>
+
+```
+<!-- HUD corners -->
+<div class="hud-corner" id="hc-tl"></div>
+<div class="hud-corner" id="hc-tr"></div>
+<div class="hud-corner" id="hc-bl"></div>
+<div class="hud-corner" id="hc-br"></div>
+
+<!-- Radar -->
+<div id="radar-ring"></div>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div id="sys-id">myEYE</div>
+  <div id="sys-badges">
+    <div class="badge active" id="b-fps">-- FPS</div>
+    <div class="badge active" id="b-obj">0 OBJ</div>
+    <div class="badge" id="b-mode">SCAN</div>
+  </div>
+</div>
+
+<!-- Right panel -->
+<div id="rpanel">
+  <div class="rstat">PERSONS<span id="cnt-person">0</span></div>
+  <div class="rstat">VEHICLES<span id="cnt-vehicle">0</span></div>
+  <div class="rstat">OBJECTS<span id="cnt-other">0</span></div>
+</div>
+
+<!-- Bottom stats -->
+<div id="statbar">
+  <div class="stat-cell">MAX DIST<span id="s-dist">---</span></div>
+  <div class="stat-cell">THREATS<span id="s-threat">0</span></div>
+  <div class="stat-cell">CONF AVG<span id="s-conf">---%</span></div>
+  <div class="stat-cell">ZONE<span id="s-zone">---</span></div>
+</div>
+```
+
+  </div>
+
+  <div id="terminal">
+    <div id="term-header">
+      <span>NEURAL_FEED</span>
     </div>
-    <div id="viewport">
-        <video id="video" playsinline muted autoplay></video>
-        <canvas id="canvas"></canvas>
-    </div>
-    <div id="terminal"><div id="term-content"></div></div>
+    <div id="term-lines"></div>
+  </div>
 </div>
 
 <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const termContent = document.getElementById('term-content');
-    const statusMsg = document.getElementById('status-msg');
-    
-    let model = null;
-    let lastTime = 0;
-    let prevPredictions = [];
+// ── CONFIG ────────────────────────────────────────────
+const CFG = {
+  FOCAL: 700,       // px — калибровка дальности
+  OBJ_H: {          // реальная высота объектов (м) для расчёта дистанции
+    person:1.75, car:1.5, truck:2.8, bus:3.2, motorcycle:1.1,
+    bicycle:1.0, traffic_light:0.4, stop_sign:0.75, bench:0.9,
+    chair:0.9, dog:0.45, cat:0.35, bird:0.25, horse:1.6,
+    backpack:0.5, suitcase:0.65, bottle:0.28, cup:0.12,
+    'cell phone':0.15, laptop:0.03, keyboard:0.04,
+    tv:0.6, clock:0.35, book:0.22,
+    default:1.0
+  },
+  THREAT: new Set(['person','car','truck','bus','motorcycle']),
+  DRAW_CONF: 0.22,   // порог отрисовки (ниже — не рисуем)
+  MAX_DETECT: 40,
+  FRAME_SKIP: 2,     // детектить каждые N кадров
+};
 
-    // Расширенный перечень объектов и фрагментов
-    const COLORS = { 
-        'person': '#ffff00', 
-        'car': '#ff0000', 'truck': '#ff0000', 'bus': '#ff0000',
-        'house': '#00aaff', 'building': '#00aaff', 'window': '#00aaff', // Части зданий
-        'tree': '#00ff41', 'plant': '#00ff41', 'bench': '#ffffff',      // Элементы окружения
-        'pole': '#cccccc', 'traffic light': '#ff9900',                 // Столбы и знаки
-        'default': '#00ff41' 
+// Цвета по классу
+const COL = {
+  person:'#ffff00', car:'#ff2244', truck:'#ff2244', bus:'#ff2244',
+  motorcycle:'#ff6600', bicycle:'#ffaa00',
+  'traffic light':'#ff9900', 'stop sign':'#ff9900',
+  bench:'#aaaaaa', chair:'#aaaaaa',
+  dog:'#ff88ff', cat:'#ff88ff', bird:'#ff88ff', horse:'#ff88ff',
+  backpack:'#00ffff', suitcase:'#00ffff',
+  bottle:'#88ff88', cup:'#88ff88',
+  'cell phone':'#88aaff', laptop:'#88aaff', tv:'#88aaff',
+  clock:'#cccccc', book:'#cccccc',
+  _default:'#00ff41'
+};
+
+function getColor(cls){ return COL[cls] || COL._default; }
+
+// Метки угрозы
+const THREAT_LABEL = {
+  person:'HUMAN', car:'VEHICLE', truck:'HVY_VEHICLE',
+  bus:'HVY_VEHICLE', motorcycle:'MOTO'
+};
+
+// Дистанция по bbox
+function calcDist(bbox, cls){
+  const [,, w, h] = bbox;
+  const realH = CFG.OBJ_H[cls] || CFG.OBJ_H.default;
+  const px = Math.max(w, h);
+  if(px < 4) return 999;
+  return Math.min(999, (CFG.FOCAL * realH / px).toFixed(1));
+}
+
+// ── STATE ─────────────────────────────────────────────
+const video  = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const termEl = document.getElementById('term-lines');
+
+let model = null, running = false, frameN = 0;
+let lastPred = [], lastFpsTime = 0, fpsAccum = 0, fpsCnt = 0;
+let termQueue = [];
+
+// ── BOOT SEQUENCE ─────────────────────────────────────
+const bootLog = document.getElementById('boot-log');
+const progressBar = document.getElementById('progress-bar');
+const bootLines = [
+  [0,   "INIT VISION_OS v2.0..."],
+  [400, "TENSORFLOW_LITE: LOAD"],
+  [700, "COCO-SSD ENGINE: LOADING..."],
+  [900, "OBJECT_DB: 80 CLASSES REGISTERED"],
+  [1100,"MOTION_SENSOR: CALIBRATED"],
+  [1300,"DISTANCE_MODULE: READY"],
+  [1500,"THREAT_CLASSIFIER: ACTIVE"],
+];
+
+async function bootSequence(){
+  // show lines with animation
+  let p = 0;
+  for(const [delay, text] of bootLines){
+    await sleep(delay - p);
+    p = delay;
+    addBootLine(text);
+    progressBar.style.width = ((bootLines.indexOf([delay,text])+1)/bootLines.length*70)+'%';
+  }
+  // load model
+  try {
+    await tf.ready();
+    tf.env().set('WEBGL_CPU_FORWARD', false);
+    model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+    addBootLine("NEURAL_ENGINE: ONLINE ✓");
+    progressBar.style.width = '100%';
+    await sleep(300);
+    document.getElementById('btn-start').style.display = 'block';
+  } catch(e){
+    addBootLine("ERR: BOOT_FAILURE — "+e.message);
+  }
+}
+
+function addBootLine(txt){
+  const d = document.createElement('div');
+  d.className = 'bl'; d.textContent = '> '+txt;
+  bootLog.appendChild(d);
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ── CAMERA INIT ───────────────────────────────────────
+async function initCamera(){
+  document.getElementById('btn-start').style.display='none';
+  addBootLine("CAMERA: REQUESTING ACCESS...");
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720},
+              frameRate:{ideal:30} }
+    });
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      video.play();
+      document.getElementById('boot').style.transition='opacity 0.5s';
+      document.getElementById('boot').style.opacity='0';
+      setTimeout(()=>{
+        document.getElementById('boot').style.display='none';
+        document.getElementById('app').style.display='flex';
+      },500);
+      running = true;
+      log("SYSTEM ONLINE // VISION_OS v2.0", 'ok');
+      log("COCO-SSD ENGINE: 80 OBJECT CLASSES", 'info');
+      log("AWAITING SCENE DATA...", 'ok');
+      requestAnimationFrame(renderLoop);
     };
+  } catch(err){
+    addBootLine("ERR: CAMERA ACCESS DENIED");
+    document.getElementById('btn-start').style.display='block';
+  }
+}
 
-    (async () => {
-        try {
-            await tf.ready();
-            model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-            statusMsg.innerText = "FRAGMENT_ENGINE_LOADED";
-            document.getElementById('start-btn').style.display = 'block';
-        } catch (e) {
-            statusMsg.innerText = "BOOT_ERR";
-        }
-    })();
+// ── TERMINAL ──────────────────────────────────────────
+function log(txt, type='ok'){
+  termQueue.push({txt, type});
+  if(termQueue.length > 30) termQueue.shift();
+  renderTerm();
+}
+function renderTerm(){
+  const lines = termQueue.slice(-6);
+  termEl.innerHTML = '';
+  lines.forEach(({txt, type}) => {
+    const d = document.createElement('div');
+    d.className = 'tl tl-'+type;
+    d.textContent = '> '+txt;
+    termEl.appendChild(d);
+  });
+}
 
-    async function initSystem() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 } }
-            });
-            video.srcObject = stream;
-            video.onloadedmetadata = () => {
-                video.play();
-                document.getElementById('overlay').style.display = 'none';
-                writeTerm("V12.0_PARTIAL: INITIALIZED");
-                writeTerm("MOTION_SENSOR: CALIBRATED (50-100M)");
-                render();
-            };
-        } catch (err) { writeTerm("ERR: NO_CAMERA"); }
+// ── DETECTION CATEGORIES ─────────────────────────────
+let logThrottle = {};
+function shouldLogClass(cls){
+  const now = Date.now();
+  if(!logThrottle[cls] || now-logThrottle[cls] > 3000){
+    logThrottle[cls] = now; return true;
+  }
+  return false;
+}
+
+// ── RENDER LOOP ───────────────────────────────────────
+async function renderLoop(now){
+  if(!running){ requestAnimationFrame(renderLoop); return; }
+
+  // FPS
+  fpsCnt++;
+  if(now - lastFpsTime > 800){
+    const fps = Math.round(fpsCnt*1000/(now-lastFpsTime));
+    document.getElementById('b-fps').textContent = fps+' FPS';
+    fpsCnt = 0; lastFpsTime = now;
+  }
+
+  frameN++;
+  if(frameN % CFG.FRAME_SKIP === 0 && video.readyState === 4){
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+
+    try {
+      lastPred = await model.detect(video, CFG.MAX_DETECT, CFG.DRAW_CONF);
+    } catch(e){}
+
+    drawScene(lastPred);
+    updateHUD(lastPred);
+  }
+
+  requestAnimationFrame(renderLoop);
+}
+
+// ── DRAW ──────────────────────────────────────────────
+function drawScene(preds){
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  preds.forEach(p => {
+    const [x, y, w, h] = p.bbox;
+    const cls   = p.class;
+    const conf  = p.score;
+    const dist  = calcDist(p.bbox, cls);
+    const color = getColor(cls);
+    const isThreat = CFG.THREAT.has(cls);
+    const isFar = dist > 60;
+
+    ctx.save();
+
+    // Box
+    ctx.lineWidth   = isThreat ? 2 : 1.5;
+    ctx.strokeStyle = color;
+    if(isFar){
+      ctx.setLineDash([6,4]);
+      ctx.globalAlpha = 0.7;
+    } else {
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
     }
 
-    function writeTerm(text) {
-        const line = document.createElement('div');
-        line.className = 'term-row';
-        line.innerText = `> ${text}`;
-        termContent.prepend(line);
-        if (termContent.childNodes.length > 7) termContent.lastChild.remove();
+    // Filled bg
+    ctx.fillStyle = hexAlpha(color, 0.06);
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+
+    // Corners
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    drawCorners(x, y, w, h, color, isThreat ? 3 : 2);
+
+    // Label bg
+    const labelH = 34, padding = 4;
+    const labelY = y > labelH + 2 ? y - labelH : y + h;
+    ctx.fillStyle = hexAlpha('#000000', 0.75);
+    ctx.fillRect(x, labelY, Math.min(w, 180), labelH);
+
+    // Label text
+    ctx.fillStyle = color;
+    ctx.font = `bold ${isThreat ? 11 : 10}px 'Share Tech Mono', monospace`;
+    ctx.fillText((THREAT_LABEL[cls] || cls).toUpperCase(), x+padding, labelY+13);
+
+    ctx.fillStyle = 'rgba(200,255,200,0.8)';
+    ctx.font = `9px 'Share Tech Mono', monospace`;
+    const distTxt = dist < 999 ? `${dist}m` : '>200m';
+    ctx.fillText(`DIST:${distTxt}  CONF:${Math.round(conf*100)}%`, x+padding, labelY+26);
+
+    // Threat indicator
+    if(isThreat){
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3,3]);
+      ctx.beginPath();
+      ctx.moveTo(x+w/2, y); ctx.lineTo(x+w/2, Math.max(0, y-20));
+      ctx.stroke();
     }
 
-    async function render(now) {
-        const dt = now - lastTime;
-        lastTime = now;
-        if (now % 10 < 1) document.getElementById('fps-val').innerText = `FPS: ${Math.round(1000/dt)}`;
+    ctx.restore();
+  });
+}
 
-        if (video.readyState === 4) {
-            // Снижаем порог до 0.25 для детекции "частей" объектов вдалеке
-            const predictions = await model.detect(video, 30, 0.25);
-            
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+function drawCorners(x, y, w, h, color, lw){
+  const s = Math.min(16, w*0.25, h*0.25);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  // TL
+  ctx.moveTo(x,y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
+  // TR
+  ctx.moveTo(x+w-s,y); ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+s);
+  // BL
+  ctx.moveTo(x,y+h-s); ctx.lineTo(x,y+h); ctx.lineTo(x+s,y+h);
+  // BR
+  ctx.moveTo(x+w-s,y+h); ctx.lineTo(x+w,y+h); ctx.lineTo(x+w,y+h-s);
+  ctx.stroke();
+}
 
-            predictions.forEach(p => {
-                const [x, y, w, h] = p.bbox;
-                const label = p.class;
-                const dist = ((5500 * 0.5) / w).toFixed(1);
-                
-                // ЛОГИКА ОПРЕДЕЛЕНИЯ ДВИЖЕНИЯ И ДАЛЬНОСТИ
-                const isSmall = w < 60; // Маленький объект (далекий)
-                const color = COLORS[label] || COLORS['default'];
+function hexAlpha(hex, a){
+  const r=parseInt(hex.slice(1,3),16);
+  const g=parseInt(hex.slice(3,5),16);
+  const b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
 
-                ctx.save();
-                
-                if (isSmall && (label === 'car' || label === 'truck' || label === 'person')) {
-                    // Машина в 50-100 метрах: Пунктирный квадрат
-                    ctx.setLineDash([8, 4]);
-                    ctx.strokeStyle = '#ff9900'; // Оранжевый для дальних целей
-                    writeTerm(`MOTION_DETECT: ${label.toUpperCase()} AT ${dist}m`);
-                } else {
-                    ctx.setLineDash([]);
-                    ctx.strokeStyle = color;
-                }
+// ── HUD UPDATE ────────────────────────────────────────
+let logTimer = 0;
+function updateHUD(preds){
+  const total = preds.length;
+  document.getElementById('b-obj').textContent = total+' OBJ';
 
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x, y, w, h);
+  let persons=0, vehicles=0, other=0, threats=0;
+  let maxDist=0, confSum=0;
 
-                // Отрисовка данных
-                ctx.setLineDash([]);
-                ctx.fillStyle = ctx.strokeStyle;
-                ctx.font = "bold 13px monospace";
-                
-                // Если это часть чего-то (по размеру/типу)
-                const prefix = (w < canvas.width * 0.2) ? "PARTIAL_" : "";
-                ctx.fillText(`${prefix}${label.toUpperCase()}`, x, y - 25);
-                ctx.font = "10px monospace";
-                ctx.fillText(`DIST: ${dist}m | ZONE: ${Math.round(x)}:${Math.round(y)}`, x, y - 10);
+  preds.forEach(p => {
+    const cls = p.class;
+    const dist = parseFloat(calcDist(p.bbox, cls));
+    confSum += p.score;
+    if(dist > maxDist) maxDist = dist;
+    if(cls==='person') persons++;
+    else if(['car','truck','bus','motorcycle','bicycle'].includes(cls)) vehicles++;
+    else other++;
+    if(CFG.THREAT.has(cls)) threats++;
 
-                // Углы захвата
-                drawCorners(x, y, w, h, ctx.strokeStyle);
-                
-                ctx.restore();
-            });
-            prevPredictions = predictions;
-        }
-        requestAnimationFrame(render);
+    // Log notable detections
+    if(shouldLogClass(cls)){
+      const d = dist < 999 ? dist+'m' : '>200m';
+      const type = CFG.THREAT.has(cls)?'warn':'info';
+      log(`${(THREAT_LABEL[cls]||cls).toUpperCase()} DETECTED — DIST: ${d} CONF: ${Math.round(p.score*100)}%`, type);
     }
+  });
 
-    function drawCorners(x, y, w, h, color) {
-        const s = 15;
-        ctx.beginPath();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 3;
-        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
-        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
-        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
-        ctx.stroke();
-    }
+  document.getElementById('cnt-person').textContent  = persons;
+  document.getElementById('cnt-vehicle').textContent = vehicles;
+  document.getElementById('cnt-other').textContent   = other;
+  document.getElementById('s-dist').textContent    = maxDist > 0 ? maxDist.toFixed(0)+'m' : '---';
+  document.getElementById('s-threat').textContent  = threats;
+  document.getElementById('s-conf').textContent    = total > 0 ? Math.round(confSum/total*100)+'%' : '---%';
+  document.getElementById('s-zone').textContent    = canvas.width ? Math.round(canvas.width)+'x'+Math.round(canvas.height) : '---';
+
+  // Mode badge
+  const modeEl = document.getElementById('b-mode');
+  if(threats > 0){
+    modeEl.textContent = 'THREAT'; modeEl.style.borderColor='var(--r)'; modeEl.style.color='var(--r)';
+  } else if(total > 0){
+    modeEl.textContent = 'ACTIVE'; modeEl.style.borderColor='var(--g)'; modeEl.style.color='var(--g)';
+  } else {
+    modeEl.textContent = 'SCAN'; modeEl.style.borderColor=''; modeEl.style.color='';
+  }
+}
+
+// ── START ─────────────────────────────────────────────
+bootSequence();
 </script>
+
 </body>
 </html>
