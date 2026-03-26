@@ -3,42 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v11.6 | STABLE_SCAN</title>
+    <title>VISION_OS v11.7 | LIGHTSPEED</title>
     
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <!-- Подключаем только необходимые модули через быстрые CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
     <style>
-        :root { --target: #ffff00; --hostile: #ff0000; --bg: #050505; --neon: #00ff41; }
+        :root { --neon: #00ff41; --bg: #020202; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
+        
         #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-        #viewport { position: relative; flex: 1; overflow: hidden; background: #020202; }
-        video { 
-            position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: brightness(0.6) contrast(1.5); z-index: 1; 
+        
+        /* Видео скрыто, рисуем напрямую на Canvas для экономии GPU */
+        video { position: absolute; visibility: hidden; pointer-events: none; }
+        canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; background: #000; }
+
+        #ui-layer { position: absolute; top: 10px; right: 10px; z-index: 20; }
+        .ui-status { background: rgba(0,255,65,0.1); border: 1px solid var(--neon); color: var(--neon); padding: 4px 10px; font-size: 10px; backdrop-filter: blur(5px); }
+
+        #terminal { 
+            height: 120px; background: rgba(5,5,5,0.9); border-top: 1px solid #333; 
+            padding: 10px; box-sizing: border-box; overflow: hidden; font-size: 10px; z-index: 30;
         }
-        canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
-        #ui-layer { position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; flex-direction: column; gap: 5px; }
-        .ui-status { background: rgba(0,0,0,0.8); border: 1px solid var(--neon); color: var(--neon); padding: 5px 12px; font-size: 9px; text-transform: uppercase; }
-        #terminal { height: 150px; background: var(--bg); border-top: 2px solid #1a1a1a; padding: 12px; box-sizing: border-box; overflow: hidden; font-size: 10px; }
-        .term-row { margin-bottom: 3px; }
-        #overlay { position: fixed; inset: 0; background: #000; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        #overlay button { background: none; border: 1px solid var(--neon); color: var(--neon); padding: 15px 40px; cursor: pointer; letter-spacing: 3px; font-family: inherit; }
+        .term-row { margin-bottom: 2px; opacity: 0.8; }
+
+        #overlay {
+            position: fixed; inset: 0; background: var(--bg); z-index: 100; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .loader { width: 40px; height: 40px; border: 2px solid #111; border-top: 2px solid var(--neon); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        button { background: none; border: 1px solid var(--neon); color: var(--neon); padding: 12px 30px; cursor: pointer; display: none; font-family: inherit; }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div style="margin-bottom:20px; font-size:10px; letter-spacing:4px;">CORE_V11.6: READY_FOR_DEPLOYMENT</div>
-    <button onclick="initVision()">ACTIVATE_SYSTEM</button>
+    <div class="loader" id="loader"></div>
+    <div id="status-text" style="font-size: 10px; letter-spacing: 2px; margin-bottom: 10px;">LOADING CORE...</div>
+    <button id="start-btn" onclick="startSystem()">INITIALIZE</button>
 </div>
 
 <div id="container">
-    <div id="ui-layer">
-        <div class="ui-status" id="fps-counter">FPS: 0</div>
-        <div class="ui-status">CORE: WASM_STABLE</div>
-    </div>
+    <div id="ui-layer"><div class="ui-status" id="fps">FPS: --</div></div>
     <div id="viewport">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
@@ -49,117 +58,82 @@
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', { desynchronized: true, alpha: false });
     const termContent = document.getElementById('term-content');
-    const fpsDisplay = document.getElementById('fps-counter');
     
     let model = null;
-    let predictions = [];
+    let isRunning = false;
     let lastTime = 0;
+
+    // 1. Ускоренная предзагрузка
+    window.onload = async () => {
+        try {
+            // Используем CPU/WebGL адаптивно для скорости
+            await tf.setBackend('webgl'); 
+            model = await cocoSsd.load({ base: 'lite_mobilenet_v2' }); // Самая легкая база
+            
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('status-text').innerText = "SYSTEM READY";
+            document.getElementById('start-btn').style.display = 'block';
+            writeTerm("CORE_LOADED: MEMORY_OPTIMIZED");
+        } catch (e) {
+            writeTerm("LOAD_ERROR: RECHECK_NETWORK");
+        }
+    };
+
+    async function startSystem() {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: 640, height: 480 } // Оптимальное разрешение для скорости детекции
+        });
+        video.srcObject = stream;
+        document.getElementById('overlay').style.display = 'none';
+        isRunning = true;
+        render();
+    }
 
     function writeTerm(text) {
         const line = document.createElement('div');
         line.className = 'term-row';
         line.innerText = `> ${text}`;
         termContent.prepend(line);
-        if (termContent.childNodes.length > 8) termContent.lastChild.remove();
-    }
-
-    async function initVision() {
-        writeTerm("BOOT: STARTING SENSORS...");
-        try {
-            // Исправление 1: Сначала ставим бэкенд, потом ждем его готовности
-            await tf.setBackend('wasm');
-            await tf.ready();
-            writeTerm("WASM: INITIALIZED");
-
-            // Исправление 2: Принудительные параметры для мобильных браузеров
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { 
-                    facingMode: 'environment', 
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                }
-            });
-            
-            video.srcObject = stream;
-            
-            // Ждем реального запуска потока данных
-            video.onloadedmetadata = () => {
-                video.play();
-                writeTerm("STREAM: DATA_FLOW_STABLE");
-                loadModel();
-            };
-
-        } catch (e) {
-            writeTerm("CRITICAL_ERR: " + e.message.substring(0, 30));
-            console.error(e);
-        }
-    }
-
-    async function loadModel() {
-        writeTerm("SSD_MODEL: LOADING...");
-        try {
-            model = await cocoSsd.load({ base: 'mobilenet_v2' });
-            document.getElementById('overlay').style.display = 'none';
-            writeTerm("SYSTEM: ONLINE. DEEP_SCAN_READY.");
-            render();
-        } catch (e) {
-            writeTerm("MODEL_ERR: FAIL_TO_LOAD");
-        }
     }
 
     async function render(now) {
-        // FPS логгер
-        if (now) {
-            const dt = now - lastTime;
-            lastTime = now;
-            if (Math.random() > 0.9) fpsDisplay.innerText = `FPS: ${Math.round(1000/dt)}`;
-        }
+        if (!isRunning) return;
 
-        // Исправление 3: Проверка готовности кадра перед детекцией
-        if (video.readyState === 4) {
-            try {
-                // Детекция на высокой чувствительности для дальних объектов
-                predictions = await model.detect(video, 25, 0.3); 
+        // Расчет FPS
+        const dt = now - lastTime;
+        lastTime = now;
+        if (now % 20 < 1) document.getElementById('fps').innerText = `FPS: ${Math.round(1000/dt)}`;
+
+        // Прямой проброс кадра на канвас (самый быстрый способ)
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Детекция только каждого 2-го кадра для разгрузки процессора (визуально незаметно)
+        if (Math.floor(now / 16) % 2 === 0) {
+            const predictions = await model.detect(video, 15, 0.4);
+            
+            predictions.forEach(p => {
+                const [x, y, w, h] = p.bbox;
+                const dist = ((3500 * 0.5) / w).toFixed(1);
+
+                ctx.strokeStyle = varColor(p.class);
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, w, h);
                 
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // Рисуем видео на канвас для стабильности
-
-                predictions.forEach(p => {
-                    const [x, y, w, h] = p.bbox;
-                    const dist = ((4800 * 0.5) / w).toFixed(1);
-                    
-                    ctx.strokeStyle = p.class === 'person' ? '#ffff00' : '#00ff41';
-                    ctx.lineWidth = 2;
-                    
-                    // Рисуем рамку
-                    ctx.strokeRect(x, y, w, h);
-                    
-                    // Данные
-                    ctx.fillStyle = ctx.strokeStyle;
-                    ctx.font = "bold 14px Courier New";
-                    ctx.fillText(`${p.class.toUpperCase()} ${dist}m`, x, y - 10);
-                    
-                    // Углы (визуальный эффект)
-                    drawCorners(x, y, w, h, ctx.strokeStyle);
-                });
-            } catch (err) {
-                // Если ошибка в цикле, не даем приложению упасть
-            }
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.font = "12px monospace";
+                ctx.fillText(`${p.class.toUpperCase()} ${dist}M`, x + 5, y + 15);
+            });
         }
+
         requestAnimationFrame(render);
     }
 
-    function drawCorners(x, y, w, h, color) {
-        const s = 15;
-        ctx.beginPath();
-        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
-        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
-        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
-        ctx.stroke();
+    function varColor(cls) {
+        if (cls === 'person') return '#ffff00';
+        if (['car', 'truck', 'bus'].includes(cls)) return '#ff0000';
+        return '#00ff41';
     }
 </script>
 </body>
