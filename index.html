@@ -188,27 +188,25 @@ color:var(--g3);margin-bottom:5px;display:flex;align-items:center;gap:8px;}
 
 <script>
 const CFG={
-  FOCAL:950,
+  FOCAL:900,
   CONF:0.18,
-  MAX_DET:40,
-  SKIP:1,            // Уменьшено для плавности
-  SMOOTH:0.18,       // Коэффициент EMA (ниже = плавнее, выше = быстрее)
+  MAX_DET:50,
+  SKIP:1, 
+  SMOOTH:0.18, 
   TTL:25,
   IOU:0.25
 };
 
 const OBJ_H={
   person:1.75, car:1.55, truck:2.9, bus:3.3, motorcycle:1.15, bicycle:1.05,
-  'fire hydrant':0.65, 'stop sign':0.8, 'parking meter':1.3, 'traffic light':0.45,
-  bird:0.22, cat:0.32, dog:0.50, horse:1.65, sheep:0.85, cow:1.45, elephant:2.8,
-  chair:0.9, couch:0.85, tv:0.65, laptop:0.04, 'cell phone':0.15, bottle:0.28,
-  backpack:0.55, umbrella:0.9, clock:0.35, default:1.0
+  'fire hydrant':0.65, 'stop sign':0.8, 'traffic light':0.45, dog:0.5, cat:0.3,
+  'cell phone':0.15, bottle:0.28, backpack:0.55, default:1.0
 };
 
 const CAT={
   HUMAN:['person'],
   VEHICLE:['car','truck','bus','motorcycle','bicycle'],
-  ANIMAL:['bird','cat','dog','horse','sheep','cow','elephant','bear','zebra','giraffe']
+  ANIMAL:['bird','cat','dog','horse','sheep','cow','elephant']
 };
 const THREAT=new Set(['person','car','truck','bus','motorcycle']);
 
@@ -218,8 +216,11 @@ const COL={
 };
 
 const DESC={
-  person:'Обнаружен человек. Оценка траектории активна.',
-  car:'Легковой транспорт. Повышенная мобильность.',
+  person:'Обнаружен человек. Оценка позы и траектории активна.',
+  car:'Легковой автомобиль. Классификация по габаритам кузова.',
+  truck:'Грузовой транспорт. Повышенная зона риска.',
+  'cell phone':'Мобильное устройство связи.',
+  backpack:'Носимый груз / рюкзак.',
   _d:'Объект идентифицирован нейросетью COCO-SSD.'
 };
 
@@ -283,7 +284,7 @@ const tracker=new Tracker();
 async function bootSeq(){
   const bootLog=document.getElementById('boot-log');
   const pbEl=document.getElementById('pb');
-  const BOOT=[[0,"INIT VISION_OS..."],[400,"LOADING TF_JS..."],[800,"FETCHING COCO-SSD..."],[1200,"ANTI-FLICKER: ENABLED"]];
+  const BOOT=[[0,"INIT VISION_OS v3.0..."],[300,"TENSORFLOW_JS: LOADING"],[600,"MODEL: COCO-SSD LITE"],[900,"ANTI-FLICKER: ACTIVE"],[1200,"UI: TERMINAL READY"]];
   for(let i=0;i<BOOT.length;i++){
     await new Promise(r=>setTimeout(r,BOOT[i][0]-(i?BOOT[i-1][0]:0)));
     const d=document.createElement('div');d.className='bl';d.textContent='> '+BOOT[i][1];
@@ -294,26 +295,42 @@ async function bootSeq(){
 }
 
 async function initCamera(){
-  const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:1280}});
-  video.srcObject=s;
-  video.onloadedmetadata=()=>{
-    video.play();
-    document.getElementById('boot').style.display='none';
-    document.getElementById('app').style.display='flex';
-    running=true;
-    requestAnimationFrame(renderLoop);
-  };
+  try {
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280}}});
+    video.srcObject=s;
+    video.onloadedmetadata=()=>{
+      video.play();
+      document.getElementById('boot').style.display='none';
+      document.getElementById('app').style.display='flex';
+      running=true;
+      log("VISION_OS v3.0 ONLINE",'ok');
+      requestAnimationFrame(renderLoop);
+    };
+  } catch(e) { log("ERR: CAMERA ACCESS DENIED",'alert'); }
 }
 
 function log(txt,type='ok'){
-  termQ.push({txt,type});if(termQ.length>5) termQ.shift();
-  termEl.innerHTML=termQ.map(q=>`<div class="tl t${q.type}">> ${q.txt}</div>`).join('');
+  termQ.push({txt,type});
+  if(termQ.length>5) termQ.shift();
+  termEl.innerHTML='';
+  termQ.forEach(q=>{
+    const d=document.createElement('div');
+    d.className='tl t'+q.type; d.textContent='> '+q.txt;
+    termEl.appendChild(d);
+  });
+}
+
+function canLog(cls, id){
+  const now=Date.now();
+  const key=cls+id;
+  if(!logThr[key]||now-logThr[key]>4000){logThr[key]=now;return true;}
+  return false;
 }
 
 function toggleNight(){
   nightMode=!nightMode;
-  video.style.filter=nightMode?'brightness(.4) contrast(1.6) saturate(0) sepia(1) hue-rotate(90deg)':'brightness(.55) contrast(1.38) saturate(.88)';
-  log('NIGHT_MODE: '+(nightMode?'ON':'OFF'),'warn');
+  video.style.filter=nightMode?'brightness(.4) contrast(1.7) saturate(0) sepia(.9) hue-rotate(80deg)':'brightness(.55) contrast(1.38) saturate(.88)';
+  log('NIGHT_MODE: '+(nightMode?'ON':'OFF'),nightMode?'warn':'ok');
 }
 
 async function renderLoop(now){
@@ -324,11 +341,12 @@ async function renderLoop(now){
     fpsCnt=0;lastFpsT=now;
   }
 
-  canvas.width=video.videoWidth;
-  canvas.height=video.videoHeight;
-  
-  const raw=await model.detect(video,CFG.MAX_DET,CFG.CONF);
-  lastPred=tracker.update(raw);
+  if(video.readyState === 4){
+    canvas.width=video.videoWidth;
+    canvas.height=video.videoHeight;
+    const raw=await model.detect(video,CFG.MAX_DET,CFG.CONF);
+    lastPred=tracker.update(raw);
+  }
   
   draw();
   updateHUD();
@@ -340,17 +358,18 @@ function draw(){
   lastPred.forEach(p=>{
     const [x,y,w,h]=p.sm;
     const col=getCol(p.cls);
-    const d=dist(p.sm,p.p_cls||p.cls);
+    const d=dist(p.sm, p.cls);
+    const isSel = p.id === selTid;
     
+    // Плавная рамка
     ctx.strokeStyle=col;
-    ctx.lineWidth=2;
+    ctx.lineWidth=isSel ? 4 : 2;
     ctx.strokeRect(x,y,w,h);
-    
-    ctx.fillStyle=hexA(col,0.1);
+    ctx.fillStyle=hexA(col, isSel ? 0.2 : 0.05);
     ctx.fillRect(x,y,w,h);
 
-    // Corners
-    const s=15;
+    // Углы
+    const s=Math.min(20, w*0.3);
     ctx.lineWidth=4;
     ctx.beginPath();
     ctx.moveTo(x,y+s);ctx.lineTo(x,y);ctx.lineTo(x+s,y);
@@ -359,51 +378,80 @@ function draw(){
     ctx.moveTo(x+w-s,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w,y+h-s);
     ctx.stroke();
 
-    ctx.fillStyle='rgba(0,0,0,0.7)';
-    ctx.fillRect(x,y-25,Math.min(w,120),25);
+    // Ярлык
+    ctx.fillStyle='rgba(0,0,0,0.8)';
+    ctx.fillRect(x, y-30, Math.min(w, 140), 30);
     ctx.fillStyle=col;
-    ctx.font="10px 'Share Tech Mono'";
-    ctx.fillText(`${p.cls.toUpperCase()} ${d}m`,x+5,y-10);
+    ctx.font="bold 11px 'Share Tech Mono'";
+    ctx.fillText(`${p.cls.toUpperCase()} #${p.id}`, x+5, y-18);
+    ctx.font="9px 'Share Tech Mono'";
+    ctx.fillText(`${d}m | ${Math.round(p.score*100)}%`, x+5, y-6);
   });
 }
 
 function updateHUD(){
   const total=lastPred.length;
   document.getElementById('b-obj').textContent=total+' OBJ';
-  let P=0,V=0,A=0,O=0,thr=0;
+  let P=0,V=0,A=0,O=0,thr=0,maxD=0;
+  
   lastPred.forEach(p=>{
+    const d=dist(p.sm, p.cls);
+    if(d>maxD && d<999) maxD=d;
     if(CAT.HUMAN.includes(p.cls)) P++;
     else if(CAT.VEHICLE.includes(p.cls)) V++;
     else if(CAT.ANIMAL.includes(p.cls)) A++;
     else O++;
     if(THREAT.has(p.cls)) thr++;
+    
+    if(canLog(p.cls, p.id)){
+      log(`${p.cls.toUpperCase()} #${p.id} — ${d}m`, THREAT.has(p.cls)?'warn':'info');
+    }
   });
+
   document.getElementById('cp').textContent=P;
   document.getElementById('cv').textContent=V;
   document.getElementById('ca').textContent=A;
   document.getElementById('co').textContent=O;
   document.getElementById('s-thr').textContent=thr;
+  document.getElementById('s-dist').textContent=maxD>0 ? Math.round(maxD)+'m' : '---';
   document.getElementById('s-trk').textContent=Object.keys(tracker.tracks).length;
 }
 
 function handleTap(e){
   const rect=canvas.getBoundingClientRect();
-  const sx=canvas.width/rect.width,sy=canvas.height/rect.height;
-  const cx=(e.clientX-rect.left)*sx,cy=(e.clientY-rect.top)*sy;
+  const sx=canvas.width/rect.width, sy=canvas.height/rect.height;
+  const cx=(e.clientX-rect.left)*sx, cy=(e.clientY-rect.top)*sy;
+  
   const hit=lastPred.find(p=>{
     const [x,y,w,h]=p.sm;
     return cx>=x&&cx<=x+w&&cy>=y&&cy<=y+h;
   });
+
   if(hit){
     selTid=hit.id;
+    const d=dist(hit.sm, hit.cls);
+    const alive=Math.round((Date.now()-hit.born)/1000);
     document.getElementById('info-title').textContent=hit.cls.toUpperCase();
     document.getElementById('info-title').style.color=getCol(hit.cls);
+    document.getElementById('info-grid').innerHTML=`
+      <div class="ik">ID ТРЕКА</div><div class="iv">#${hit.id}</div>
+      <div class="ik">ДИСТАНЦИЯ</div><div class="iv">${d}m</div>
+      <div class="ik">ТОЧНОСТЬ</div><div class="iv">${Math.round(hit.score*100)}%</div>
+      <div class="ik">ВРЕМЯ</div><div class="iv">${alive}s</div>
+    `;
     document.getElementById('info-desc').textContent=getDesc(hit.cls);
     document.getElementById('info-panel').classList.add('open');
+    log(`OTЧЕТ ПО ОБЪЕКТУ #${hit.id} СФОРМИРОВАН`, 'tap');
+  } else {
+    closeInfo();
   }
 }
+
 canvas.addEventListener('click',handleTap);
-function closeInfo(){document.getElementById('info-panel').classList.remove('open');}
+function closeInfo(){
+  selTid=null;
+  document.getElementById('info-panel').classList.remove('open');
+}
 
 bootSeq();
 </script>
