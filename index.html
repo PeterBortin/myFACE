@@ -3,131 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v11.5 | LONG_RANGE_PRO</title>
+    <title>VISION_OS v11.6 | STABLE_SCAN</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
     <style>
-        :root { 
-            --target: #ffff00; --hostile: #ff0000; --bio: #ff00ff; --obj: #ffffff; --plant: #00ff41;
-            --bg: #050505;
-        }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #00ff41; }
-        
+        :root { --target: #ffff00; --hostile: #ff0000; --bg: #050505; --neon: #00ff41; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
         #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-        
-        #viewport { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
+        #viewport { position: relative; flex: 1; overflow: hidden; background: #020202; }
         video { 
             position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: brightness(0.5) contrast(1.6) saturate(1.1) sharpen(1px); 
-            z-index: 1; 
+            filter: brightness(0.6) contrast(1.5); z-index: 1; 
         }
-
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
-
-        #ui-layer {
-            position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; flex-direction: column; gap: 5px;
-        }
-        .ui-status {
-            background: rgba(0,0,0,0.8); border: 1px solid #00ff41; color: #00ff41;
-            padding: 5px 12px; font-size: 9px; text-transform: uppercase;
-            box-shadow: 0 0 10px rgba(0,255,65,0.3);
-        }
-
-        #terminal { 
-            height: 160px; background: var(--bg); border-top: 2px solid #1a1a1a; 
-            padding: 15px; box-sizing: border-box; overflow: hidden; font-size: 11px;
-            text-shadow: 0 0 5px rgba(0,255,65,0.5);
-        }
-        .term-row { margin-bottom: 4px; opacity: 0.9; }
-
-        #overlay {
-            position: fixed; inset: 0; background: #000; z-index: 100; 
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-        }
-        #overlay button {
-            background: none; border: 1px solid #00ff41; color: #00ff41;
-            padding: 15px 40px; cursor: pointer; letter-spacing: 3px;
-        }
+        #ui-layer { position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; flex-direction: column; gap: 5px; }
+        .ui-status { background: rgba(0,0,0,0.8); border: 1px solid var(--neon); color: var(--neon); padding: 5px 12px; font-size: 9px; text-transform: uppercase; }
+        #terminal { height: 150px; background: var(--bg); border-top: 2px solid #1a1a1a; padding: 12px; box-sizing: border-box; overflow: hidden; font-size: 10px; }
+        .term-row { margin-bottom: 3px; }
+        #overlay { position: fixed; inset: 0; background: #000; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        #overlay button { background: none; border: 1px solid var(--neon); color: var(--neon); padding: 15px 40px; cursor: pointer; letter-spacing: 3px; font-family: inherit; }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div style="margin-bottom:20px; font-size:10px; letter-spacing:5px;">CORE_V11.5: LONG_RANGE_SENSORS_ACTIVE</div>
-    <button onclick="initVision()">START DEEP_SCAN</button>
+    <div style="margin-bottom:20px; font-size:10px; letter-spacing:4px;">CORE_V11.6: READY_FOR_DEPLOYMENT</div>
+    <button onclick="initVision()">ACTIVATE_SYSTEM</button>
 </div>
 
 <div id="container">
     <div id="ui-layer">
         <div class="ui-status" id="fps-counter">FPS: 0</div>
-        <div class="ui-status">SENSITIVITY: ULTRA_HIGH</div>
-        <div class="ui-status">ZOOM_CORE: ACTIVE (2X)</div>
+        <div class="ui-status">CORE: WASM_STABLE</div>
     </div>
-    <div id="viewport" onclick="resetLock()">
+    <div id="viewport">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
     </div>
-    <div id="terminal">
-        <div id="term-content"></div>
-    </div>
+    <div id="terminal"><div id="term-content"></div></div>
 </div>
 
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     const termContent = document.getElementById('term-content');
     const fpsDisplay = document.getElementById('fps-counter');
     
     let model = null;
-    let lockedObj = null;
     let predictions = [];
     let lastTime = 0;
-
-    const COLORS = {
-        'person': '#ffff00', 'car': '#ff0000', 'truck': '#ff0000', 'bus': '#ff0000',
-        'dog': '#ff00ff', 'cat': '#ff00ff', 'default': '#ffffff'
-    };
-
-    async function initVision() {
-        try {
-            await tf.setBackend('wasm');
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { 
-                    facingMode: 'environment', 
-                    width: { ideal: 1920 }, 
-                    height: { ideal: 1080 },
-                    frameRate: { ideal: 60 }
-                }
-            });
-            video.srcObject = stream;
-            await video.play();
-            
-            writeTerm("ENGINE: BOOTING LONG_RANGE_PRO...");
-            model = await cocoSsd.load({ base: 'mobilenet_v2' }); // Используем v2 для лучшей точности мелких объектов
-            
-            document.getElementById('overlay').style.display = 'none';
-            writeTerm("V11.5 ONLINE. DEPTH_ENHANCEMENT: 200%");
-            render();
-        } catch (e) {
-            alert("INIT_ERROR: " + e.message);
-        }
-    }
-
-    document.getElementById('viewport').addEventListener('mousedown', (e) => {
-        const rect = video.getBoundingClientRect();
-        const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
-        lockedObj = predictions.find(p => {
-            const [x, y, w, h] = p.bbox;
-            return clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h;
-        });
-    });
-
-    function resetLock() { lockedObj = null; writeTerm("SCANNING DEPTHS... AUTO_GAIN_ON"); }
 
     function writeTerm(text) {
         const line = document.createElement('div');
@@ -137,93 +65,96 @@
         if (termContent.childNodes.length > 8) termContent.lastChild.remove();
     }
 
-    function startDecrypt(obj) {
-        termContent.innerHTML = "";
-        const dist = ((4500 * 0.5) / obj.bbox[2]).toFixed(1);
-        const lines = [
-            `LOCKED_ON: ${obj.class.toUpperCase()}`,
-            `EST_DISTANCE: ${dist}m`,
-            `VELOCITY: CALCULATING...`,
-            `STABILITY: ${(obj.score * 100).toFixed(0)}%`
-        ];
-        lines.forEach((l, i) => setTimeout(() => writeTerm(l), i * 50));
+    async function initVision() {
+        writeTerm("BOOT: STARTING SENSORS...");
+        try {
+            // Исправление 1: Сначала ставим бэкенд, потом ждем его готовности
+            await tf.setBackend('wasm');
+            await tf.ready();
+            writeTerm("WASM: INITIALIZED");
+
+            // Исправление 2: Принудительные параметры для мобильных браузеров
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { 
+                    facingMode: 'environment', 
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            });
+            
+            video.srcObject = stream;
+            
+            // Ждем реального запуска потока данных
+            video.onloadedmetadata = () => {
+                video.play();
+                writeTerm("STREAM: DATA_FLOW_STABLE");
+                loadModel();
+            };
+
+        } catch (e) {
+            writeTerm("CRITICAL_ERR: " + e.message.substring(0, 30));
+            console.error(e);
+        }
+    }
+
+    async function loadModel() {
+        writeTerm("SSD_MODEL: LOADING...");
+        try {
+            model = await cocoSsd.load({ base: 'mobilenet_v2' });
+            document.getElementById('overlay').style.display = 'none';
+            writeTerm("SYSTEM: ONLINE. DEEP_SCAN_READY.");
+            render();
+        } catch (e) {
+            writeTerm("MODEL_ERR: FAIL_TO_LOAD");
+        }
     }
 
     async function render(now) {
-        // FPS Calc
-        const dt = now - lastTime;
-        lastTime = now;
-        if (now % 10 < 1) fpsDisplay.innerText = `FPS: ${Math.round(1000/dt)}`;
+        // FPS логгер
+        if (now) {
+            const dt = now - lastTime;
+            lastTime = now;
+            if (Math.random() > 0.9) fpsDisplay.innerText = `FPS: ${Math.round(1000/dt)}`;
+        }
 
-        // ГИПЕР-ОПТИМИЗАЦИЯ: Сканируем уменьшенный, но четкий кроп центральной области
-        // Это позволяет "видеть" мелкие машины вдалеке как крупные объекты для модели
-        predictions = await model.detect(video, 40, 0.35); 
-        
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Исправление 3: Проверка готовности кадра перед детекцией
+        if (video.readyState === 4) {
+            try {
+                // Детекция на высокой чувствительности для дальних объектов
+                predictions = await model.detect(video, 25, 0.3); 
+                
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // Рисуем видео на канвас для стабильности
 
-        // Отрисовка визира дальности
-        drawReticle();
-
-        predictions.forEach(p => {
-            const [x, y, w, h] = p.bbox;
-            const label = p.class;
-            
-            // Формула для 100м+: увеличиваем множитель фокусного расстояния
-            const dist = ((5200 * 0.5) / w); 
-            const color = COLORS[label] || COLORS['default'];
-            
-            ctx.save();
-            const isLocked = lockedObj && Math.abs(lockedObj.bbox[0] - x) < 5;
-            
-            ctx.strokeStyle = color;
-            ctx.lineWidth = isLocked ? 4 : 1;
-            
-            // Если объект очень маленький (далеко), рисуем сплошную линию для видимости
-            if (w < 40) ctx.setLineDash([]);
-            else ctx.setLineDash([5, 5]);
-
-            ctx.strokeRect(x, y, w, h);
-            
-            // Маркер "Движение" для мелких объектов
-            if (w < 50) {
-                ctx.beginPath();
-                ctx.arc(x + w/2, y - 15, 2, 0, Math.PI * 2);
-                ctx.fillStyle = "#ff0000";
-                ctx.fill();
+                predictions.forEach(p => {
+                    const [x, y, w, h] = p.bbox;
+                    const dist = ((4800 * 0.5) / w).toFixed(1);
+                    
+                    ctx.strokeStyle = p.class === 'person' ? '#ffff00' : '#00ff41';
+                    ctx.lineWidth = 2;
+                    
+                    // Рисуем рамку
+                    ctx.strokeRect(x, y, w, h);
+                    
+                    // Данные
+                    ctx.fillStyle = ctx.strokeStyle;
+                    ctx.font = "bold 14px Courier New";
+                    ctx.fillText(`${p.class.toUpperCase()} ${dist}m`, x, y - 10);
+                    
+                    // Углы (визуальный эффект)
+                    drawCorners(x, y, w, h, ctx.strokeStyle);
+                });
+            } catch (err) {
+                // Если ошибка в цикле, не даем приложению упасть
             }
-
-            ctx.fillStyle = color;
-            ctx.font = "bold 11px Courier New";
-            ctx.fillText(`${label.toUpperCase()}`, x, y - 5);
-            
-            // Вывод дистанции с постфиксом ALERT если объект далеко
-            const distStr = dist > 60 ? `${dist.toFixed(0)}m [!]` : `${dist.toFixed(1)}m`;
-            ctx.font = "9px Courier New";
-            ctx.fillText(distStr, x, y - 18);
-
-            drawCorners(x, y, w, h, color, isLocked ? 30 : 10);
-            ctx.restore();
-        });
-
+        }
         requestAnimationFrame(render);
     }
 
-    function drawReticle() {
-        ctx.strokeStyle = "rgba(0, 255, 65, 0.2)";
-        ctx.lineWidth = 1;
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
+    function drawCorners(x, y, w, h, color) {
+        const s = 15;
         ctx.beginPath();
-        ctx.moveTo(cx - 30, cy); ctx.lineTo(cx + 30, cy);
-        ctx.moveTo(cx, cy - 30); ctx.lineTo(cx, cy + 30);
-        ctx.stroke();
-    }
-
-    function drawCorners(x, y, w, h, color, s) {
-        ctx.beginPath();
-        ctx.setLineDash([]);
         ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
         ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
         ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
