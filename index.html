@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VAULT-TEC | VISION_OS v11.8</title>
+    <title>VAULT-TEC | VISION_OS v12.0 PRO</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
@@ -11,42 +11,75 @@
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
         :root {
+            --pip-white: #ffffff;
             --pip-green: #1aff80;
-            --pip-bg: #071a0e;
-            --pip-glow: 0 0 12px rgba(26, 255, 128, 0.6);
-        }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'VT323', monospace; color: var(--pip-green); }
-        
-        /* CRT & Scanline FX */
-        #container::after {
-            content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
-            z-index: 100; background-size: 100% 3px, 3px 100%; pointer-events: none;
+            --pip-bg: #050a05;
+            --glow: 0 0 10px rgba(255, 255, 255, 0.4);
         }
 
-        #viewport { position: relative; width: 100vw; height: calc(100vh - 180px); overflow: hidden; cursor: crosshair; border-bottom: 2px solid var(--pip-green); }
-        video { position: absolute; width: 100%; height: 100%; object-fit: cover; filter: sepia(1) hue-rotate(60deg) brightness(0.7) contrast(1.2); }
-        canvas { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'VT323', monospace; }
 
-        #terminal { height: 180px; background: var(--pip-bg); padding: 15px; overflow: hidden; position: relative; }
-        .term-row { font-size: 20px; margin-bottom: 4px; border-left: 3px solid var(--pip-green); padding-left: 10px; animation: blink 0.1s; }
-        
-        @keyframes blink { from { opacity: 0; } to { opacity: 1; } }
+        body, html { 
+            width: 100%; height: 100%; 
+            background: #000; overflow: hidden; 
+            color: var(--pip-white); 
+        }
 
-        #boot-overlay { position: fixed; inset: 0; background: var(--pip-bg); z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .btn-boot { background: var(--pip-green); color: #000; border: none; padding: 15px 50px; font-size: 30px; cursor: pointer; font-family: 'VT323'; }
+        /* CRT Scanline Effect */
+        #container::before {
+            content: " "; display: block; position: absolute; inset: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%);
+            background-size: 100% 4px; z-index: 100; pointer-events: none;
+        }
+
+        #viewport { 
+            position: relative; width: 100vw; height: calc(100vh - 160px); 
+            background: #000; overflow: hidden;
+        }
+
+        video { 
+            position: absolute; width: 100%; height: 100%; object-fit: cover; 
+            filter: grayscale(0.5) brightness(0.6) contrast(1.2);
+        }
+
+        canvas { 
+            position: absolute; inset: 0; z-index: 5; 
+            pointer-events: none; 
+        }
+
+        #terminal { 
+            height: 160px; background: var(--pip-bg); 
+            border-top: 2px solid var(--pip-white); padding: 12px; 
+            overflow: hidden; box-shadow: inset 0 0 20px #000;
+        }
+
+        .term-row { font-size: 19px; margin-bottom: 2px; color: var(--pip-green); }
+
+        #boot-overlay { 
+            position: fixed; inset: 0; background: #000; z-index: 1000; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; 
+        }
+
+        .boot-btn { 
+            background: none; border: 2px solid var(--pip-white); 
+            color: var(--pip-white); padding: 15px 40px; 
+            font-size: 28px; cursor: pointer; transition: 0.3s;
+        }
+
+        .boot-btn:hover { background: var(--pip-white); color: #000; }
     </style>
 </head>
 <body>
 
 <div id="boot-overlay">
-    <div style="font-size: 50px; margin-bottom: 20px;">☢ VISION_OS v11.8 ☢</div>
-    <button class="btn-boot" onclick="initSystem()">[ INITIALIZE ]</button>
+    <div style="font-size: 40px; margin-bottom: 20px; letter-spacing: 5px;">SYSTEM_V12.0_READY</div>
+    <button class="boot-btn" onclick="initialize()">INITIALIZE LINK</button>
 </div>
 
 <div id="container">
-    <div id="viewport" onclick="resetLock()">
+    <div id="viewport">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
     </div>
@@ -60,132 +93,138 @@
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const termContent = document.getElementById('term-content');
-    
+
     let model = null;
-    let lockedObj = null;
     let predictions = [];
+    let smoothPredictions = new Map(); // Для сглаживания движения рамок
+    const LERP_FACTOR = 0.25; // Коэффициент плавности (0.1 - медленно, 0.9 - мгновенно)
 
-    const TYPE_MAP = {
-        'person': 'BIOLOGICAL / THREAT',
-        'dog': 'BIOLOGICAL / FAUNA',
-        'cat': 'BIOLOGICAL / FAUNA',
-        'car': 'MECHANICAL / TRANSPORT',
-        'truck': 'MECHANICAL / TRANSPORT',
-        'cell phone': 'ELECTRONIC / TECH'
-    };
-
-    async function initSystem() {
-        writeTerm("BOOT SEQUENCE START...");
-        await tf.setBackend('wasm');
-        model = await cocoSsd.load();
-        
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-            video.play();
-            document.getElementById('boot-overlay').style.display = 'none';
-            render();
-        };
-        writeTerm("NEURAL ENGINE ONLINE.");
+    async function initialize() {
+        writeTerm("CONNECTING TO NEURAL_NETWORK...");
+        try {
+            await tf.setBackend('wasm');
+            model = await cocoSsd.load({ base: 'mobilenet_v2' });
+            
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 } }
+            });
+            video.srcObject = stream;
+            
+            video.onloadedmetadata = () => {
+                video.play();
+                document.getElementById('boot-overlay').style.display = 'none';
+                writeTerm("OPTICAL LINK ESTABLISHED.");
+                writeTerm("MODE: MULTI-TARGET RECOGNITION ACTIVE.");
+                requestAnimationFrame(render);
+            };
+        } catch (e) {
+            alert("INIT_ERROR: " + e.message);
+        }
     }
 
-    function writeTerm(text, color = "var(--pip-green)") {
+    function writeTerm(text) {
         const line = document.createElement('div');
         line.className = 'term-row';
-        line.style.color = color;
         line.innerText = `> ${text}`;
         termContent.prepend(line);
-        if (termContent.childNodes.length > 7) termContent.lastChild.remove();
+        if (termContent.childNodes.length > 6) termContent.lastChild.remove();
     }
 
-    // Обработка тапа (Дешифрация)
-    viewport.addEventListener('mousedown', (e) => {
-        const rect = video.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        const cx = (e.clientX - rect.left) * scaleX;
-        const cy = (e.clientY - rect.top) * scaleY;
-
-        lockedObj = predictions.find(p => {
-            const [x, y, w, h] = p.bbox;
-            return cx >= x && cx <= x + w && cy >= y && cy <= y + h;
-        });
-
-        if (lockedObj) {
-            e.stopPropagation();
-            decryptObject(lockedObj);
-        }
-    });
-
-    function decryptObject(obj) {
-        termContent.innerHTML = "";
-        const type = TYPE_MAP[obj.class] || "UNKNOWN ENTITY";
-        const dist = ((900 * 0.5) / obj.bbox[2]).toFixed(2);
-        
-        const data = [
-            `LOCK_ACQUIRED: ${obj.class.toUpperCase()}`,
-            `CLASSIFICATION: ${type}`,
-            `DISTANCE: ${dist} METERS`,
-            `SIG_STRENGTH: ${(obj.score * 100).toFixed(1)}%`,
-            `COORD: X.${Math.round(obj.bbox[0])} Y.${Math.round(obj.bbox[1])}`,
-            `STATUS: DECRYPTED`
-        ];
-
-        data.forEach((msg, i) => setTimeout(() => writeTerm(msg, "#fff"), i * 150));
-    }
-
-    function resetLock() {
-        lockedObj = null;
-        writeTerm("SCANNING AREA... NO LOCK");
+    // Линейная интерполяция для сглаживания
+    function lerp(start, end, amt) {
+        return (1 - amt) * start + amt * end;
     }
 
     function render() {
-        model.detect(video).then(preds => {
+        model.detect(video, 20, 0.4).then(preds => {
             predictions = preds;
+            
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             predictions.forEach(p => {
-                const [x, y, w, h] = p.bbox;
-                const isLocked = lockedObj && lockedObj.class === p.class && Math.abs(lockedObj.bbox[0] - x) < 20;
+                const id = p.class;
+                let [x, y, w, h] = p.bbox;
 
-                ctx.strokeStyle = isLocked ? "#fff" : "var(--pip-green)";
-                ctx.lineWidth = isLocked ? 4 : 2;
-                ctx.shadowBlur = isLocked ? 15 : 0;
-                ctx.shadowColor = "var(--pip-green)";
-
-                // Отрисовка тех-рамок (Brackets)
-                drawBrackets(x, y, w, h, isLocked);
-
-                // Индикаторы распознавания
-                ctx.fillStyle = isLocked ? "#fff" : "var(--pip-green)";
-                ctx.font = "22px VT323";
-                ctx.fillText(`${p.class.toUpperCase()}`, x + 5, y - 10);
-                
-                if (isLocked) {
-                    // Эффект прицела V.A.T.S.
-                    ctx.beginPath();
-                    ctx.moveTo(x + w/2, y + h/2);
-                    ctx.lineTo(canvas.width/2, canvas.height);
-                    ctx.setLineDash([5, 5]);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
+                // Сглаживание координат (убирает мигание и тряску)
+                if (!smoothPredictions.has(id)) {
+                    smoothPredictions.set(id, { x, y, w, h });
                 }
+                
+                let s = smoothPredictions.get(id);
+                s.x = lerp(s.x, x, LERP_FACTOR);
+                s.y = lerp(s.y, y, LERP_FACTOR);
+                s.w = lerp(s.w, w, LERP_FACTOR);
+                s.h = lerp(s.h, h, LERP_FACTOR);
+
+                drawObjectFrame(s.x, s.y, s.w, s.h, p.class, p.score);
             });
+
             requestAnimationFrame(render);
         });
     }
 
-    function drawBrackets(x, y, w, h, locked) {
-        const s = locked ? 35 : 20;
+    function drawObjectFrame(x, y, w, h, label, score) {
+        const dist = ((850 * 0.5) / w).toFixed(1); // Эмпирический расчет расстояния
+        
+        ctx.save();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = "rgba(255,255,255,0.5)";
+        ctx.shadowBlur = 5;
+
+        // 1. Пунктирная рамка
+        ctx.setLineDash([8, 4]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]); // Сброс для уголков
+
+        // 2. Уголки (сплошные)
+        const cornerSize = Math.min(w, h) * 0.15;
         ctx.beginPath();
-        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
-        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
-        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
+        // Сверху-слева
+        ctx.moveTo(x, y + cornerSize); ctx.lineTo(x, y); ctx.lineTo(x + cornerSize, y);
+        // Сверху-справа
+        ctx.moveTo(x + w - cornerSize, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + cornerSize);
+        // Снизу-слева
+        ctx.moveTo(x, y + h - cornerSize); ctx.lineTo(x, y + h); ctx.lineTo(x + cornerSize, y + h);
+        // Снизу-справа
+        ctx.moveTo(x + w - cornerSize, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - cornerSize);
         ctx.stroke();
+
+        // 3. Тайтл и Дистанция
+        ctx.fillStyle = "white";
+        ctx.font = "bold 20px VT323";
+        
+        // Подложка текста для читаемости
+        const tagText = `${label.toUpperCase()} | DIST: ${dist}M`;
+        const textWidth = ctx.measureText(tagText).width;
+        ctx.globalAlpha = 0.7;
+        ctx.fillRect(x, y - 25, textWidth + 10, 25);
+        ctx.globalAlpha = 1.0;
+        
+        ctx.fillStyle = "black";
+        ctx.fillText(tagText, x + 5, y - 7);
+
+        ctx.restore();
     }
+
+    // Слушатель тапа для дешифровки в терминале
+    window.addEventListener('mousedown', (e) => {
+        const rect = video.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+        const target = predictions.find(p => {
+            const [x, y, w, h] = p.bbox;
+            return clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h;
+        });
+
+        if (target) {
+            writeTerm(`DECRYPTING: ${target.class.toUpperCase()}...`);
+            writeTerm(`CONFIDENCE: ${(target.score * 100).toFixed(1)}%`);
+        }
+    });
 </script>
 </body>
 </html>
