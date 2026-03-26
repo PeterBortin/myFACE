@@ -3,151 +3,166 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI SCANNER PRO</title>
+    <title>AI SCANNER ULTIMATE</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
     <style>
         :root { --green: #00ff41; --blue: #0084ff; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: monospace; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         
-        #container { position: relative; width: 100vw; height: 100vh; }
-        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        #container { position: relative; width: 100vw; height: 100vh; background: #000; }
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 1; z-index: 1; }
+        canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
         
-        /* Кнопка запуска для iOS */
-        #start-screen {
+        #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 100; display: flex; 
             flex-direction: column; justify-content: center; align-items: center;
-            color: var(--green); text-align: center; padding: 20px;
+            color: var(--green); text-align: center;
         }
 
         button {
-            background: transparent; border: 1px solid var(--green);
-            color: var(--green); padding: 15px 30px; font-size: 1.2rem;
-            cursor: pointer; text-transform: uppercase; margin-top: 20px;
-            box-shadow: 0 0 10px var(--green);
+            background: rgba(0, 255, 65, 0.1); border: 1px solid var(--green);
+            color: var(--green); padding: 20px 40px; font-size: 1rem;
+            cursor: pointer; text-transform: uppercase; letter-spacing: 2px;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
         }
 
-        .hud-top { position: absolute; top: 10px; width: 100%; display: flex; justify-content: space-between; color: var(--green); padding: 0 15px; box-sizing: border-box; font-size: 12px; z-index: 20; }
-        .scan-line { position: absolute; width: 100%; height: 2px; background: var(--green); opacity: 0.5; top: 0; animation: scan 3s linear infinite; z-index: 20; }
-        @keyframes scan { from {top: 0%} to {top: 100%} }
+        #log { font-size: 10px; margin-top: 20px; color: #666; width: 80%; }
+        
+        .ui-element { position: absolute; color: var(--green); z-index: 10; font-size: 12px; pointer-events: none; }
+        .top-left { top: 20px; left: 20px; border-left: 2px solid var(--green); padding-left: 10px; }
+        .top-right { top: 20px; right: 20px; color: #ff004c; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-<div id="start-screen">
-    <div style="font-size: 24px; letter-spacing: 5px;">SYSTEM OFFLINE</div>
-    <p>ТРЕБУЕТСЯ АВТОРИЗАЦИЯ ВИДЕОПОТОКА</p>
-    <button id="auth-btn">АКТИВИРОВАТЬ КАМЕРУ</button>
+<div id="overlay">
+    <div id="status">SURVEILLANCE SYSTEM v2.0</div>
+    <button id="start-btn">ИНДИВИДУАЛЬНЫЙ ДОСТУП</button>
+    <div id="log">ОЖИДАНИЕ ИНИЦИАЛИЗАЦИИ...</div>
 </div>
 
 <div id="container">
-    <video id="video" autoplay muted playsinline></video>
+    <!-- playsinline, muted, autoplay — критичны для iPhone -->
+    <video id="video" playsinline muted autoplay></video>
     <canvas id="canvas"></canvas>
-    <div class="hud-top">
-        <span>CAM_03 // ACTIVE</span>
-        <span style="color: #ff0000">● REC</span>
+    
+    <div class="ui-element top-left">
+        SYSTEM: ACTIVE<br>
+        STREAM: 1080p<br>
+        ENCRYPTION: AES-256
     </div>
-    <div class="scan-line"></div>
+    <div class="ui-element top-right">● LIVE FEED</div>
 </div>
 
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const startScreen = document.getElementById('start-screen');
-    const authBtn = document.getElementById('auth-btn');
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('start-btn');
+    const log = document.getElementById('log');
 
     let model = null;
 
-    // Функция запроса камеры (вызывается по кнопке для iOS)
-    async function setupCamera() {
-        const constraints = {
-            video: {
-                facingMode: 'environment', // Основная камера
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            },
-            audio: false
-        };
+    function writeLog(msg) {
+        log.innerHTML += `<br>> ${msg}`;
+    }
+
+    async function startSystem() {
+        startBtn.style.display = 'none';
+        writeLog("ЗАПРОС КАМЕРЫ...");
 
         try {
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            // 1. Настройка видеопотока
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 } },
+                audio: false
+            });
+            
             video.srcObject = stream;
             
-            // Важно для iOS: дожидаемся возможности играть видео
-            return new Promise((resolve) => {
+            // ПРИНУДИТЕЛЬНЫЙ ЗАПУСК (важно для iOS)
+            await new Promise((resolve) => {
                 video.onloadedmetadata = () => {
-                    video.play();
-                    resolve();
+                    video.play().then(resolve);
                 };
             });
-        } catch (err) {
-            console.error(err);
-            alert("ОШИБКА: Доступ запрещен или камера занята. Проверьте настройки Safari.");
-            throw err;
-        }
-    }
 
-    async function startDetection() {
-        authBtn.innerText = "ЗАГРУЗКА AI...";
-        authBtn.disabled = true;
+            writeLog("ПОТОК ПОДКЛЮЧЕН. ЗАГРУЗКА НЕЙРОСЕТИ...");
 
-        try {
-            // 1. Сначала просим камеру
-            await setupCamera();
-            // 2. Затем грузим модель
+            // 2. Загрузка модели
             model = await cocoSsd.load();
-            
-            startScreen.style.display = 'none';
-            render();
-        } catch (e) {
-            authBtn.innerText = "ОШИБКА ЗАПУСКА";
-            authBtn.disabled = false;
+            writeLog("AI ГОТОВ. ЗАПУСК ВИЗУАЛИЗАЦИИ...");
+
+            // Убираем оверлей и начинаем рендер
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                render();
+            }, 500);
+
+        } catch (err) {
+            writeLog(`ОШИБКА: ${err.name}`);
+            console.error(err);
+            alert("Камера недоступна. Убедитесь, что используете Safari на iOS и HTTPS.");
         }
     }
 
-    async function render() {
-        // Синхронизация размеров под экран
+    function render() {
+        // Синхронизация холста с видео
         if (canvas.width !== video.videoWidth) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
         }
 
-        const predictions = await model.detect(video);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        predictions.forEach(p => {
-            if (p.class === 'person') {
-                const [x, y, w, h] = p.bbox;
+        // Детекция
+        model.detect(video).then(predictions => {
+            predictions.forEach(p => {
+                if (p.class === 'person') {
+                    const [x, y, w, h] = p.bbox;
 
-                // Рамка (Green)
-                ctx.strokeStyle = '#00ff41';
-                ctx.lineWidth = 4;
-                ctx.strokeRect(x, y, w, h);
+                    // Зеленая рамка (стиль фото 1)
+                    ctx.strokeStyle = '#00ff41';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x, y, w, h);
 
-                // Тэг (Blue)
-                ctx.fillStyle = '#0084ff';
-                ctx.font = 'bold 20px monospace';
-                ctx.fillText(`TARGET: IDENTIFIED`, x, y > 30 ? y - 10 : 30);
-                
-                // Декоративные линии (White)
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(x + w/2, y); ctx.lineTo(x + w/2, 0); // Линия наверх
-                ctx.stroke();
-            }
+                    // Сетка внутри рамки (стиль фото 2)
+                    ctx.fillStyle = 'rgba(0, 255, 65, 0.1)';
+                    ctx.fillRect(x, y, w, h);
+
+                    // Метаданные (стиль фото 1 - синий текст)
+                    ctx.fillStyle = '#0084ff';
+                    ctx.font = '14px monospace';
+                    ctx.fillText(`ID: USER_${Math.floor(p.score * 10000)}`, x + 5, y + 20);
+                    ctx.fillText(`CONFIDENCE: ${Math.round(p.score * 100)}%`, x + 5, y + 40);
+
+                    // Угловые скобки (стиль фото 3)
+                    drawBrackets(x, y, w, h);
+                }
+            });
+            requestAnimationFrame(render);
         });
-
-        requestAnimationFrame(render);
     }
 
-    // Событие нажатия — критично для iOS
-    authBtn.addEventListener('click', startDetection);
+    function drawBrackets(x, y, w, h) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        const s = 20;
+        ctx.beginPath();
+        // Сверху-слева
+        ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
+        // Снизу-справа
+        ctx.moveTo(x + w - s, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - s);
+        ctx.stroke();
+    }
 
+    startBtn.addEventListener('click', startSystem);
 </script>
 </body>
 </html>
