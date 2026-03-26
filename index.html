@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI TERMINAL v7.0 PROTOCOL</title>
+    <title>AI TERMINAL v7.1 FIXED</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
@@ -14,7 +14,7 @@
             --yellow: #ffff00;
             --orange: #ff6600;
             --red: #ff0000;
-            --terminal-bg: rgba(0, 5, 0, 0.9);
+            --terminal-bg: rgba(0, 5, 0, 0.95);
         }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
@@ -24,12 +24,12 @@
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
         
         #terminal { 
-            height: 80px; 
+            height: 100px; 
             width: 100%; 
             background: var(--terminal-bg); 
-            border-top: 2px solid #333; 
+            border-top: 1px solid #222; 
             z-index: 20; 
-            padding: 15px; 
+            padding: 20px; 
             box-sizing: border-box; 
             display: flex;
             align-items: center;
@@ -37,12 +37,9 @@
 
         #term-line {
             color: #00ff41;
-            font-size: 14px;
+            font-size: 13px;
             letter-spacing: 1px;
             white-space: nowrap;
-            overflow: hidden;
-            border-right: 3px solid #00ff41;
-            animation: blink .6s step-end infinite;
         }
 
         #overlay {
@@ -51,19 +48,16 @@
             flex-direction: column; justify-content: center; align-items: center; color: #00ff41;
         }
         button {
-            background: rgba(255, 255, 255, 0.05); border: 1px solid #00ff41;
-            color: #00ff41; padding: 20px 40px; font-size: 1rem; cursor: pointer;
-            text-transform: uppercase; letter-spacing: 2px;
+            background: transparent; border: 1px solid #00ff41;
+            color: #00ff41; padding: 15px 30px; font-size: 14px; cursor: pointer;
+            text-transform: uppercase;
         }
-        
-        @keyframes blink { from, to { border-color: transparent } 50% { border-color: #00ff41; } }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div style="font-size: 18px; margin-bottom: 25px;">SYSTEM ACCESS REQUIRED</div>
-    <button onclick="startApp()">EXECUTE PROTOCOL</button>
+    <button onclick="startApp()">CONNECTING TO CORE...</button>
 </div>
 
 <div id="container">
@@ -72,7 +66,7 @@
         <canvas id="canvas"></canvas>
     </div>
     <div id="terminal">
-        <div id="term-line">SYSTEM_IDLE: ОЖИДАНИЕ СИГНАЛА...</div>
+        <div id="term-line">> ИНИЦИАЛИЗАЦИЯ...</div>
     </div>
 </div>
 
@@ -83,24 +77,9 @@
     const termLine = document.getElementById('term-line');
     
     let model = null;
-    let lastLog = "";
 
     function updateTerminal(text) {
-        if (lastLog === text) return;
-        lastLog = text;
-        termLine.style.animation = 'none';
-        termLine.innerText = "";
-        let i = 0;
-        function type() {
-            if (i < text.length) {
-                termLine.innerText += text.charAt(i);
-                i++;
-                setTimeout(type, 20);
-            } else {
-                termLine.style.animation = 'blink .6s step-end infinite';
-            }
-        }
-        type();
+        termLine.innerText = "> " + text;
     }
 
     async function startApp() {
@@ -110,13 +89,11 @@
             });
             video.srcObject = stream;
             await video.play();
-            updateTerminal("LOADING_COCO_SSD_MODEL...");
             model = await cocoSsd.load();
             document.getElementById('overlay').style.display = 'none';
-            updateTerminal("SYSTEM_ONLINE: СКАНЕР АКТИВИРОВАН");
             detectFrame();
         } catch (e) {
-            alert("CRITICAL_ERROR: CAMERA_ACCESS_DENIED");
+            updateTerminal("ERROR: NO_CAMERA");
         }
     }
 
@@ -127,68 +104,61 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (predictions.length > 0) {
-            const topObj = predictions[0];
-            updateTerminal(`DETECTED: ${topObj.class.toUpperCase()} | CONF: ${Math.round(topObj.score*100)}% | POS: ${Math.round(topObj.bbox[0])}:${Math.round(topObj.bbox[1])}`);
+            const p = predictions[0];
+            updateTerminal(`TARGET: ${p.class.toUpperCase()} | POS: ${Math.round(p.bbox[0])},${Math.round(p.bbox[1])} | STATUS: SCANNING`);
         }
 
         predictions.forEach(p => {
             const [x, y, w, h] = p.bbox;
             const label = p.class;
             
-            let mainColor = "var(--white)";
-            let isPerson = label === 'person';
-            let isAuto = ['car', 'truck', 'bus'].includes(label);
+            // Настройка цветов
+            let color = "#ffffff"; // Предмет (Белый)
+            if (label === 'person') color = "#ffff00"; // Человек (Желтый)
+            if (['car', 'truck', 'bus', 'motorcycle'].includes(label)) color = "#ff0000"; // Авто (Красный)
 
-            if (isPerson) mainColor = "var(--yellow)";
-            if (isAuto) mainColor = "var(--red)";
-
-            // Отрисовка основной рамки (пунктир)
+            // Контур с тенью
+            ctx.save();
+            ctx.shadowBlur = 4;
             ctx.shadowColor = "black";
-            ctx.shadowBlur = 5;
-            ctx.strokeStyle = mainColor;
-            ctx.setLineDash([8, 4]);
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+
+            // 1. Основной пунктирный квадрат
+            ctx.strokeStyle = color;
+            ctx.setLineDash([10, 5]);
             ctx.lineWidth = 2;
             ctx.strokeRect(x, y, w, h);
-            ctx.setLineDash([]);
+            ctx.setLineDash([]); // Сброс пунктира для углов
 
-            // Углы
-            drawCorners(x, y, w, h, mainColor);
+            // 2. Углы (Сплошные)
+            drawCorners(x, y, w, h, color);
 
-            // Тайтл
-            ctx.fillStyle = mainColor;
+            // 3. Тайтл объекта
+            ctx.fillStyle = color;
             ctx.font = "bold 16px Courier New";
-            ctx.fillText(label.toUpperCase(), x + 5, y - 10);
-            ctx.shadowBlur = 0;
+            ctx.fillText(label.toUpperCase(), x + 5, y - 12);
+            ctx.restore();
 
-            // Специфические детекторы
-            if (isPerson) {
-                // Голова (верхние 20% рамки)
-                const headW = w * 0.4;
-                const headH = h * 0.2;
-                const headX = x + (w/2) - (headW/2);
-                const headY = y + (h * 0.05);
-                
-                ctx.strokeStyle = "var(--orange)";
-                ctx.setLineDash([4, 2]);
-                ctx.strokeRect(headX, headY, headW, headH);
-                ctx.fillStyle = "var(--orange)";
-                ctx.font = "10px Courier New";
-                ctx.fillText("HEAD_CONFIRMED", headX, headY - 5);
+            // 4. Дополнительные детекторы (Оранжевый пунктир)
+            ctx.strokeStyle = "#ff6600";
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1.5;
+
+            if (label === 'person') {
+                // Распознавание головы
+                const hW = w * 0.35;
+                const hH = h * 0.18;
+                ctx.strokeRect(x + (w/2) - (hW/2), y + (h * 0.04), hW, hH);
             }
 
-            if (isAuto) {
-                // Колеса (нижние углы)
-                const wheelSize = w * 0.2;
-                ctx.strokeStyle = "var(--orange)";
-                ctx.setLineDash([3, 3]);
-                // Левое колесо
-                ctx.strokeRect(x + (w*0.1), y + (h*0.75), wheelSize, wheelSize);
-                // Правое колесо
-                ctx.strokeRect(x + (w*0.7), y + (h*0.75), wheelSize, wheelSize);
-                ctx.fillStyle = "var(--orange)";
-                ctx.font = "10px Courier New";
-                ctx.fillText("WHEEL_LOCK", x + (w*0.1), y + h + 12);
+            if (['car', 'truck', 'bus'].includes(label)) {
+                // Распознавание колес
+                const wh = w * 0.18;
+                ctx.strokeRect(x + (w * 0.1), y + (h * 0.75), wh, wh);
+                ctx.strokeRect(x + (w * 0.72), y + (h * 0.75), wh, wh);
             }
+            ctx.setLineDash([]);
         });
 
         requestAnimationFrame(detectFrame);
@@ -196,17 +166,17 @@
 
     function drawCorners(x, y, w, h, color) {
         ctx.strokeStyle = color;
-        ctx.lineWidth = 3;
-        const s = 20;
+        ctx.lineWidth = 4;
+        const s = 25;
         ctx.beginPath();
-        // LT
-        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-        // RT
-        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
-        // LB
-        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
-        // RB
-        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
+        // Top Left
+        ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
+        // Top Right
+        ctx.moveTo(x + w - s, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + s);
+        // Bottom Left
+        ctx.moveTo(x, y + h - s); ctx.lineTo(x, y + h); ctx.lineTo(x + s, y + h);
+        // Bottom Right
+        ctx.moveTo(x + w - s, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - s);
         ctx.stroke();
     }
 </script>
