@@ -3,137 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v11.7 | LIGHTSPEED</title>
+    <title>VISION_OS v11.8 | HOTFIX</title>
     
-    <!-- Подключаем только необходимые модули через быстрые CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
     <style>
-        :root { --neon: #00ff41; --bg: #020202; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
+        :root { --neon: #00ff41; --bg: #000000; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: monospace; color: var(--neon); }
+        #container { position: relative; width: 100vw; height: 100vh; }
         
-        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-        
-        /* Видео скрыто, рисуем напрямую на Canvas для экономии GPU */
-        video { position: absolute; visibility: hidden; pointer-events: none; }
-        canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; background: #000; }
-
-        #ui-layer { position: absolute; top: 10px; right: 10px; z-index: 20; }
-        .ui-status { background: rgba(0,255,65,0.1); border: 1px solid var(--neon); color: var(--neon); padding: 4px 10px; font-size: 10px; backdrop-filter: blur(5px); }
+        /* Исправлено: видео теперь отображается, но за канвасом, для стабильности потока */
+        video { position: absolute; top:0; left:0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+        canvas { position: absolute; top:0; left:0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
 
         #terminal { 
-            height: 120px; background: rgba(5,5,5,0.9); border-top: 1px solid #333; 
-            padding: 10px; box-sizing: border-box; overflow: hidden; font-size: 10px; z-index: 30;
+            position: absolute; bottom: 0; width: 100%; height: 100px; 
+            background: rgba(0,0,0,0.7); border-top: 1px solid #222; 
+            padding: 10px; font-size: 10px; z-index: 10; box-sizing: border-box;
         }
-        .term-row { margin-bottom: 2px; opacity: 0.8; }
-
         #overlay {
-            position: fixed; inset: 0; background: var(--bg); z-index: 100; 
+            position: fixed; inset: 0; background: #000; z-index: 100; 
             display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
-        .loader { width: 40px; height: 40px; border: 2px solid #111; border-top: 2px solid var(--neon); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        button { background: none; border: 1px solid var(--neon); color: var(--neon); padding: 12px 30px; cursor: pointer; display: none; font-family: inherit; }
+        button { 
+            background: #00ff41; color: #000; border: none; padding: 15px 40px; 
+            font-weight: bold; cursor: pointer; letter-spacing: 2px;
+        }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div class="loader" id="loader"></div>
-    <div id="status-text" style="font-size: 10px; letter-spacing: 2px; margin-bottom: 10px;">LOADING CORE...</div>
-    <button id="start-btn" onclick="startSystem()">INITIALIZE</button>
+    <div id="status" style="margin-bottom: 20px;">LOADING...</div>
+    <button id="btn" style="display:none;" onclick="start()">START SYSTEM</button>
 </div>
 
 <div id="container">
-    <div id="ui-layer"><div class="ui-status" id="fps">FPS: --</div></div>
-    <div id="viewport">
-        <video id="video" playsinline muted autoplay></video>
-        <canvas id="canvas"></canvas>
-    </div>
-    <div id="terminal"><div id="term-content"></div></div>
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="canvas"></canvas>
+    <div id="terminal" id="term"></div>
 </div>
 
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { desynchronized: true, alpha: false });
-    const termContent = document.getElementById('term-content');
-    
-    let model = null;
-    let isRunning = false;
-    let lastTime = 0;
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const btn = document.getElementById('btn');
+    let model;
 
-    // 1. Ускоренная предзагрузка
-    window.onload = async () => {
+    // Инициализация
+    (async () => {
         try {
-            // Используем CPU/WebGL адаптивно для скорости
-            await tf.setBackend('webgl'); 
-            model = await cocoSsd.load({ base: 'lite_mobilenet_v2' }); // Самая легкая база
-            
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('status-text').innerText = "SYSTEM READY";
-            document.getElementById('start-btn').style.display = 'block';
-            writeTerm("CORE_LOADED: MEMORY_OPTIMIZED");
+            await tf.ready();
+            model = await cocoSsd.load();
+            status.innerText = "SYSTEM READY";
+            btn.style.display = "block";
         } catch (e) {
-            writeTerm("LOAD_ERROR: RECHECK_NETWORK");
+            status.innerText = "ERROR: " + e.message;
         }
-    };
+    })();
 
-    async function startSystem() {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', width: 640, height: 480 } // Оптимальное разрешение для скорости детекции
-        });
-        video.srcObject = stream;
+    async function start() {
         document.getElementById('overlay').style.display = 'none';
-        isRunning = true;
-        render();
+        
+        const constraints = {
+            video: { 
+                facingMode: 'environment',
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        
+        // Принудительный запуск видео
+        video.onloadeddata = () => {
+            video.play();
+            detect();
+        };
     }
 
-    function writeTerm(text) {
-        const line = document.createElement('div');
-        line.className = 'term-row';
-        line.innerText = `> ${text}`;
-        termContent.prepend(line);
-    }
+    async function detect() {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
 
-    async function render(now) {
-        if (!isRunning) return;
-
-        // Расчет FPS
-        const dt = now - lastTime;
-        lastTime = now;
-        if (now % 20 < 1) document.getElementById('fps').innerText = `FPS: ${Math.round(1000/dt)}`;
-
-        // Прямой проброс кадра на канвас (самый быстрый способ)
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Детекция только каждого 2-го кадра для разгрузки процессора (визуально незаметно)
-        if (Math.floor(now / 16) % 2 === 0) {
-            const predictions = await model.detect(video, 15, 0.4);
-            
-            predictions.forEach(p => {
-                const [x, y, w, h] = p.bbox;
-                const dist = ((3500 * 0.5) / w).toFixed(1);
-
-                ctx.strokeStyle = varColor(p.class);
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x, y, w, h);
+        // Цикл детекции
+        setInterval(async () => {
+            if (video.readyState === 4) {
+                const predictions = await model.detect(video, 10, 0.3);
                 
-                ctx.fillStyle = ctx.strokeStyle;
-                ctx.font = "12px monospace";
-                ctx.fillText(`${p.class.toUpperCase()} ${dist}M`, x + 5, y + 15);
-            });
-        }
-
-        requestAnimationFrame(render);
-    }
-
-    function varColor(cls) {
-        if (cls === 'person') return '#ffff00';
-        if (['car', 'truck', 'bus'].includes(cls)) return '#ff0000';
-        return '#00ff41';
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                predictions.forEach(p => {
+                    const [x, y, w, h] = p.bbox;
+                    // Рассчитываем дистанцию (50-100м)
+                    const dist = Math.round((4000 / w)); 
+                    
+                    ctx.strokeStyle = "#00ff41";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, w, h);
+                    
+                    ctx.fillStyle = "#00ff41";
+                    ctx.font = "14px monospace";
+                    ctx.fillText(`${p.class.toUpperCase()} ${dist}m`, x, y > 20 ? y - 5 : 20);
+                });
+            }
+        }, 100); // 10 раз в секунду — оптимально для скорости
     }
 </script>
 </body>
