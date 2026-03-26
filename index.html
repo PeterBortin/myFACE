@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v9.5 | LiDAR_UPDATE</title>
+    <title>VISION_OS v9.8 | PIXEL_GRID_LIDAR</title>
     
     <!-- Подключаем ядро и WASM для старых CPU -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
@@ -24,10 +24,9 @@
             position: absolute; width: 100%; height: 100%; object-fit: cover; 
             filter: brightness(0.35) contrast(1.3) grayscale(0.2); 
             z-index: 1; 
-            transition: filter 0.5s ease;
+            transition: opacity 0.3s ease;
         }
-        /* Стиль для LiDAR режима (почти полная темнота видео) */
-        video.lidar-mode { filter: brightness(0.05) contrast(2) saturate(0); }
+        video.lidar-mode { opacity: 0; } /* Скрываем видео в лидаре, оставляем только сетку */
 
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
 
@@ -79,16 +78,21 @@
     </div>
 </div>
 
+<!-- Скрытый холст для анализа пикселей видеопотока -->
+<canvas id="buffer" style="display:none;"></canvas>
+
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const buffer = document.getElementById('buffer');
+    const bctx = buffer.getContext('2d', {willReadFrequently: true});
     const termContent = document.getElementById('term-content');
     
     let model = null;
     let lockedObj = null;
     let predictions = [];
-    let currentMode = 'STD'; // STD или LIDAR
+    let currentMode = 'STD';
 
     const COLORS = {
         'person': '#ffff00',
@@ -102,10 +106,13 @@
         try {
             await tf.setBackend('wasm');
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 } }
+                video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
             });
             video.srcObject = stream;
             await video.play();
+            
+            buffer.width = 160; // Уменьшенное разрешение для анализа производительности
+            buffer.height = 120;
             
             writeTerm("ENGINE: LOADING COCO-SSD LIGHTWEIGHT...");
             model = await cocoSsd.load();
@@ -126,7 +133,6 @@
         writeTerm(`SWITCHING_MODE: ${mode}... OK`);
     }
 
-    // Слушатель клика по рамке
     document.getElementById('viewport').addEventListener('mousedown', (e) => {
         const rect = video.getBoundingClientRect();
         const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
@@ -162,10 +168,10 @@
         const lines = [
             `LOCK_ACQUIRED: ${obj.class.toUpperCase()}`,
             `COORDINATES: X:${Math.round(obj.bbox[0])} Y:${Math.round(obj.bbox[1])}`,
-            `DISTANCE: ${((800 * 0.5) / obj.bbox[2]).toFixed(2)}m`,
+            `DISTANCE: ${((1200 * 0.5) / obj.bbox[2]).toFixed(2)}m`,
             `DECRYPTING_SIGNATURE...`,
             `STATUS: [${(obj.score * 100).toFixed(0)}% PROBABILITY]`,
-            `DATA: LOCAL_OBJECT_ID_${Math.floor(Math.random()*9999)}`
+            `SENSORS: SCANNING_PIXELS...`
         ];
         lines.forEach((l, i) => setTimeout(() => writeTerm(l), i * 150));
     }
@@ -177,22 +183,24 @@
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Рисуем сетку LiDAR в фоне, если включен режим
         if (currentMode === 'LIDAR') {
-            drawLidarGrid();
+            drawPixelGrid();
         }
 
-        const activeTargets = predictions.slice(0, 10);
+        // В обычном режиме увеличиваем лимит захвата до 20 объектов и дальность
+        const limit = (currentMode === 'STD') ? 20 : 8;
+        const activeTargets = predictions.slice(0, limit);
 
         activeTargets.forEach(p => {
             const [x, y, w, h] = p.bbox;
             const label = p.class;
-            const dist = ((850 * 0.5) / w); // Расчет дистанции
+            // Увеличенная базовая константа для дальности в STD режиме
+            const distMult = (currentMode === 'STD') ? 1200 : 850;
+            const dist = ((distMult * 0.5) / w); 
             
-            // Цвет в LiDAR зависит от дистанции (от красного-близко до синего-далеко)
             let color;
             if (currentMode === 'LIDAR') {
-                const hue = Math.min(240, dist * 20); // 0 (красный) -> 240 (синий)
+                const hue = Math.min(240, dist * 25);
                 color = `hsl(${240 - hue}, 100%, 50%)`;
             } else {
                 color = COLORS[label] || COLORS['default'];
@@ -205,62 +213,61 @@
             ctx.lineWidth = isLocked ? 4 : 2;
             
             if (currentMode === 'LIDAR') {
-                // В режиме LiDAR рисуем заполненный градиент глубины
-                ctx.globalAlpha = 0.2;
+                ctx.globalAlpha = 0.3;
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, w, h);
                 ctx.globalAlpha = 1.0;
-                // Эффект сканирующих линий
-                ctx.beginPath();
-                for(let i=0; i<h; i+=4) {
-                    ctx.moveTo(x, y+i); ctx.lineTo(x+w, y+i);
-                }
-                ctx.lineWidth = 0.5;
-                ctx.stroke();
             } else {
                 ctx.setLineDash(isLocked ? [] : [8, 4]);
                 ctx.strokeRect(x, y, w, h);
             }
             
-            // Текст данных
             ctx.fillStyle = color;
             ctx.font = "bold 12px Courier New";
             ctx.fillText(`${label.toUpperCase()}`, x, y - 10);
             ctx.font = "9px Courier New";
-            ctx.fillText(`DIST: ${dist.toFixed(2)}m`, x, y - 22);
+            ctx.fillText(`RANGE: ${dist.toFixed(2)}m`, x, y - 22);
 
-            // Угловые скобки
             ctx.setLineDash([]);
-            ctx.lineWidth = 2;
             drawCorners(x, y, w, h, color, isLocked ? 30 : 15);
-            
             ctx.restore();
         });
 
         requestAnimationFrame(render);
     }
 
-    function drawLidarGrid() {
-        ctx.save();
-        ctx.strokeStyle = '#003311';
-        ctx.lineWidth = 1;
-        const step = 40;
+    // Режим пиксельной проекции
+    function drawPixelGrid() {
+        bctx.drawImage(video, 0, 0, buffer.width, buffer.height);
+        const imgData = bctx.getImageData(0, 0, buffer.width, buffer.height).data;
         
-        // Вертикальные линии перспективы
-        for (let x = 0; x <= canvas.width; x += step) {
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvas.height);
-            ctx.stroke();
+        const cellW = canvas.width / buffer.width;
+        const cellH = canvas.height / buffer.height;
+
+        for (let y = 0; y < buffer.height; y += 2) { // Шаг 2 для оптимизации
+            for (let x = 0; x < buffer.width; x += 2) {
+                const i = (y * buffer.width + x) * 4;
+                const r = imgData[i];
+                const g = imgData[i+1];
+                const b = imgData[i+2];
+                const avg = (r + g + b) / 3;
+
+                if (avg > 40) { // Порог шума
+                    // Создаем эффект "точек лидара"
+                    const size = (avg / 255) * 3;
+                    ctx.fillStyle = `rgb(0, ${avg}, ${avg/2})`;
+                    ctx.fillRect(x * cellW, y * cellH, size, size);
+                }
+            }
         }
-        // Горизонтальные линии
-        for (let y = 0; y <= canvas.height; y += step) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(canvas.width, y);
-            ctx.stroke();
-        }
-        ctx.restore();
+        
+        // Матричная сетка поверх
+        ctx.strokeStyle = "rgba(0, 255, 65, 0.05)";
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        for(let i=0; i<canvas.width; i+=20) { ctx.moveTo(i,0); ctx.lineTo(i, canvas.height); }
+        for(let i=0; i<canvas.height; i+=20) { ctx.moveTo(0,i); ctx.lineTo(canvas.width, i); }
+        ctx.stroke();
     }
 
     function drawCorners(x, y, w, h, color, s) {
