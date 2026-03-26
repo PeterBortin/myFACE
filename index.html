@@ -3,117 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VAULT-TEC | VISION_OS v11.5 PRO</title>
+    <title>VAULT-TEC | VISION_OS v11.8</title>
     
-    <!-- Core AI Modules -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
-
         :root {
             --pip-green: #1aff80;
-            --pip-green-dim: rgba(26, 255, 128, 0.15);
             --pip-bg: #071a0e;
-            --alert-red: #ff3333;
-            --crt-glow: 0 0 10px rgba(26, 255, 128, 0.5);
+            --pip-glow: 0 0 12px rgba(26, 255, 128, 0.6);
+        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'VT323', monospace; color: var(--pip-green); }
+        
+        /* CRT & Scanline FX */
+        #container::after {
+            content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            z-index: 100; background-size: 100% 3px, 3px 100%; pointer-events: none;
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'VT323', monospace; user-select: none; }
-
-        body, html { width: 100%; height: 100%; background: #000; overflow: hidden; color: var(--pip-green); }
-
-        /* CRT Filter Effect */
-        #crt-fx {
-            position: fixed; inset: 0; z-index: 1000; pointer-events: none;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
-                        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
-            background-size: 100% 3px, 2px 100%;
-            opacity: 0.4;
-        }
-
-        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; border: 4px solid #222; }
-
-        /* Viewport */
-        #viewport { position: relative; flex: 1; overflow: hidden; background: #000; cursor: crosshair; }
-        video { 
-            position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: sepia(1) hue-rotate(65deg) brightness(0.7) contrast(1.3);
-        }
+        #viewport { position: relative; width: 100vw; height: calc(100vh - 180px); overflow: hidden; cursor: crosshair; border-bottom: 2px solid var(--pip-green); }
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; filter: sepia(1) hue-rotate(60deg) brightness(0.7) contrast(1.2); }
         canvas { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 
-        /* HUD Elements */
-        #hud-overlay {
-            position: absolute; inset: 0; z-index: 10; pointer-events: none;
-            padding: 15px; display: flex; flex-direction: column; justify-content: space-between;
-        }
-        .hud-panel { background: var(--pip-bg); border: 1px solid var(--pip-green); padding: 5px 12px; box-shadow: var(--crt-glow); }
-        .bar { width: 120px; height: 8px; border: 1px solid var(--pip-green); margin-top: 4px; position: relative; }
-        .bar-fill { height: 100%; background: var(--pip-green); transition: width 0.3s; }
+        #terminal { height: 180px; background: var(--pip-bg); padding: 15px; overflow: hidden; position: relative; }
+        .term-row { font-size: 20px; margin-bottom: 4px; border-left: 3px solid var(--pip-green); padding-left: 10px; animation: blink 0.1s; }
+        
+        @keyframes blink { from { opacity: 0; } to { opacity: 1; } }
 
-        /* Terminal */
-        #terminal { 
-            height: 180px; background: var(--pip-bg); border-top: 2px solid var(--pip-green); 
-            padding: 10px; overflow: hidden; font-size: 18px; position: relative;
-        }
-        .term-row { margin-bottom: 2px; opacity: 0.9; animation: scanline-text 0.1s ease-out; }
-        @keyframes scanline-text { from { opacity: 0; transform: translateX(-5px); } to { opacity: 1; transform: translateX(0); } }
-
-        /* Loading Overlay */
-        #boot-screen {
-            position: fixed; inset: 0; background: var(--pip-bg); z-index: 2000;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-        }
-        .boot-btn {
-            background: var(--pip-green); color: #000; border: none; padding: 15px 40px;
-            font-size: 32px; cursor: pointer; letter-spacing: 2px;
-        }
-        .boot-btn:hover { background: #fff; box-shadow: 0 0 20px var(--pip-green); }
-
-        #scan-line {
-            position: absolute; width: 100%; height: 2px; background: var(--pip-green-dim);
-            z-index: 6; animation: scan 4s linear infinite;
-        }
-        @keyframes scan { from { top: 0; } to { top: 100%; } }
+        #boot-overlay { position: fixed; inset: 0; background: var(--pip-bg); z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .btn-boot { background: var(--pip-green); color: #000; border: none; padding: 15px 50px; font-size: 30px; cursor: pointer; font-family: 'VT323'; }
     </style>
 </head>
 <body>
 
-<div id="crt-fx"></div>
-
-<div id="boot-screen">
-    <div style="font-size: 60px; margin-bottom: 10px;">☢ VAULT-TEC ☢</div>
-    <div id="load-status" style="margin-bottom: 30px; font-size: 20px;">INITIALIZING NEURAL CORE...</div>
-    <button id="boot-btn" class="boot-btn" style="display:none;" onclick="startSystem()">[ INITIALIZE SIGHT ]</button>
+<div id="boot-overlay">
+    <div style="font-size: 50px; margin-bottom: 20px;">☢ VISION_OS v11.8 ☢</div>
+    <button class="btn-boot" onclick="initSystem()">[ INITIALIZE ]</button>
 </div>
 
 <div id="container">
     <div id="viewport" onclick="resetLock()">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
-        <div id="scan-line"></div>
-        
-        <div id="hud-overlay">
-            <div style="display: flex; justify-content: space-between; pointer-events: none;">
-                <div class="hud-panel">
-                    HP [||||||||||||]
-                    <div style="font-size: 14px;">RADS: 0.02 mSv/h</div>
-                </div>
-                <div class="hud-panel" style="text-align: right;">
-                    AP [||||||||    ]
-                    <div id="fps-val" style="font-size: 14px;">SCAN_FREQ: 00HZ</div>
-                </div>
-            </div>
-            
-            <div style="display: flex; justify-content: flex-end; gap: 10px; pointer-events: auto;">
-                <button class="hud-panel" style="cursor:pointer; color:inherit;" onclick="event.stopPropagation(); deepAnalyze()">[ DEEP SCAN ]</button>
-            </div>
-        </div>
     </div>
-
     <div id="terminal">
         <div id="term-content"></div>
     </div>
@@ -125,61 +61,32 @@
     const ctx = canvas.getContext('2d');
     const termContent = document.getElementById('term-content');
     
-    let model = null, lockedObj = null, predictions = [], faces = [];
-    let audioCtx = null, geigerInterval = null;
-    
-    // --- Локальное хранилище знаний ---
-    const VAULT_DB = JSON.parse(localStorage.getItem('vault_v11_db')) || { encounters: 0, entities: {} };
+    let model = null;
+    let lockedObj = null;
+    let predictions = [];
 
-    // --- Звуковой движок (Гейгер и Бипы) ---
-    function playSound(freq, type = 'sine', vol = 0.1, dur = 0.1) {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + dur);
-    }
+    const TYPE_MAP = {
+        'person': 'BIOLOGICAL / THREAT',
+        'dog': 'BIOLOGICAL / FAUNA',
+        'cat': 'BIOLOGICAL / FAUNA',
+        'car': 'MECHANICAL / TRANSPORT',
+        'truck': 'MECHANICAL / TRANSPORT',
+        'cell phone': 'ELECTRONIC / TECH'
+    };
 
-    function geigerClick() {
-        if (predictions.length > 0) {
-            const delay = Math.max(50, 500 - (predictions.length * 50));
-            playSound(Math.random() * 100 + 400, 'square', 0.02, 0.01);
-            setTimeout(geigerClick, delay + Math.random() * 200);
-        } else {
-            setTimeout(geigerClick, 1000);
-        }
-    }
-
-    // --- Инициализация ---
-    async function loadResources() {
-        const status = document.getElementById('load-status');
-        try {
-            status.innerText = "LOADING COCO-SSD...";
-            model = await cocoSsd.load({ base: 'mobilenet_v2' });
-            status.innerText = "LOADING FACE-DETECTOR...";
-            await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
-            status.innerText = "ALL SYSTEMS NOMINAL.";
-            document.getElementById('boot-btn').style.display = "block";
-        } catch (e) {
-            status.innerText = "CORE ERROR: " + e.message;
-        }
-    }
-
-    async function startSystem() {
+    async function initSystem() {
+        writeTerm("BOOT SEQUENCE START...");
         await tf.setBackend('wasm');
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', width: { ideal: 1280 } }
-        });
+        model = await cocoSsd.load();
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         video.srcObject = stream;
-        await video.play();
-        document.getElementById('boot-screen').style.display = 'none';
-        writeTerm("VAULT-TEC SIGHT INITIALIZED.", "#fff");
-        geigerClick();
-        render();
+        video.onloadedmetadata = () => {
+            video.play();
+            document.getElementById('boot-overlay').style.display = 'none';
+            render();
+        };
+        writeTerm("NEURAL ENGINE ONLINE.");
     }
 
     function writeTerm(text, color = "var(--pip-green)") {
@@ -188,108 +95,90 @@
         line.style.color = color;
         line.innerText = `> ${text}`;
         termContent.prepend(line);
-        if (termContent.childNodes.length > 10) termContent.lastChild.remove();
+        if (termContent.childNodes.length > 7) termContent.lastChild.remove();
     }
 
-    // --- Логика анализа ---
+    // Обработка тапа (Дешифрация)
     viewport.addEventListener('mousedown', (e) => {
         const rect = video.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
-        const clickX = (e.clientX - rect.left) * scaleX;
-        const clickY = (e.clientY - rect.top) * scaleY;
+        const cx = (e.clientX - rect.left) * scaleX;
+        const cy = (e.clientY - rect.top) * scaleY;
 
         lockedObj = predictions.find(p => {
             const [x, y, w, h] = p.bbox;
-            return clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h;
+            return cx >= x && cx <= x + w && cy >= y && cy <= y + h;
         });
 
         if (lockedObj) {
-            playSound(800, 'square', 0.1);
-            processLock(lockedObj);
+            e.stopPropagation();
+            decryptObject(lockedObj);
         }
     });
 
-    function processLock(obj) {
-        const label = obj.class;
-        if (!VAULT_DB.entities[label]) VAULT_DB.entities[label] = { seen: 0 };
-        VAULT_DB.entities[label].seen++;
-        VAULT_DB.encounters++;
-        localStorage.setItem('vault_v11_db', JSON.stringify(VAULT_DB));
+    function decryptObject(obj) {
+        termContent.innerHTML = "";
+        const type = TYPE_MAP[obj.class] || "UNKNOWN ENTITY";
+        const dist = ((900 * 0.5) / obj.bbox[2]).toFixed(2);
+        
+        const data = [
+            `LOCK_ACQUIRED: ${obj.class.toUpperCase()}`,
+            `CLASSIFICATION: ${type}`,
+            `DISTANCE: ${dist} METERS`,
+            `SIG_STRENGTH: ${(obj.score * 100).toFixed(1)}%`,
+            `COORD: X.${Math.round(obj.bbox[0])} Y.${Math.round(obj.bbox[1])}`,
+            `STATUS: DECRYPTED`
+        ];
 
-        writeTerm("--- TARGET LOCK: " + label.toUpperCase() + " ---", "#fff");
-        writeTerm(`KNOWN DATA ENTRIES: ${VAULT_DB.entities[label].seen}`);
-        writeTerm(`ESTIMATED DISTANCE: ${((950 * 0.45) / obj.bbox[2]).toFixed(1)}m`);
+        data.forEach((msg, i) => setTimeout(() => writeTerm(msg, "#fff"), i * 150));
     }
 
-    function resetLock() { 
-        if(lockedObj) playSound(200, 'sine', 0.1);
-        lockedObj = null; 
-        writeTerm("SCANNING BROAD SPECTRUM..."); 
+    function resetLock() {
+        lockedObj = null;
+        writeTerm("SCANNING AREA... NO LOCK");
     }
 
-    async function deepAnalyze() {
-        writeTerm("INITIATING CLOUD RECOGNITION...", "#fff");
-        playSound(1200, 'sine', 0.05, 0.5);
-        setTimeout(() => writeTerm("ENHANCED CONTEXT: WASTE_ZONE_V3"), 800);
-    }
+    function render() {
+        model.detect(video).then(preds => {
+            predictions = preds;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // --- Главный цикл отрисовки ---
-    async function render() {
-        // Оптимизация: детекция лиц и объектов
-        predictions = await model.detect(video);
-        faces = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+            predictions.forEach(p => {
+                const [x, y, w, h] = p.bbox;
+                const isLocked = lockedObj && lockedObj.class === p.class && Math.abs(lockedObj.bbox[0] - x) < 20;
 
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.strokeStyle = isLocked ? "#fff" : "var(--pip-green)";
+                ctx.lineWidth = isLocked ? 4 : 2;
+                ctx.shadowBlur = isLocked ? 15 : 0;
+                ctx.shadowColor = "var(--pip-green)";
 
-        // Отрисовка Лиц (Vault-Tec Blue Style)
-        faces.forEach(f => {
-            const { x, y, width, height } = f.box;
-            ctx.strokeStyle = "#00aaff";
-            ctx.setLineDash([2, 4]);
-            ctx.strokeRect(x, y, width, height);
-            ctx.fillStyle = "#00aaff";
-            ctx.fillText("SUBJECT_ID_FOUND", x, y - 5);
-        });
+                // Отрисовка тех-рамок (Brackets)
+                drawBrackets(x, y, w, h, isLocked);
 
-        // Отрисовка Объектов
-        predictions.forEach(p => {
-            const [x, y, w, h] = p.bbox;
-            const isLocked = lockedObj && lockedObj.class === p.class && Math.abs(lockedObj.bbox[0] - x) < 30;
-            
-            ctx.save();
-            ctx.strokeStyle = isLocked ? "#fff" : "var(--pip-green)";
-            ctx.lineWidth = isLocked ? 4 : 2;
-            
-            // Тесла-рамки (углы)
-            drawBrackets(x, y, w, h, isLocked ? 30 : 15);
-            
-            // Текст и данные
-            ctx.fillStyle = isLocked ? "#fff" : "var(--pip-green)";
-            ctx.font = "22px VT323";
-            const dist = ((950 * 0.45) / w).toFixed(1);
-            ctx.fillText(`${p.class.toUpperCase()} [${dist}M]`, x + 5, y - 10);
-
-            if (isLocked) {
-                // V.A.T.S. Indicator
-                ctx.beginPath();
-                ctx.moveTo(x + w/2, y + h/2);
-                ctx.lineTo(canvas.width/2, canvas.height - 200);
-                ctx.setLineDash([5, 5]);
-                ctx.stroke();
+                // Индикаторы распознавания
+                ctx.fillStyle = isLocked ? "#fff" : "var(--pip-green)";
+                ctx.font = "22px VT323";
+                ctx.fillText(`${p.class.toUpperCase()}`, x + 5, y - 10);
                 
-                ctx.globalAlpha = 0.15;
-                ctx.fillRect(x, y, w, h);
-            }
-            ctx.restore();
+                if (isLocked) {
+                    // Эффект прицела V.A.T.S.
+                    ctx.beginPath();
+                    ctx.moveTo(x + w/2, y + h/2);
+                    ctx.lineTo(canvas.width/2, canvas.height);
+                    ctx.setLineDash([5, 5]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            });
+            requestAnimationFrame(render);
         });
-
-        requestAnimationFrame(render);
     }
 
-    function drawBrackets(x, y, w, h, s) {
+    function drawBrackets(x, y, w, h, locked) {
+        const s = locked ? 35 : 20;
         ctx.beginPath();
         ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
         ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
@@ -297,13 +186,6 @@
         ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
         ctx.stroke();
     }
-
-    // FPS и Системный статус
-    setInterval(() => {
-        document.getElementById('fps-val').innerText = `SCAN_FREQ: ${Math.floor(Math.random()*3 + 28)}HZ`;
-    }, 1000);
-
-    loadResources();
 </script>
 </body>
 </html>
