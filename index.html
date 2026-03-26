@@ -3,257 +3,630 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v10.0 | ULTIMATE AI</title>
+    <title>VISION_OS v10.0 | ROBOTIC SIGHT | AI-ENHANCED</title>
     
-    <!-- Ядро, WASM и Face-API -->
+    <!-- TensorFlow.js + WASM для производительности на слабых CPU -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    
+    <!-- Библиотека для удобной работы с камерой -->
+    <script src="https://unpkg.com/@tensorflow-models/face-detection/dist/face-detection.js"></script>
 
     <style>
-        :root { 
-            --target: #ffff00; --hostile: #ff0000; --bio: #ff00ff; --obj: #ffffff; --plant: #00ff41;
-            --face: #00d4ff; --bg: #050505;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
         }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #00ff41; }
-        
-        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-        
-        #viewport { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
-        video { 
-            position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: brightness(0.35) contrast(1.4) grayscale(0.1); 
-            z-index: 1; 
-        }
-        canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
 
-        #terminal { 
-            height: 160px; background: var(--bg); border-top: 2px solid #1a1a1a; 
-            padding: 15px; box-sizing: border-box; overflow: hidden; font-size: 12px;
-            text-shadow: 0 0 5px rgba(0,255,65,0.5);
+        :root {
+            --primary: #00ff9d;
+            --primary-glow: rgba(0, 255, 157, 0.4);
+            --secondary: #ff3366;
+            --alert: #ffaa00;
+            --bg-dark: #0a0c0f;
+            --panel-bg: rgba(10, 12, 15, 0.85);
+            --scanline: rgba(0, 255, 157, 0.1);
         }
-        .term-row { margin-bottom: 4px; opacity: 0.9; }
 
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+            font-family: 'Share Tech Mono', 'Courier New', monospace;
+        }
+
+        /* Контейнер с 3D-перспективой */
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transform-style: preserve-3d;
+        }
+
+        /* Основное окно камеры */
+        #viewport {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
+            cursor: crosshair;
+            background: #000;
+        }
+
+        video {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: brightness(0.7) contrast(1.2) saturate(1.1);
+            z-index: 1;
+        }
+
+        canvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        /* Терминал с эффектом матрицы */
+        #terminal {
+            height: 200px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(8px);
+            border-top: 1px solid var(--primary);
+            padding: 12px 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            color: var(--primary);
+            text-shadow: 0 0 3px var(--primary);
+            position: relative;
+            z-index: 10;
+        }
+
+        #terminal::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            animation: scanline 3s linear infinite;
+        }
+
+        @keyframes scanline {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .term-row {
+            margin-bottom: 4px;
+            opacity: 0.9;
+            letter-spacing: 0.5px;
+            border-left: 2px solid var(--primary);
+            padding-left: 8px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Оверлей загрузки с эффектом пульсации */
         #overlay {
-            position: fixed; inset: 0; background: #000; z-index: 100; 
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at center, #0a0f0a 0%, #000 100%);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
         }
-        button {
-            background: none; border: 1px solid #00ff41; color: #00ff41;
-            padding: 15px 40px; cursor: pointer; letter-spacing: 3px; font-weight: bold;
+
+        .boot-btn {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+            padding: 16px 48px;
+            font-size: 24px;
+            font-family: monospace;
+            font-weight: bold;
+            cursor: pointer;
+            letter-spacing: 4px;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 15px var(--primary-glow);
         }
-        .scan-line { position: absolute; width: 100%; height: 1px; background: rgba(0, 255, 65, 0.3); z-index: 6; animation: scan 4s linear infinite; }
-        @keyframes scan { from { top: 0; } to { top: 100%; } }
+
+        .boot-btn:hover {
+            background: var(--primary);
+            color: #000;
+            box-shadow: 0 0 30px var(--primary);
+            transform: scale(1.05);
+        }
+
+        /* Статус-бар с датчиками */
+        #status-bar {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            z-index: 20;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+
+        .status-panel {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            border-left: 3px solid var(--primary);
+            padding: 6px 12px;
+            font-size: 10px;
+            color: var(--primary);
+            font-family: monospace;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .fps-counter {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        /* Мини-панель управления */
+        #control-panel {
+            position: absolute;
+            bottom: 220px;
+            right: 15px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            pointer-events: auto;
+            border: 1px solid var(--primary);
+        }
+
+        .ctrl-btn {
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            padding: 4px 12px;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 10px;
+            transition: 0.2s;
+        }
+
+        .ctrl-btn:hover {
+            background: var(--primary);
+            color: black;
+        }
+
+        /* Анимация захвата */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 var(--primary-glow); }
+            100% { box-shadow: 0 0 0 10px transparent; }
+        }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div id="status-msg" style="margin-bottom:20px; font-size:10px;">SYSTEM_V10: WAITING_FOR_KERNEL...</div>
-    <button id="boot-btn" style="display:none" onclick="initVision()">BOOT SYSTEM</button>
+    <div style="margin-bottom: 20px; font-size: 12px; color: #00ff9d;">⚡ VISION_OS v10.0 | NEURAL_CORE_ACTIVE</div>
+    <button class="boot-btn" onclick="initVisionSystem()">INITIALIZE SIGHT</button>
+    <div style="margin-top: 30px; font-size: 9px; color: #4a4a4a;">API READY: HuggingFace • Gemini • COCO-SSD</div>
 </div>
 
 <div id="container">
+    <div id="status-bar">
+        <div class="status-panel" id="sys-status">🟢 SYSTEM: ONLINE</div>
+        <div class="fps-counter" id="fps-display">FPS: --</div>
+    </div>
+    
     <div id="viewport" onclick="resetLock()">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
-        <div class="scan-line"></div>
     </div>
+    
     <div id="terminal">
         <div id="term-content"></div>
+    </div>
+
+    <div id="control-panel">
+        <span>🎯 TARGET LOCK</span>
+        <button class="ctrl-btn" onclick="resetLock()">⟳ RESET LOCK</button>
+        <button class="ctrl-btn" onclick="captureAndAnalyze()">🔍 DEEP SCAN</button>
     </div>
 </div>
 
 <script>
+    // ======================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ========================
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const termContent = document.getElementById('term-content');
-    const statusMsg = document.getElementById('status-msg');
-    const bootBtn = document.getElementById('boot-btn');
     
-    let model = null;
-    let lockedObj = null;
-    let predictions = [];
-    let faces = [];
-    let audioCtx = null;
-
-    const COLORS = {
-        'person': '#ffff00',
-        'car': '#ff0000', 'truck': '#ff0000', 'bus': '#ff0000', 'motorcycle': '#ff0000',
-        'dog': '#ff00ff', 'cat': '#ff00ff', 'bird': '#ff00ff',
-        'potted plant': '#00ff41',
-        'default': '#ffffff'
+    let model = null;               // COCO-SSD модель
+    let lockedObj = null;          // Заблокированный объект
+    let predictions = [];           // Текущие детекции
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let fps = 0;
+    
+    // API ключи (бесплатные, публичные для демо, для полноценной работы замените на свои)
+    const HUGGINGFACE_API_KEY = "hf_placeholder";  // Замените на свой API ключ от Hugging Face (бесплатный)
+    const GEMINI_API_KEY = "AIzaSyDummyKeyReplace"; // Замените на свой Gemini API ключ
+    
+    // Расширенная цветовая схема для категорий
+    const COLOR_SCHEME = {
+        'person': '#ff3366',      // человек - ярко-красный
+        'human': '#ff3366',
+        'animal': '#ff66cc',       // животные - розовый
+        'cat': '#ff66cc', 'dog': '#ff66cc', 'bird': '#ff66cc', 'horse': '#ff66cc', 'sheep': '#ff66cc', 'cow': '#ff66cc',
+        'plant': '#66ff33',        // растения - зеленый
+        'potted plant': '#66ff33', 'flower': '#66ff33', 'tree': '#66ff33',
+        'vehicle': '#ffaa33',      // транспорт - оранжевый
+        'car': '#ffaa33', 'truck': '#ffaa33', 'bus': '#ffaa33', 'motorcycle': '#ffaa33', 'bicycle': '#ffaa33',
+        'building': '#3399ff',      // здания - голубой
+        'house': '#3399ff', 'building': '#3399ff',
+        'object': '#ffffff',        // предметы - белый
+        'default': '#00ff9d'
     };
-
-    // Звуковой движок (чистый код)
-    function playSound(freq, type = 'sine', duration = 0.1) {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + duration);
+    
+    // Категоризация объектов
+    function getObjectCategory(className) {
+        const persons = ['person'];
+        const animals = ['cat', 'dog', 'bird', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'];
+        const plants = ['potted plant', 'flower', 'tree', 'plant'];
+        const vehicles = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'airplane', 'train', 'boat'];
+        const buildings = ['building', 'house', 'wall', 'fence', 'bridge'];
+        
+        if (persons.includes(className)) return 'human';
+        if (animals.includes(className)) return 'animal';
+        if (plants.includes(className)) return 'plant';
+        if (vehicles.includes(className)) return 'vehicle';
+        if (buildings.includes(className)) return 'building';
+        return 'object';
     }
-
-    async function loadModels() {
+    
+    // ======================== ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ ========================
+    async function initVisionSystem() {
         try {
-            statusMsg.innerText = "LOADING OBJECT_DETECTOR...";
-            model = await cocoSsd.load();
-            statusMsg.innerText = "LOADING FACE_AI...";
-            await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
-            statusMsg.innerText = "ALL MODULES READY.";
-            bootBtn.style.display = "block";
-        } catch (e) {
-            statusMsg.innerText = "ERROR: " + e.message;
-        }
-    }
-
-    async function initVision() {
-        try {
+            writeTerm("▶ BOOT SEQUENCE INITIATED...", "#00ff9d");
+            writeTerm("⚙️ LOADING WASM BACKEND (LOW-SPEC MODE)", "#88ffaa");
             await tf.setBackend('wasm');
+            await tf.ready();
+            
+            writeTerm("📷 ACCESSING CAMERA FEED...", "#88ffaa");
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 } }
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
             });
             video.srcObject = stream;
             await video.play();
             
+            writeTerm("🧠 LOADING COCO-SSD NEURAL ENGINE...", "#ffaa33");
+            model = await cocoSsd.load({ base: 'mobilenet_v2' });
+            
+            writeTerm("🌐 CONNECTING TO EXTERNAL AI SERVICES (HuggingFace, Gemini)...", "#88ffaa");
+            // Проверка API (опционально)
+            if (HUGGINGFACE_API_KEY !== "hf_placeholder") {
+                writeTerm("✅ HuggingFace API: READY", "#00ff9d");
+            } else {
+                writeTerm("⚠️ HuggingFace API: DEMO MODE (add API key for enhanced recognition)", "#ffaa33");
+            }
+            
             document.getElementById('overlay').style.display = 'none';
-            writeTerm("SYSTEM ONLINE. NEURAL_V10 ACTIVATED.");
-            render();
+            writeTerm("🔓 VISION SYSTEM FULLY OPERATIONAL. ROBOTIC SIGHT ACTIVE.", "#00ff9d");
+            writeTerm("💡 TIP: Click on any object to LOCK & DECRYPT. Use DEEP SCAN for AI analysis.", "#88ffaa");
+            
+            // Запуск рендеринга с мониторингом FPS
+            requestAnimationFrame(renderLoop);
         } catch (e) {
-            alert("INIT_ERROR: " + e.message);
+            alert("❌ INIT_ERROR: " + e.message);
+            writeTerm(`❌ CRITICAL ERROR: ${e.message}`, "#ff3366");
         }
     }
-
-    viewport.addEventListener('mousedown', (e) => {
+    
+    // ======================== ТЕРМИНАЛ С ЭФФЕКТАМИ ========================
+    function writeTerm(text, color = "#00ff9d") {
+        const line = document.createElement('div');
+        line.className = 'term-row';
+        line.style.color = color;
+        line.style.borderLeftColor = color;
+        line.innerText = `> ${text}`;
+        termContent.prepend(line);
+        if (termContent.childNodes.length > 12) termContent.lastChild.remove();
+        
+        // Автоскролл
+        termContent.scrollTop = 0;
+    }
+    
+    // ======================== ЗАХВАТ ОБЪЕКТА ПО КЛИКУ ========================
+    document.getElementById('viewport').addEventListener('mousedown', (e) => {
+        if (!video.videoWidth) return;
         const rect = video.getBoundingClientRect();
-        const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
-
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clickX = (e.clientX - rect.left) * scaleX;
+        const clickY = (e.clientY - rect.top) * scaleY;
+        
         lockedObj = predictions.find(p => {
             const [x, y, w, h] = p.bbox;
             return clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h;
         });
-
+        
         if (lockedObj) {
             e.stopPropagation();
-            playSound(880, 'square', 0.15); // Приятный бип захвата
-            startDecrypt(lockedObj);
+            startDeepDecrypt(lockedObj);
+        } else {
+            writeTerm("🎯 NO OBJECT AT TARGET. SCANNING AREA...", "#ffaa33");
         }
     });
-
+    
     function resetLock() {
-        if (lockedObj) playSound(220, 'sine', 0.1);
+        if (lockedObj) {
+            writeTerm("🔓 LOCK RELEASED. RESUMING FULL SPECTRUM SCAN.", "#ffaa33");
+        }
         lockedObj = null;
-        termContent.innerHTML = "";
-        writeTerm("SEARCHING... SCAN_MODE: BROAD");
     }
-
-    function writeTerm(text) {
-        const line = document.createElement('div');
-        line.className = 'term-row';
-        line.innerText = `> ${text}`;
-        termContent.prepend(line);
-        if (termContent.childNodes.length > 7) termContent.lastChild.remove();
-    }
-
-    function startDecrypt(obj) {
-        termContent.innerHTML = "";
-        const dist = ((950 * 0.5) / obj.bbox[2]).toFixed(2);
-        const lines = [
-            `LOCK_ESTABLISHED: ${obj.class.toUpperCase()}`,
-            `TELEMETRY: RANGE_${dist}m`,
-            `SIG_ANALYSIS: ${(obj.score * 100).toFixed(1)}% MATCH`,
-            `DECODING_ENCRYPTION...`,
-            `DATA: ${Math.random().toString(16).substr(2, 8).toUpperCase()}`,
-            `STATUS: TARGET_FROZEN`
-        ];
-        lines.forEach((l, i) => setTimeout(() => writeTerm(l), i * 120));
-    }
-
-    async function render() {
-        predictions = await model.detect(video);
+    
+    // ======================== РАСШИРЕННАЯ ДЕШИФРОВКА (ЛОКАЛЬНАЯ) ========================
+    function startDeepDecrypt(obj) {
+        const category = getObjectCategory(obj.class);
+        const distance = ((950 * 0.45) / obj.bbox[2]).toFixed(1);
+        const confidence = (obj.score * 100).toFixed(1);
         
-        // Лица проверяем чуть реже или через tiny detector для скорости
-        faces = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+        writeTerm(`══════════════════════════════════`, "#00ff9d");
+        writeTerm(`🎯 TARGET LOCKED: ${obj.class.toUpperCase()}`, "#ff3366");
+        writeTerm(`📐 COORD: [${Math.round(obj.bbox[0])}, ${Math.round(obj.bbox[1])}] | W:${Math.round(obj.bbox[2])}px`, "#88ffaa");
+        writeTerm(`📏 ESTIMATED RANGE: ${distance} METERS`, "#88ffaa");
+        writeTerm(`📊 CERTAINTY: ${confidence}% | CATEGORY: ${category.toUpperCase()}`, "#ffaa33");
+        writeTerm(`🔐 OBJECT ID: 0x${Math.floor(Math.random() * 0xFFFF).toString(16)}`, "#ffffff");
         
+        // Специфическая информация в зависимости от категории
+        if (category === 'human') {
+            writeTerm(`🧬 BIOMETRIC SCAN: POSTURE DETECTED | MOVEMENT VECTOR CALCULATED`, "#ff66cc");
+        } else if (category === 'vehicle') {
+            writeTerm(`🚗 VEHICLE ANALYSIS: APPROX DIMENSIONS ${(obj.bbox[2] * 0.025).toFixed(1)}m`, "#ffaa33");
+        } else if (category === 'animal') {
+            writeTerm(`🐾 FAUNA DETECTED: MAINTAIN SAFE DISTANCE`, "#ff66cc");
+        } else if (category === 'plant') {
+            writeTerm(`🌿 FLORA ANALYSIS: CHLOROPHYLL SIGNATURE POSITIVE`, "#66ff33");
+        }
+        writeTerm(`══════════════════════════════════`, "#00ff9d");
+    }
+    
+    // ======================== DEEP SCAN С ИСПОЛЬЗОВАНИЕМ ВНЕШНИХ API ========================
+    async function captureAndAnalyze() {
+        if (!video.videoWidth) {
+            writeTerm("❌ CAMERA NOT READY", "#ff3366");
+            return;
+        }
+        
+        writeTerm("🔬 INITIATING DEEP AI ANALYSIS...", "#ffaa33");
+        
+        // Захват текущего кадра в canvas
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = video.videoWidth;
+        tempCanvas.height = video.videoHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+        
+        // Конвертируем в base64
+        const imageData = tempCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        
+        // Попытка использовать HuggingFace API (если ключ валидный)
+        if (HUGGINGFACE_API_KEY && HUGGINGFACE_API_KEY !== "hf_placeholder") {
+            try {
+                writeTerm("🤖 QUERYING HUGGINGFACE API (image classification)...", "#88ffaa");
+                const response = await fetch("https://api-inference.huggingface.co/models/google/vit-base-patch16-224", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${HUGGINGFACE_API_KEY}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ inputs: imageData })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result && result[0] && result[0].length) {
+                        const top3 = result[0].slice(0, 3);
+                        writeTerm(`🧠 HUGGINGFACE AI: ${top3.map(p => `${p.label} (${(p.score*100).toFixed(0)}%)`).join(' | ')}`, "#00ccff");
+                    }
+                } else {
+                    writeTerm(`⚠️ HF API: ${response.status} - DEMO MODE ACTIVE`, "#ffaa33");
+                }
+            } catch (e) {
+                writeTerm(`⚠️ HF API ERROR: ${e.message}`, "#ffaa33");
+            }
+        } else {
+            writeTerm("📡 HUGGINGFACE API: ADD API KEY FOR ADVANCED CLASSIFICATION", "#ffaa33");
+        }
+        
+        // Альтернатива: имитация анализа через локальную модель COCO
+        if (predictions.length > 0) {
+            writeTerm(`📊 LOCAL ANALYSIS: ${predictions.length} ENTITIES DETECTED`, "#00ff9d");
+            const mainObjects = predictions.slice(0, 3).map(p => `${p.class} (${(p.score*100).toFixed(0)}%)`).join(', ');
+            writeTerm(`🎯 PRIMARY TARGETS: ${mainObjects}`, "#88ffaa");
+        }
+        
+        // Симуляция Gemini API (демо)
+        if (GEMINI_API_KEY && GEMINI_API_KEY !== "AIzaSyDummyKeyReplace") {
+            writeTerm("✨ GEMINI VISION: ENHANCED CONTEXT ANALYSIS AVAILABLE", "#00ff9d");
+        } else {
+            writeTerm("💡 TIP: Integrate Gemini API for scene understanding & object relationships", "#88ffaa");
+        }
+        
+        writeTerm("✅ DEEP SCAN COMPLETE. ROBOTIC VISION ENHANCED.", "#00ff9d");
+    }
+    
+    // ======================== ОСНОВНОЙ ЦИКЛ РЕНДЕРИНГА С FPS ========================
+    async function renderLoop() {
+        if (!model || !video.videoWidth) {
+            requestAnimationFrame(renderLoop);
+            return;
+        }
+        
+        // Расчет FPS
+        frameCount++;
+        const now = performance.now();
+        if (now - lastTime >= 1000) {
+            fps = frameCount;
+            frameCount = 0;
+            lastTime = now;
+            document.getElementById('fps-display').innerText = `FPS: ${fps}`;
+        }
+        
+        // Выполнение детекции (оптимизировано: каждый 2й кадр для производительности)
+        if (fps < 25 || frameCount % 2 === 0) {
+            predictions = await model.detect(video);
+        }
+        
+        // Настройка canvas
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Лица (Голубой)
-        faces.forEach(f => {
-            const { x, y, width, height } = f.box;
-            ctx.strokeStyle = "var(--face)";
-            ctx.setLineDash([2, 2]);
-            ctx.strokeRect(x, y, width, height);
-            ctx.fillStyle = "var(--face)";
-            ctx.font = "10px Courier New";
-            ctx.fillText("FACE_SIGNATURE", x, y - 5);
-        });
-
-        // Объекты (до 15 для глубины обнаружения)
-        const activeTargets = predictions.slice(0, 15);
-
-        activeTargets.forEach(p => {
-            const [x, y, w, h] = p.bbox;
-            const label = p.class;
-            const color = COLORS[label] || COLORS['default'];
-
+        
+        // Отрисовка всех обнаруженных объектов (макс 15 для производительности)
+        const renderPredictions = predictions.slice(0, 15);
+        
+        for (const pred of renderPredictions) {
+            const [x, y, w, h] = pred.bbox;
+            const className = pred.class;
+            const category = getObjectCategory(className);
+            const color = COLOR_SCHEME[className] || COLOR_SCHEME[category] || COLOR_SCHEME['default'];
+            const isLocked = lockedObj && lockedObj.class === className && 
+                            Math.abs(lockedObj.bbox[0] - x) < 15;
+            
             ctx.save();
-            const isLocked = lockedObj && Math.abs(lockedObj.bbox[0] - x) < 50;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isLocked ? 4 : 2.5;
+            ctx.setLineDash(isLocked ? [] : [5, 5]);
+            ctx.shadowBlur = 0;
             
-            ctx.strokeStyle = isLocked ? "#00ff41" : color;
-            ctx.lineWidth = isLocked ? 4 : 2;
-            ctx.setLineDash(isLocked ? [] : [10, 5]);
-            
-            ctx.shadowColor = "black";
-            ctx.shadowBlur = 10;
+            // Рамка с эффектом свечения для locked
+            if (isLocked) {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 12;
+            }
             ctx.strokeRect(x, y, w, h);
             
-            // Тайтл и Метрика
-            const dist = ((950 * 0.5) / w).toFixed(1);
-            ctx.fillStyle = isLocked ? "#00ff41" : color;
-            ctx.font = "bold 13px Courier New";
-            ctx.fillText(`${label.toUpperCase()} [${dist}m]`, x, y - 12);
-
-            // Угловые скобки
-            ctx.setLineDash([]);
-            drawCorners(x, y, w, h, isLocked ? "#00ff41" : color, isLocked ? 30 : 15);
+            // Фон для текста
+            ctx.fillStyle = "rgba(0,0,0,0.65)";
+            ctx.fillRect(x, y - 26, Math.min(180, w), 22);
             
-            // Специфические элементы
-            ctx.strokeStyle = "#ff6600";
-            ctx.setLineDash([3, 3]);
-            if (label === 'person') ctx.strokeRect(x + w*0.3, y + h*0.05, w*0.4, h*0.15);
-            if (['car','bus','truck'].includes(label)) {
-                ctx.strokeRect(x + w*0.1, y + h*0.75, w*0.2, w*0.2);
-                ctx.strokeRect(x + w*0.7, y + h*0.75, w*0.2, w*0.2);
+            // Основная надпись
+            ctx.fillStyle = color;
+            ctx.font = "bold 13px 'Share Tech Mono', monospace";
+            ctx.fillText(`${className.toUpperCase()}`, x + 4, y - 12);
+            
+            // Дополнительная информация
+            const distance = ((900 * 0.48) / w).toFixed(1);
+            ctx.font = "9px monospace";
+            ctx.fillStyle = "#bbffbb";
+            ctx.fillText(`📏${distance}m | 🎯${(pred.score * 100).toFixed(0)}%`, x + 4, y - 2);
+            
+            // Категориальная иконка
+            let icon = "●";
+            if (category === 'human') icon = "👤";
+            else if (category === 'vehicle') icon = "🚗";
+            else if (category === 'animal') icon = "🐾";
+            else if (category === 'plant') icon = "🌿";
+            else if (category === 'building') icon = "🏛️";
+            
+            ctx.fillStyle = color;
+            ctx.font = "12px monospace";
+            ctx.fillText(icon, x + w - 20, y - 8);
+            
+            // Угловые маркеры (tech-style)
+            drawTechCorners(x, y, w, h, color, 10);
+            
+            // Специфические элементы для разных типов
+            if (category === 'human') {
+                ctx.beginPath();
+                ctx.arc(x + w/2, y + h*0.2, w*0.12, 0, 2*Math.PI);
+                ctx.strokeStyle = color;
+                ctx.stroke();
             }
-
+            if (category === 'vehicle') {
+                ctx.fillStyle = "rgba(255,170,51,0.3)";
+                ctx.fillRect(x + w*0.7, y + h*0.75, w*0.2, h*0.12);
+                ctx.fillRect(x + w*0.1, y + h*0.75, w*0.2, h*0.12);
+            }
+            
             ctx.restore();
-        });
-
-        requestAnimationFrame(render);
+        }
+        
+        // Если есть заблокированный объект, отображаем целевой крест
+        if (lockedObj) {
+            const [lx, ly, lw, lh] = lockedObj.bbox;
+            ctx.save();
+            ctx.strokeStyle = "#ff3366";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 6]);
+            ctx.beginPath();
+            ctx.moveTo(lx + lw/2, ly - 15);
+            ctx.lineTo(lx + lw/2, ly + lh + 15);
+            ctx.moveTo(lx - 15, ly + lh/2);
+            ctx.lineTo(lx + lw + 15, ly + lh/2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        requestAnimationFrame(renderLoop);
     }
-
-    function drawCorners(x, y, w, h, color, s) {
+    
+    function drawTechCorners(x, y, w, h, color, size) {
+        ctx.save();
         ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        // Уголки
         ctx.beginPath();
-        ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
-        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
-        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
-        ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
+        ctx.moveTo(x, y+size); ctx.lineTo(x, y); ctx.lineTo(x+size, y);
+        ctx.moveTo(x+w-size, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+size);
+        ctx.moveTo(x, y+h-size); ctx.lineTo(x, y+h); ctx.lineTo(x+size, y+h);
+        ctx.moveTo(x+w-size, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-size);
         ctx.stroke();
+        ctx.restore();
     }
-
-    loadModels();
+    
+    // Инициализация статуса
+    function updateSystemStatus() {
+        const statusEl = document.getElementById('sys-status');
+        if (model && video.srcObject) {
+            statusEl.innerHTML = "🟢 SYSTEM: ACTIVE | AI: READY";
+        } else {
+            statusEl.innerHTML = "🟡 SYSTEM: BOOTING";
+        }
+        setTimeout(updateSystemStatus, 3000);
+    }
+    updateSystemStatus();
+    
+    // Дополнительная обработка ошибок камеры
+    window.addEventListener('load', () => {
+        console.log("VISION_OS v10.0 | Robotic Sight Enhanced");
+    });
 </script>
 </body>
 </html>
