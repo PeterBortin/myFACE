@@ -3,63 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VISION_OS v9.0 | LOW-SPEC AI</title>
+    <title>VISION_CORE v10.0 | PROTON</title>
     
-    <!-- Подключаем ядро и WASM для старых CPU -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <!-- Библиотека для лиц -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
     <style>
         :root { 
-            --target: #ffff00; --hostile: #ff0000; --bio: #ff00ff; --obj: #ffffff; --plant: #00ff41;
-            --bg: #050505;
+            --target: #ffff00; --hostile: #ff0000; --bio: #ff00ff; --face: #00d4ff; --neon: #00ff41;
         }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #00ff41; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         
-        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-        
-        /* Затемненный видеопоток для контраста */
-        #viewport { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
-        video { 
-            position: absolute; width: 100%; height: 100%; object-fit: cover; 
-            filter: brightness(0.35) contrast(1.3) grayscale(0.2); 
-            z-index: 1; 
-        }
+        #viewport { position: relative; width: 100vw; height: calc(100vh - 140px); overflow: hidden; cursor: crosshair; }
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; filter: brightness(0.4) contrast(1.2); z-index: 1; }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
 
-        /* Терминал дешифровки */
         #terminal { 
-            height: 160px; background: var(--bg); border-top: 2px solid #1a1a1a; 
-            padding: 15px; box-sizing: border-box; overflow: hidden; font-size: 12px;
-            text-shadow: 0 0 5px rgba(0,255,65,0.5);
+            height: 140px; background: #050505; border-top: 1px solid #222; 
+            padding: 15px; box-sizing: border-box; color: var(--neon); font-size: 11px; overflow-y: hidden;
         }
-        .term-row { margin-bottom: 4px; opacity: 0.9; }
 
         #overlay {
             position: fixed; inset: 0; background: #000; z-index: 100; 
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--neon);
         }
         button {
-            background: none; border: 1px solid #00ff41; color: #00ff41;
-            padding: 15px 40px; cursor: pointer; letter-spacing: 3px;
+            background: none; border: 1px solid var(--neon); color: var(--neon);
+            padding: 20px 50px; cursor: pointer; letter-spacing: 5px; font-weight: bold;
         }
+        .scan-anim { position: absolute; width: 100%; height: 2px; background: rgba(0, 255, 65, 0.2); top: 0; animation: scan 3s linear infinite; z-index: 6; }
+        @keyframes scan { from {top:0} to {top:100%} }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div style="margin-bottom:20px; font-size:10px;">CORE_V9: COMPATIBILITY_MODE_ACTIVE</div>
-    <button onclick="initVision()">BOOT SYSTEM</button>
+    <div id="loader-msg">LOADING NEURAL MODULES...</div>
+    <button id="start-btn" style="display:none" onclick="startSystem()">INITIALIZE CORE</button>
 </div>
 
 <div id="container">
-    <div id="viewport" onclick="resetLock()">
+    <div id="viewport" onclick="unlockTarget()">
         <video id="video" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
+        <div class="scan-anim"></div>
     </div>
-    <div id="terminal" id="term-box">
-        <div id="term-content"></div>
+    <div id="terminal">
+        <div id="term-rows"></div>
     </div>
 </div>
 
@@ -67,145 +59,141 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const termContent = document.getElementById('term-content');
+    const termRows = document.getElementById('term-rows');
     
-    let model = null;
-    let lockedObj = null;
-    let predictions = [];
+    let objModel, faceModelsLoaded = false;
+    let predictions = [], faces = [];
+    let lockedTarget = null;
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    const COLORS = {
-        'person': '#ffff00',
-        'car': '#ff0000', 'truck': '#ff0000', 'bus': '#ff0000', 'motorcycle': '#ff0000',
-        'dog': '#ff00ff', 'cat': '#ff00ff', 'bird': '#ff00ff',
-        'potted plant': '#00ff41',
-        'default': '#ffffff'
-    };
-
-    async function initVision() {
-        try {
-            // Переключаем на WASM для слабых процессоров
-            await tf.setBackend('wasm');
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 } }
-            });
-            video.srcObject = stream;
-            await video.play();
-            
-            writeTerm("ENGINE: LOADING COCO-SSD LIGHTWEIGHT...");
-            model = await cocoSsd.load();
-            
-            document.getElementById('overlay').style.display = 'none';
-            writeTerm("SYSTEM ONLINE. WASM_BACKEND: ENABLED.");
-            render();
-        } catch (e) {
-            alert("INIT_ERROR: " + e.message);
-        }
+    // Звуковой движок (генерация "бипа")
+    function playBeep(freq = 880, type = 'square', duration = 0.1) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
     }
 
-    // Слушатель клика по рамке
-    viewport.addEventListener('mousedown', (e) => {
-        const rect = video.getBoundingClientRect();
-        const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    async function preload() {
+        const msg = document.getElementById('loader-msg');
+        try {
+            msg.innerText = "LOADING OBJECT_DETECTOR...";
+            objModel = await cocoSsd.load();
+            msg.innerText = "LOADING FACE_RECOGNITION...";
+            // Загрузка легковесных моделей для лиц (TinyFaceDetector)
+            await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
+            faceModelsLoaded = true;
+            msg.style.display = "none";
+            document.getElementById('start-btn').style.display = "block";
+        } catch (e) { msg.innerText = "CORS/LOAD ERROR. CHECK INTERNET."; console.error(e); }
+    }
 
-        lockedObj = predictions.find(p => {
-            const [x, y, w, h] = p.bbox;
-            return clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h;
-        });
+    async function startSystem() {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        await video.play();
+        document.getElementById('overlay').style.display = 'none';
+        log("SYSTEM_READY: ALL_MODULES_AFLOAT");
+        detect();
+    }
 
-        if (lockedObj) {
-            e.stopPropagation();
-            startDecrypt(lockedObj);
+    function log(text) {
+        const div = document.createElement('div');
+        div.innerText = `> ${new Date().toLocaleTimeString()}: ${text}`;
+        termRows.prepend(div);
+        if (termRows.childNodes.length > 8) termRows.lastChild.remove();
+    }
+
+    // Обработка клика
+    viewport.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+        const found = predictions.find(p => x > p.bbox[0] && x < p.bbox[0]+p.bbox[2] && y > p.bbox[1] && y < p.bbox[1]+p.bbox[3]);
+        
+        if (found) {
+            lockedTarget = found;
+            playBeep(1200, 'sine', 0.2);
+            log(`LOCK_ON: ${found.class.toUpperCase()} | ANALYZING...`);
         }
     });
 
-    function resetLock() {
-        lockedObj = null;
-        termContent.innerHTML = "";
-        writeTerm("SCANNING ENVIRONMENTS... NO_LOCK");
-    }
+    function unlockTarget() { if(!lockedTarget) return; lockedTarget = null; playBeep(440, 'sawtooth', 0.1); log("TARGET_LOST"); }
 
-    function writeTerm(text) {
-        const line = document.createElement('div');
-        line.className = 'term-row';
-        line.innerText = `> ${text}`;
-        termContent.prepend(line);
-        if (termContent.childNodes.length > 7) termContent.lastChild.remove();
-    }
-
-    function startDecrypt(obj) {
-        termContent.innerHTML = "";
-        const lines = [
-            `LOCK_ACQUIRED: ${obj.class.toUpperCase()}`,
-            `COORDINATES: X:${Math.round(obj.bbox[0])} Y:${Math.round(obj.bbox[1])}`,
-            `DISTANCE: ${((800 * 0.5) / obj.bbox[2]).toFixed(2)}m`,
-            `DECRYPTING_SIGNATURE...`,
-            `STATUS: [${(obj.score * 100).toFixed(0)}% PROBABILITY]`,
-            `DATA: LOCAL_OBJECT_ID_${Math.floor(Math.random()*9999)}`
-        ];
-        lines.forEach((l, i) => setTimeout(() => writeTerm(l), i * 150));
-    }
-
-    async function render() {
-        predictions = await model.detect(video);
-        
+    async function detect() {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
+        
+        // 1. Обнаружение объектов
+        predictions = await objModel.detect(video);
+        
+        // 2. Обнаружение лиц (каждые N кадров для экономии ресурсов)
+        if (faceModelsLoaded) {
+            faces = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+        }
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Ограничиваем захват до 10 объектов для производительности
-        const activeTargets = predictions.slice(0, 10);
+        // Отрисовка лиц (Синий)
+        faces.forEach(f => {
+            const { x, y, width, height } = f.box;
+            ctx.strokeStyle = "var(--face)";
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(x, y, width, height);
+            ctx.fillStyle = "var(--face)";
+            ctx.font = "10px monospace";
+            ctx.fillText("HUMAN_FACE_ID", x, y - 5);
+        });
 
-        activeTargets.forEach(p => {
+        // Отрисовка объектов
+        predictions.forEach(p => {
             const [x, y, w, h] = p.bbox;
-            const label = p.class;
-            const color = COLORS[label] || COLORS['default'];
+            const isLocked = lockedTarget && lockedTarget.class === p.class && Math.abs(lockedTarget.bbox[0] - x) < 50;
+            
+            let color = "white";
+            if (p.class === 'person') color = "var(--target)";
+            if (['car', 'bus'].includes(p.class)) color = "var(--hostile)";
+
+            // Расчет дистанции (базовая калибровка)
+            const dist = ((900 * 0.6) / w).toFixed(1);
 
             ctx.save();
-            
-            // Если объект выбран - рисуем жирную рамку
-            const isLocked = lockedObj && Math.abs(lockedObj.bbox[0] - x) < 5;
-            
-            ctx.strokeStyle = color;
-            ctx.lineWidth = isLocked ? 4 : 2;
-            ctx.setLineDash(isLocked ? [] : [8, 4]);
-            
-            // Тень рамок
+            ctx.shadowBlur = isLocked ? 15 : 5;
             ctx.shadowColor = "black";
-            ctx.shadowBlur = 8;
+            ctx.strokeStyle = isLocked ? "var(--neon)" : color;
+            ctx.lineWidth = isLocked ? 4 : 2;
             
+            // Рамка
+            ctx.setLineDash(isLocked ? [] : [10, 5]);
             ctx.strokeRect(x, y, w, h);
             
-            // Отрисовка данных
-            ctx.fillStyle = color;
-            ctx.font = "bold 12px Courier New";
-            ctx.fillText(`${label.toUpperCase()}`, x, y - 10);
-            
-            // Доп. инфо в тайтле
-            const dist = ((850 * 0.5) / w).toFixed(1);
-            ctx.font = "9px Courier New";
-            ctx.fillText(`D:${dist}m | W:${(w*0.1).toFixed(1)}u`, x, y - 22);
-
-            // Специфические элементы (Голова/Колеса/Центр)
-            ctx.setLineDash([2, 2]);
-            ctx.strokeStyle = "#ff6600";
-            if (label === 'person') ctx.strokeRect(x + w*0.3, y + h*0.05, w*0.4, h*0.15);
-            if (['car','bus'].includes(label)) {
-                ctx.strokeRect(x + w*0.1, y + h*0.7, w*0.2, w*0.2);
-                ctx.strokeRect(x + w*0.7, y + h*0.7, w*0.2, w*0.2);
-            }
-
-            // Угловые скобки (всегда сплошные)
+            // Углы
             ctx.setLineDash([]);
-            drawCorners(x, y, w, h, color, isLocked ? 30 : 15);
+            drawBrackets(x, y, w, h, isLocked ? 30 : 15);
+
+            // Тайтл
+            ctx.fillStyle = isLocked ? "var(--neon)" : color;
+            ctx.font = "bold 13px monospace";
+            ctx.fillText(`${p.class.toUpperCase()} [${dist}m]`, x + 5, y - 10);
             
+            if (isLocked) {
+                ctx.font = "9px monospace";
+                ctx.fillText(`STATUS: TRACKING_ACTIVE`, x + 5, y + h + 15);
+            }
             ctx.restore();
         });
 
-        requestAnimationFrame(render);
+        requestAnimationFrame(detect);
     }
 
-    function drawCorners(x, y, w, h, color, s) {
+    function drawBrackets(x, y, w, h, s) {
         ctx.beginPath();
         ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
         ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
@@ -213,6 +201,8 @@
         ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
         ctx.stroke();
     }
+
+    preload();
 </script>
 </body>
 </html>
