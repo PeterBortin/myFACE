@@ -3,18 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI TERMINAL v6.0</title>
+    <title>AI TERMINAL v6.5 PRO</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
     <style>
-        :root { --green: #00ff41; --blue: #0084ff; --warn: #ffaa00; }
+        :root { --green: #00ff41; --blue: #0084ff; --warn: #ffaa00; --red: #ff003c; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: var(--green); }
-        #container { position: relative; width: 100vw; height: 100vh; }
+        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+        
+        #video-wrapper { position: relative; flex: 1; width: 100%; overflow: hidden; }
         video { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 5; pointer-events: none; }
         
+        /* Журнал распознаний в стиле консоли */
+        #terminal { 
+            height: 150px; 
+            width: 100%; 
+            background: rgba(0, 10, 0, 0.95); 
+            border-top: 1px solid var(--green); 
+            z-index: 20; 
+            padding: 10px; 
+            box-sizing: border-box; 
+            font-size: 11px; 
+            overflow-y: hidden; 
+            color: var(--green);
+            text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+        }
+
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 100; display: flex; 
@@ -25,25 +42,33 @@
             color: var(--green); padding: 20px 40px; font-size: 1rem; cursor: pointer;
             box-shadow: 0 0 15px rgba(0, 255, 65, 0.3); text-transform: uppercase;
         }
-        #status-log { font-size: 10px; margin-top: 20px; color: #555; text-align: left; width: 80%; }
-        .scan-line { position: absolute; width: 100%; height: 2px; background: var(--green); opacity: 0.3; top: 0; animation: scan 4s linear infinite; z-index: 6; }
+        
+        .scan-line { position: absolute; width: 100%; height: 2px; background: var(--green); opacity: 0.2; top: 0; animation: scan 4s linear infinite; z-index: 6; }
         @keyframes scan { from {top:0} to {top:100%} }
+        .log-entry { margin-bottom: 2px; white-space: nowrap; overflow: hidden; border-right: 2px solid var(--green); animation: typing 1s steps(40, end), blink .5s step-end infinite; }
+        @keyframes typing { from { width: 0 } to { width: 100% } }
+        @keyframes blink { from, to { border-color: transparent } 50% { border-color: var(--green); } }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <div style="font-size: 20px; letter-spacing: 5px; margin-bottom: 20px;">AI_RECOGNITION_CORE</div>
-    <button onclick="startApp()">START SENSOR</button>
-    <div id="status-log">> SYSTEM: OFFLINE<br>> READY FOR BIOMETRIC SCAN</div>
+    <div style="font-size: 20px; letter-spacing: 5px; margin-bottom: 20px;">AI_RECOGNITION_CORE_v6.5</div>
+    <button onclick="startApp()">INITIATE SENSORS</button>
+    <div id="status-log" style="font-size: 10px; margin-top:20px; color:#444;">> MAPPING NEURAL PATHS...</div>
 </div>
 
 <div id="container">
-    <video id="video" playsinline muted autoplay></video>
-    <canvas id="canvas"></canvas>
-    <div class="scan-line"></div>
-    <div style="position:absolute; top:20px; left:20px; z-index:10; font-size:11px; background:rgba(0,0,0,0.5); padding:5px;">
-        ID: SURV_UNIT_09<br>MODE: TARGET_ID<br>NET: COCO_SSD_V2
+    <div id="video-wrapper">
+        <video id="video" playsinline muted autoplay></video>
+        <canvas id="canvas"></canvas>
+        <div class="scan-line"></div>
+        <div style="position:absolute; top:20px; left:20px; z-index:10; font-size:11px; background:rgba(0,0,0,0.6); padding:8px; border-left: 2px solid var(--green);">
+            UNIT: X-RAY_77<br>STATUS: SCANNING...<br>FPS: <span id="fps-val">0</span>
+        </div>
+    </div>
+    <div id="terminal">
+        <div id="log-container"></div>
     </div>
 </div>
 
@@ -51,11 +76,24 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const log = document.getElementById('status-log');
+    const logContainer = document.getElementById('log-container');
+    const fpsVal = document.getElementById('fps-val');
+    
     let model = null;
+    let smoothPredictions = {}; // Хранилище для сглаживания координат
+    const LERP_FACTOR = 0.25; // Коэффициент плавности (чем меньше, тем медленнее движение квадрата)
+
+    function addLog(text, color = "var(--green)") {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.style.color = color;
+        const time = new Date().toLocaleTimeString().split(' ')[0];
+        entry.innerText = `[${time}] ${text}`;
+        logContainer.prepend(entry);
+        if (logContainer.childNodes.length > 8) logContainer.lastChild.remove();
+    }
 
     async function startApp() {
-        log.innerHTML = "> ИНИЦИАЛИЗАЦИЯ КАМЕРЫ...";
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1280 } }
@@ -63,89 +101,116 @@
             video.srcObject = stream;
             await video.play();
 
-            log.innerHTML += "<br>> ЗАГРУЗКА НЕЙРОСЕТИ...";
+            addLog("HARDWARE: CAMERA_LINK_ESTABLISHED");
             model = await cocoSsd.load();
+            addLog("CORE: NEURAL_NETWORK_LOADED");
             
             document.getElementById('overlay').style.display = 'none';
             detectFrame();
         } catch (e) {
-            log.innerHTML += `<br>> ОШИБКА: ${e.message}`;
-            alert("Используйте Safari и HTTPS. Проверьте разрешения камеры.");
+            alert("ERROR: Camera access denied or HTTPS missing.");
         }
     }
 
     async function detectFrame() {
-        if (!model) return;
-
+        const start = performance.now();
         const predictions = await model.detect(video);
         
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Очищаем старые цели, которых больше нет в кадре
+        const currentIds = predictions.map(p => p.class + (Math.floor(p.bbox[0]/50))); 
+        
         predictions.forEach(p => {
-            const [x, y, w, h] = p.bbox;
+            const [rawX, rawY, rawW, rawH] = p.bbox;
             const label = p.class;
+            const id = label + (Math.floor(rawX/50)); // Условный ID для трекинга
+
+            // Сглаживание (LERP)
+            if (!smoothPredictions[id]) {
+                smoothPredictions[id] = { x: rawX, y: rawY, w: rawW, h: rawH };
+                addLog(`NEW_TARGET_ACQUIRED: ${label.toUpperCase()}`, label === 'person' ? "var(--green)" : "var(--blue)");
+            } else {
+                smoothPredictions[id].x += (rawX - smoothPredictions[id].x) * LERP_FACTOR;
+                smoothPredictions[id].y += (rawY - smoothPredictions[id].y) * LERP_FACTOR;
+                smoothPredictions[id].w += (rawW - smoothPredictions[id].w) * LERP_FACTOR;
+                smoothPredictions[id].h += (rawH - smoothPredictions[id].h) * LERP_FACTOR;
+            }
+
+            const { x, y, w, h } = smoothPredictions[id];
             
-            // Настройка стилей в зависимости от типа объекта
+            // Логика визуализации
             let color = "var(--blue)";
-            let typeTitle = "ПРЕДМЕТ";
+            let typeTitle = "OBJECT";
             
             if (label === 'person') {
-                color = "#00ff41"; 
-                typeTitle = "ЧЕЛОВЕК (TARGET)";
+                color = "var(--green)"; 
+                typeTitle = "HUMAN_BIO";
             } else if (['car', 'bus', 'truck', 'motorcycle'].includes(label)) {
-                color = "#ffaa00";
-                typeTitle = "ТРАНСПОРТ";
+                color = "var(--warn)";
+                typeTitle = "VEHICLE";
             } else if (['dog', 'cat', 'bird'].includes(label)) {
                 color = "#ff00ff";
-                typeTitle = "БИО-ОБЪЕКТ";
+                typeTitle = "BIO_SIGN";
             }
 
-            // Рисуем основную рамку
+            // Отрисовка
             ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
             ctx.strokeRect(x, y, w, h);
+            ctx.setLineDash([]);
 
-            // Полупрозрачная подложка для данных
-            ctx.fillStyle = "rgba(0,0,0,0.5)";
-            ctx.fillRect(x, y - 45, w > 150 ? w : 150, 40);
+            // Фон заголовка
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.fillRect(x, y - 40, w > 160 ? w : 160, 35);
 
-            // Текстовая информация (Тайтл)
             ctx.fillStyle = color;
-            ctx.font = "bold 14px monospace";
-            ctx.fillText(`${typeTitle}: ${label.toUpperCase()}`, x + 5, y - 28);
+            ctx.font = "bold 13px monospace";
+            ctx.fillText(`ID_${id.toUpperCase()}: ${typeTitle}`, x + 5, y - 25);
             
-            // Доп. метрики (Габариты/Расстояние)
+            // Метрики
+            const dist = ((850 * 0.5) / w).toFixed(1);
             ctx.font = "10px monospace";
             ctx.fillStyle = "#fff";
-            const dist = ((900 * 0.5) / w).toFixed(1);
-            const volume = (w * h * ((w+h)/4) * 0.00001).toFixed(2);
-            ctx.fillText(`РАССТОЯНИЕ: ${dist}m | ОБЪЕМ: ${volume}m3`, x + 5, y - 12);
+            ctx.fillText(`RANGE: ${dist}m | CONF: ${Math.round(p.score*100)}%`, x + 5, y - 10);
 
-            // Если человек — добавляем имитацию биометрии (возраст/пол)
+            // Детализация по типам
             if (label === 'person') {
-                const estAge = Math.floor(20 + (w % 25)); // Имитация на основе ID
-                const gender = (w + h) % 2 === 0 ? "MALE" : "FEMALE";
-                const height = Math.round(155 + (h / 4));
-                
-                ctx.fillStyle = "#fff";
-                ctx.fillText(`BIO: ${gender} | AGE: ~${estAge} | H: ~${height}cm`, x + 5, y + h + 15);
+                const height = Math.round(150 + (h / 4.5));
+                ctx.fillStyle = color;
+                ctx.fillText(`EST_HEIGHT: ~${height}cm`, x + 5, y + h + 15);
+            } else if (typeTitle === "VEHICLE") {
+                ctx.fillStyle = "var(--warn)";
+                ctx.fillText(`CLASS: TRANSPORT_UNIT`, x + 5, y + h + 15);
             }
 
-            // Угловые скобки (стиль из фото)
-            drawCorners(x, y, w, h);
+            drawCorners(x, y, w, h, color);
         });
 
+        // Удаление "мертвых" треков
+        for (let key in smoothPredictions) {
+            if (!predictions.some(p => (p.class + (Math.floor(p.bbox[0]/50))) === key)) {
+                delete smoothPredictions[key];
+            }
+        }
+
+        const end = performance.now();
+        fpsVal.innerText = Math.round(1000 / (end - start));
         requestAnimationFrame(detectFrame);
     }
 
-    function drawCorners(x, y, w, h) {
+    function drawCorners(x, y, w, h, color) {
         ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 1;
-        const s = 15;
+        ctx.lineWidth = 2;
+        const s = 20;
         ctx.beginPath();
+        // Углы
         ctx.moveTo(x, y+s); ctx.lineTo(x,y); ctx.lineTo(x+s,y);
+        ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s);
+        ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h);
         ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s);
         ctx.stroke();
     }
