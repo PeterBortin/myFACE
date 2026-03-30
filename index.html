@@ -3,63 +3,118 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cyber Mesh Interface</title>
+  <title>Cyber Mesh Terminal v1.0</title>
+  
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
-    body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-    #container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
+    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+    
     .input_video { display: none; }
-    .output_canvas { max-width: 100%; max-height: 100%; transform: scaleX(-1); }
+    
+    /* Основной канвас с лицом (зеркальный) */
+    .output_canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      z-index: 1;
+    }
 
+    /* Верхний UI */
     .interface-overlay {
       position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
+      top: 20px; left: 20px;
       pointer-events: none;
+      z-index: 10;
+      text-shadow: 0 0 5px #fff;
+      font-size: 12px;
+    }
+
+    /* Нижняя часть: Звук + Терминал */
+    .bottom-peripherals {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
-      padding: 30px;
+      align-items: center;
+      z-index: 10;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      padding-bottom: 10px;
+    }
+
+    /* Канвас звуковой дорожки */
+    #audio_visualizer {
+      width: 80%;
+      height: 40px;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+    }
+
+    /* Окно терминала */
+    #terminal-box {
+      width: 80%;
+      height: 100px;
+      background: rgba(0, 10, 0, 0.5);
+      border: 1px solid #fff;
+      box-shadow: 0 0 15px rgba(255,255,255,0.2);
+      padding: 10px;
       box-sizing: border-box;
-      color: #ffffff;
-      text-shadow: 0 0 8px #fff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column-reverse; /* Новые строки сверху */
     }
 
-    #subtitle-box {
-      align-self: center;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 10px 20px;
-      border: 1px solid #ffffff;
-      font-size: 24px;
-      min-height: 40px;
-      max-width: 80%;
-      text-align: center;
+    .terminal-typer {
+      color: #fff;
+      font-size: 16px;
       text-transform: uppercase;
-      letter-spacing: 2px;
-      opacity: 0;
-      transition: opacity 0.3s;
+      letter-spacing: 1px;
+      margin: 0;
+      text-shadow: 0 0 5px #fff;
     }
 
-    .active-text { opacity: 1 !important; }
-    .status-bar { font-size: 14px; color: #fff; }
+    .terminal-typer::after {
+      content: '_';
+      animation: blink 1s infinite;
+    }
+
+    .lang-status {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 10px;
+      color: rgba(255,255,255,0.5);
+    }
+
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   </style>
 </head>
 
 <body>
+
   <div id="container">
     <video class="input_video"></video>
     <canvas class="output_canvas"></canvas>
     
     <div class="interface-overlay">
-      <div class="status-bar">
-        <div>> CORE_INIT: SUCCESS</div>
-        <div>> AUDIO_VOX: LISTENING...</div>
-        <div id="lip-status">> MOUTH_CLOSED</div>
+      <div>> SYS_STATUS: ACTIVE</div>
+      <div>> MESH_COLOR: white</div>
+      <div id="lip-status">> VOX_STREAM: WAITING</div>
+    </div>
+
+    <div class="bottom-peripherals">
+      <canvas id="audio_visualizer"></canvas>
+      
+      <div id="terminal-box">
+        <div class="lang-status">LANG: RU/EN</div>
+        <p class="terminal-typer" id="terminal-output">Initialize system...</p>
       </div>
-      <div id="subtitle-box">...</div>
-      <div class="status-bar" style="text-align: right;">SECURE_CONNECTION // 0xAF44</div>
     </div>
   </div>
 
@@ -67,44 +122,127 @@
     const videoElement = document.getElementsByClassName('input_video')[0];
     const canvasElement = document.getElementsByClassName('output_canvas')[0];
     const canvasCtx = canvasElement.getContext('2d');
-    const subtitleBox = document.getElementById('subtitle-box');
+    
+    const terminalOutput = document.getElementById('terminal-output');
     const lipStatus = document.getElementById('lip-status');
 
-    // --- Настройка распознавания речи ---
+    // --- Настройка Аудио Визуализации (Web Audio API) ---
+    const audioCanvas = document.getElementById('audio_visualizer');
+    const audioCtx = audioCanvas.getContext('2d');
+    let audioAnalyser;
+    let dataArray;
+    let audioSource;
+    let audioContext;
+
+    async function initAudioVisualizer() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioAnalyser = audioContext.createAnalyser();
+        audioSource = audioContext.createMediaStreamSource(stream);
+        audioSource.connect(audioAnalyser);
+        
+        audioAnalyser.fftSize = 2048; // Детализация
+        const bufferLength = audioAnalyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        
+        drawWaveform();
+      } catch (err) {
+        console.error("Ошибка доступа к микрофону для визуализатора:", err);
+      }
+    }
+
+    function drawWaveform() {
+      requestAnimationFrame(drawWaveform);
+      
+      // Настройка размера канваса под CSS
+      if (audioCanvas.width !== audioCanvas.clientWidth) {
+        audioCanvas.width = audioCanvas.clientWidth;
+        audioCanvas.height = audioCanvas.clientHeight;
+      }
+
+      audioAnalyser.getByteTimeDomainData(dataArray);
+
+      audioCtx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Хвост затухания
+      audioCtx.fillRect(0, 0, audioCanvas.width, audioCanvas.height);
+
+      audioCtx.lineWidth = 1;
+      audioCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // Белая линия
+      audioCtx.beginPath();
+
+      const sliceWidth = audioCanvas.width * 1.0 / dataArray.length;
+      let x = 0;
+
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * audioCanvas.height / 2;
+
+        if (i === 0) {
+          audioCtx.moveTo(x, y);
+        } else {
+          audioCtx.lineTo(x, y);
+        }
+        x += sliceWidth;
+      }
+
+      audioCtx.lineTo(audioCanvas.width, audioCanvas.height / 2);
+      audioCtx.stroke();
+    }
+
+    // --- Настройка распознавания речи (RU/EN) ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let finalTranscript = "";
     
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'ru-RU'; // Или 'en-US'
+      recognition.continuous = true; // Не останавливаться после одной фразы
+      recognition.interimResults = true; // Показывать промежуточные результаты
+      
+      // Хак для поддержки двух языков: Chrome лучше понимает, если указать один, 
+      // но в реальности он часто подхватывает оба, если они похожи акустически, 
+      // либо можно переключать. Для простоты ставим RU, EN он часто понимает "бонусом".
+      recognition.lang = 'ru-RU'; 
 
       recognition.onresult = (event) => {
         let interimTranscript = "";
+        let finalTranscript = "";
+
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
-            finalTranscript = event.results[i][0].transcript;
+            finalTranscript += event.results[i][0].transcript;
           } else {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        subtitleBox.innerText = interimTranscript || finalTranscript;
+
+        // Выводим текст в терминал (приоритет конечному результату)
+        if (finalTranscript) {
+          terminalOutput.innerText = "> " + finalTranscript;
+        } else if (interimTranscript) {
+          terminalOutput.innerText = ">> " + interimTranscript;
+        }
       };
 
+      // Авто-рестарт при остановке
+      recognition.onend = () => { recognition.start(); };
       recognition.start();
+    } else {
+      terminalOutput.innerText = "Speech Recognition not supported in this browser.";
     }
 
+    // --- Обработка видео и Face Mesh ---
     function onResults(results) {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
+      // Установка размеров основного канваса
+      if (canvasElement.width !== videoElement.videoWidth) {
+        canvasElement.width = videoElement.videoWidth;
+        canvasElement.height = videoElement.videoHeight;
+      }
 
       canvasCtx.save();
-      // Очищаем в черный
+      // Фон в ноль (черный)
       canvasCtx.fillStyle = '#000';
       canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // Рисуем видео с очень низкой прозрачностью (4%), чтобы был виден только силуэт
+      // Рисуем видео силуэтом (4% непрозрачности)
       canvasCtx.globalAlpha = 0.04;
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
@@ -112,40 +250,35 @@
       if (results.multiFaceLandmarks) {
         for (const landmarks of results.multiFaceLandmarks) {
           
-          // Рисуем сетку БЕЛЫМ цветом
+          // Рисуем сетку БЕЛЫМ (полупрозрачным)
           drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
-            {color: 'rgba(255, 255, 255, 0.3)', lineWidth: 0.5});
+            {color: 'rgba(255, 255, 255, 0.2)', lineWidth: 0.5});
 
-          // Контуры глаз и губ
-          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#FFFFFF', lineWidth: 1});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#FFFFFF', lineWidth: 2});
+          // Яркие белые контуры для ключевых черт
+          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: 'rgba(255,255,255,0.8)', lineWidth: 1});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#fff', lineWidth: 1.5});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_EYEBROWS, {color: 'rgba(255,255,255,0.5)', lineWidth: 1});
 
-          // --- АНАЛИЗ ГУБ ---
-          // Точка 13 (верхняя губа) и 14 (нижняя губа)
+          // Анализ активности губ (для UI статуса)
           const topLip = landmarks[13];
           const bottomLip = landmarks[14];
           const lipDistance = Math.abs(topLip.y - bottomLip.y);
 
-          // Если расстояние между губами больше порога, считаем, что человек говорит
-          if (lipDistance > 0.015) { 
-            subtitleBox.classList.add('active-text');
-            lipStatus.innerText = "> MOUTH_OPEN / ANALYZING...";
-            lipStatus.style.color = "#ff0000";
+          if (lipDistance > 0.015) { // Порог "открытого рта"
+            lipStatus.innerText = "> VOX_STREAM: TALKING";
+            lipStatus.style.color = "#fff";
+            lipStatus.style.textShadow = "0 0 10px #fff";
           } else {
-            // Небольшая задержка перед исчезновением текста
-            setTimeout(() => {
-                if (lipDistance <= 0.015) {
-                    subtitleBox.classList.remove('active-text');
-                    lipStatus.innerText = "> MOUTH_CLOSED";
-                    lipStatus.style.color = "#fff";
-                }
-            }, 1000);
+            lipStatus.innerText = "> VOX_STREAM: IDLE";
+            lipStatus.style.color = "rgba(255,255,255,0.5)";
+            lipStatus.style.textShadow = "none";
           }
         }
       }
       canvasCtx.restore();
     }
 
+    // Инициализация Face Mesh
     const faceMesh = new FaceMesh({locateFile: (file) => {
       return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
     }});
@@ -153,12 +286,12 @@
     faceMesh.setOptions({
       maxNumFaces: 1,
       refineLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
     });
-
     faceMesh.onResults(onResults);
 
+    // Запуск камеры
     const camera = new Camera(videoElement, {
       onFrame: async () => {
         await faceMesh.send({image: videoElement});
@@ -168,6 +301,10 @@
     });
     
     camera.start();
+
+    // Запуск аудиовизуализатора после старта
+    initAudioVisualizer();
+
   </script>
 </body>
 </html>
