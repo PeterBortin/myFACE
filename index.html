@@ -1,47 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>YAUTJA_HUNTER_VISION_V10</title>
+    <title>YAUTJA_SYSTEM_OVERRIDE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
-        
-        body { background: #000; margin: 0; overflow: hidden; font-family: 'Orbitron', sans-serif; cursor: none; }
-        
+        body { background: #000; margin: 0; overflow: hidden; font-family: monospace; }
         video { display: none; }
         canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
 
-        /* Эффект линзы и теплового марева */
-        #thermal-overlay {
-            position: absolute; inset: 0; z-index: 20; pointer-events: none;
-            background: radial-gradient(circle, transparent 30%, rgba(0, 40, 80, 0.4) 100%);
-            box-shadow: inset 0 0 100px rgba(0,0,0,0.8);
+        /* Эффект шума и помех (как на скриншоте 1) */
+        #glitch-overlay {
+            position: absolute; inset: 0; z-index: 25; pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 2px);
+            opacity: 0.3;
         }
 
-        /* Вертикальная звуковая полоса (Predator Style) */
-        #sound-bar-container {
-            position: absolute; right: 20px; top: 20%; height: 60%; width: 12px;
-            display: flex; flex-direction: column-reverse; gap: 4px; z-index: 100;
+        /* Виньетка и свечение */
+        #vignette {
+            position: absolute; inset: 0; z-index: 30; pointer-events: none;
+            background: radial-gradient(circle, transparent 20%, rgba(40, 0, 0, 0.4) 100%);
         }
-        .sound-segment {
-            width: 100%; height: 6px; background: #300; transition: background 0.1s;
-            box-shadow: 0 0 5px rgba(255,0,0,0);
-        }
-        .active-segment { background: #ff0000; box-shadow: 0 0 8px #ff0000; }
 
-        /* Анимация сканирования */
-        @keyframes scanline {
-            0% { transform: translateY(-100%); }
-            100% { transform: translateY(1000%); }
+        /* Контейнер для аудио-волны (Скриншот 5) */
+        #audio-wave-container {
+            position: absolute; left: 10px; top: 15%; height: 70%; width: 60px;
+            z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
-        .scan {
-            position: absolute; width: 100%; height: 2px; 
-            background: rgba(255, 255, 255, 0.1); 
-            top: 0; z-index: 30; animation: scanline 4s linear infinite;
+        .wave-bar {
+            width: 4px; background: #ff0000; margin: 1px 0;
+            box-shadow: 0 0 10px #ff0000; transition: width 0.05s ease;
+        }
+
+        #ui-layer {
+            position: absolute; inset: 0; z-index: 50; pointer-events: none;
+            border: 2px solid rgba(255, 0, 0, 0.2); margin: 10px;
         }
     </style>
 </head>
@@ -49,71 +45,64 @@
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
-    <div id="thermal-overlay"></div>
-    <div class="scan"></div>
-
-    <!-- Звуковая полоса Хищника -->
-    <div id="sound-bar-container"></div>
-
-    <!-- Интерфейсные надписи (Глифы) -->
-    <div class="absolute top-5 left-5 text-red-600 text-[10px] z-50 tracking-[5px]">
-        <div id="status">INIT_LINK...</div>
-        <div class="mt-2 text-[14px]" id="glyphs">ᚦᛗᛖᛟᚱ ᛚᛒᚦ</div>
+    
+    <div id="glitch-overlay"></div>
+    <div id="vignette"></div>
+    <div id="ui-layer">
+        <div id="top-telemetry" class="absolute top-4 right-10 text-red-600 text-xl tracking-tighter"></div>
     </div>
 
-    <button id="ignite" class="absolute inset-0 z-[300] bg-black text-white flex flex-col items-center justify-center">
-        <div class="w-24 h-24 mb-6 border-4 border-red-600 rounded-full flex items-center justify-center animate-pulse">
-            <div class="w-4 h-4 bg-red-600 rounded-full"></div>
-        </div>
-        <span class="tracking-[0.5em] text-red-600 font-black">ACTIVATE_PREDATOR_VISION</span>
-        <div class="text-[9px] mt-4 opacity-50">CAM_REQ // MIC_REQ // THERMAL_ON</div>
+    <div id="audio-wave-container"></div>
+
+    <button id="ignite" class="absolute inset-0 z-[300] bg-black text-red-600 flex flex-col items-center justify-center">
+        <div class="mb-6 animate-pulse text-4xl font-bold tracking-[1em]">SEARCHING...</div>
+        <div class="text-[10px] opacity-60">LINKING_YAUTJA_GAUNTLET_V2.6</div>
     </button>
 
     <script>
         const video = document.getElementById('v');
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        const soundContainer = document.getElementById('sound-bar-container');
-        
-        let model, audioCtx, analyser, dataArray;
-        const segments = [];
+        const waveContainer = document.getElementById('audio-wave-container');
+        const telemetry = document.getElementById('top-telemetry');
 
-        // Создаем сегменты для звуковой полосы
-        for(let i=0; i<40; i++) {
-            const div = document.createElement('div');
-            div.className = 'sound-segment';
-            soundContainer.appendChild(div);
-            segments.push(div);
+        let model, audioCtx, analyser, dataArray;
+        const waveBars = [];
+        const barCount = 50;
+
+        // Создаем бары для симметричной волны (Скриншот 5)
+        for(let i=0; i < barCount; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'wave-bar';
+            waveContainer.appendChild(bar);
+            waveBars.push(bar);
         }
+
+        // Эмуляция глифов Хищника (на основе ваших картинок)
+        const yautjaSymbols = ["ᚦ", "ᛗ", "ᛖ", "ᛟ", "ᚱ", "ᛚ", "ᛒ", "ᚦ", "ᛘ", "ᛞ"];
 
         async function init() {
             document.getElementById('ignite').remove();
             
             try {
-                // 1. Запрос Камеры и Микрофона
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment" },
                     audio: true
                 });
-                
                 video.srcObject = stream;
 
-                // 2. Настройка Аудио-анализатора
+                // Настройка звука
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
                 analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 64;
+                analyser.fftSize = 128;
                 source.connect(analyser);
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-                // 3. Загрузка AI
-                document.getElementById('status').innerText = "CALIBRATING_SENSORS...";
                 model = await cocoSsd.load();
-                document.getElementById('status').innerText = "HUNT_MODE_ACTIVE";
-                
                 draw();
             } catch (err) {
-                alert("ACCESS_DENIED: Check permissions");
+                console.error("Access denied", err);
             }
         }
 
@@ -121,88 +110,73 @@
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // --- ТЕПЛОВИЗИОННЫЙ ФИЛЬТР (PREDATOR VISION) ---
+            // --- ТЕРМАЛЬНЫЙ ФИЛЬТР (Скриншот 6) ---
             ctx.save();
-            // Смешиваем инверсию, насыщенность и сдвиг хуе (синий -> красный)
-            ctx.filter = "contrast(1.6) brightness(1.2) saturate(3) hue-rotate(160deg) invert(0.1)";
+            // Цвета: Синий (холод), Зеленый (средне), Красный/Желтый (жар)
+            ctx.filter = "contrast(1.8) brightness(1.1) saturate(2.5) hue-rotate(140deg)";
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             ctx.restore();
 
-            updateSoundBar();
-            renderYautjaHUD();
-            
+            updateVisuals();
+            renderDetections();
             requestAnimationFrame(draw);
         }
 
-        function updateSoundBar() {
+        function updateVisuals() {
+            // Обновление звуковой волны (Симметрия)
             analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-            const activeCount = Math.floor((average / 128) * segments.length);
-
-            segments.forEach((seg, i) => {
-                if (i < activeCount) {
-                    seg.className = 'sound-segment active-segment';
-                    // Добавляем эффект случайного мерцания глифов при звуке
-                    if(Math.random() > 0.9) updateGlyphs();
-                } else {
-                    seg.className = 'sound-segment';
-                }
+            waveBars.forEach((bar, i) => {
+                const val = dataArray[i % dataArray.length];
+                const width = Math.max(2, (val / 255) * 50);
+                bar.style.width = `${width}px`;
+                // Цвет меняется от красного к желтому при пиках
+                bar.style.background = val > 200 ? '#ffff00' : '#ff0000';
             });
+
+            // Случайные глифы в углу
+            if(Math.random() > 0.9) {
+                telemetry.innerText = Array.from({length: 6}, () => yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)]).join(' ');
+            }
         }
 
-        function updateGlyphs() {
-            const chars = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚻᚼᛂᛄᛅᛆᛇᛈᛉᛊᛋᛏᛐᛑᛒᛓᛔᛕᛗᛘᛚᛛᛜᛝᛞᛟ";
-            document.getElementById('glyphs').innerText = Array.from({length: 8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
-        }
-
-        async function renderYautjaHUD() {
-            const preds = await model.detect(video);
+        async function renderDetections() {
+            const predictions = await model.detect(video);
             const sx = canvas.width / video.videoWidth;
             const sy = canvas.height / video.videoHeight;
 
-            preds.forEach(p => {
+            predictions.forEach(p => {
                 if (p.score < 0.6) return;
-
                 const [x, y, w, h] = p.bbox.map(v => v * (sx > sy ? sx : sy));
                 const cx = x + w/2;
                 const cy = y + h/2;
 
-                // 1. ПЛАЗМЕННЫЙ ПРИЦЕЛ (Три точки)
+                // ПРИЦЕЛ (Три красные точки - Скриншот 2)
                 ctx.fillStyle = "#ff0000";
-                ctx.shadowBlur = 15;
+                ctx.shadowBlur = 20;
                 ctx.shadowColor = "red";
-                
-                const gap = 15;
-                // Рисуем знаменитый треугольник лазера
-                [[0, -gap], [-gap, gap], [gap, gap]].forEach(offset => {
+                const r = 18;
+                [[0, -r], [-r, r], [r, r]].forEach(offset => {
                     ctx.beginPath();
-                    ctx.arc(cx + offset[0], cy + offset[1], 4, 0, Math.PI * 2);
+                    ctx.arc(cx + offset[0], cy + offset[1], 5, 0, Math.PI * 2);
                     ctx.fill();
                 });
                 ctx.shadowBlur = 0;
 
-                // 2. ОРГАНИЧЕСКИЙ ЗАХВАТ ЦЕЛИ
-                ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
-                ctx.lineWidth = 2;
-                ctx.setLineDash([10, 10]);
+                // РАМКА ЗАХВАТА (Скриншот 2 - красные контуры)
+                ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
                 ctx.strokeRect(x, y, w, h);
                 ctx.setLineDash([]);
 
-                // 3. ТЕКСТ ЦЕЛИ (Инопланетный шрифт)
+                // ТЕКСТ ОБЪЕКТА ГЛИФАМИ
+                ctx.font = "20px monospace";
                 ctx.fillStyle = "#ff0000";
-                ctx.font = "bold 16px Orbitron";
-                ctx.fillText(`TARGET: ${p.class.toUpperCase()}`, x, y - 25);
-                ctx.fillText(`THREAT: ${(p.score * 100).toFixed(0)}%`, x, y - 10);
+                ctx.fillText(yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)], x, y - 10);
             });
         }
 
         document.getElementById('ignite').onclick = init;
-        
-        // Оптимизация под изменение размера экрана
-        window.onresize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        };
     </script>
 </body>
 </html>
