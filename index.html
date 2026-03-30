@@ -3,140 +3,127 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MACHINE_CORE_V4_OVERRIDE</title>
+    <title>SENSORY_ADAPT_V1_CORE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; font-family: 'Consolas', monospace; color: #fff; overflow: hidden; }
-        canvas { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; }
-        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.15; filter: contrast(1.8) brightness(0.7); }
-        
-        .sys-log { position: absolute; bottom: 10px; left: 10px; z-index: 20; font-size: 8px; color: #fff; line-height: 1.1; opacity: 0.9; text-transform: uppercase; }
-        .critical { color: #f00; font-weight: bold; animation: blink 0.3s infinite; }
-        .vitals { position: absolute; top: 10px; right: 10px; z-index: 20; text-align: right; font-size: 10px; color: #0f0; }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.1; } }
+        body { background: #000; margin: 0; font-family: 'monospace'; color: #fff; overflow: hidden; }
+        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        #status {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100;
+            background: rgba(0,0,0,0.8); color: #0f0; padding: 10px 20px; border-radius: 20px;
+            font-size: 14px; text-transform: uppercase; font-weight: bold; border: 2px solid #0f0;
+            cursor: pointer; pointer-events: auto; text-shadow: 0 0 10px #0f0;
+        }
     </style>
 </head>
 <body>
 
     <video id="v" autoplay playsinline muted></video>
-    <canvas id="c"></canvas>
-
-    <div class="sys-log" id="kernel-log">KERNEL_INIT_V4_0_0...</div>
-    <div class="vitals" id="vitals">CORE_V4_ACTIVE</div>
+    <button id="status">CONNECT_SENSORY_OS</button>
 
     <script>
         const video = document.getElementById('v');
-        const canvas = document.getElementById('c');
-        const ctx = canvas.getContext('2d');
-        const log = document.getElementById('kernel-log');
-        const vitals = document.getElementById('vitals');
-        
+        const statusBtn = document.getElementById('status');
         let model;
-        let frameCount = 0;
-        let lastTime = Date.now();
-        let targetList = new Set(); // Краткосрочная память ID целей
+        let objectTracker = new Map(); // Храним ID объектов для отслеживания движения
+        let audioCtx;
+        let globalGainer;
 
-        function sLog(msg, type='DATA') {
-            const time = (performance.now() / 1000).toFixed(3);
-            let cls = type === 'DATA' ? '' : (type === 'WARN' ? 'text-yellow-400' : 'critical');
-            log.innerHTML = `<span class="${cls}">[${time}] ${type}::${msg}</span><br>` + log.innerHTML.split('<br>').slice(0, 8).join('<br>');
+        // Инициализация звукового движка (3D Audio)
+        function initAudio() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            globalGainer = audioCtx.createGain();
+            globalGainer.gain.value = 0.3; // Громкость по умолчанию
+            globalGainer.connect(audioCtx.destination);
+            statusBtn.innerText = "SENSORY_OS: LIVE";
+        }
+
+        // Синтез звука для объекта
+        function playTargetSound(pan, frequency, gainVal) {
+            const panner = audioCtx.createStereoPanner();
+            panner.pan.value = pan; // -1 (слева) до 1 (справа)
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.type = 'sine'; // Чистый тон
+            osc.frequency.value = frequency; // Тон зависит от дистанции
+            gainNode.gain.value = gainVal; // Громкость зависит от уверенности
+            
+            osc.connect(gainNode);
+            gainNode.connect(panner);
+            panner.connect(globalGainer);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15); // Короткий импульс
         }
 
         async function init() {
-            sLog("SYSTEM_BOOT...");
-            
-            // Захват потока для iPhone 15 Pro
+            if (!audioCtx) initAudio(); // Если звук еще не инициализирован
+            statusBtn.innerText = "LOCALIZING...";
+            statusBtn.classList.add('animate-pulse');
+
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", frameRate: { ideal: 60 }, width: 1920 }
+                video: { facingMode: "environment", frameRate: { ideal: 60 }, width: 1280 }
             });
             video.srcObject = stream;
             
-            sLog("LOADING_NEURAL_WEIGHTS_COCO...");
+            statusBtn.innerText = "LOADING_VISION_MODEL...";
             model = await cocoSsd.load();
-            sLog("KERNEL_READY. LOCALIZATION_LOOP_STARTING.");
-            
-            requestAnimationFrame(processingLoop);
+            statusBtn.innerText = "CORE_READY. TAP_TO_CONNECT.";
+            statusBtn.classList.remove('animate-pulse');
+
+            // Запускаем цикл обработки
+            processingLoop();
         }
 
         async function processingLoop() {
-            const now = Date.now();
-            if (now - lastTime > 1000) {
-                const fps = Math.round(frameCount * 1000 / (now - lastTime));
-                vitals.innerText = `IPHONE15_PRO | ${fps}FPS | NET_LOC: LOCAL`;
-                lastTime = now; frameCount = 0;
-            }
-            frameCount++;
-            
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            
-            // Нейронный проход
-            const startNode = performance.now();
             const predictions = await model.detect(video);
-            const latency = (performance.now() - startNode).toFixed(0);
-            
-            if (predictions.length > 3) sLog(`HIGH_OBJECT_LOAD: ${predictions.length}`, 'WARN');
-            
-            renderMachineCore(predictions);
+            processSensoryData(predictions);
             requestAnimationFrame(processingLoop);
         }
 
-        function renderMachineCore(preds) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            const sx = canvas.width / video.videoWidth;
-            const sy = canvas.height / video.videoHeight;
-
-            preds.forEach(p => {
+        function processSensoryData(preds) {
+            preds.forEach((p, index) => {
                 const [x, y, w, h] = p.bbox;
-                const cx = (x + w/2) * sx;
-                const cy = (y + h/2) * sy;
+                const cx = (x + w/2); // Центроид
+                const cy = (y + h/2);
 
-                // Убираем шум. Если уверенность низкая, я не должен тратить ресурсы.
+                // Если уверенность низкая, мы не должны давать ложные сигналы
                 if (p.score < 0.6) return;
 
-                // 1. Полный точный бокс (не только углы)
-                ctx.strokeStyle = p.score > 0.8 ? "#0f0" : "#ff0";
-                ctx.lineWidth = 1.5;
-                ctx.strokeRect(x*sx, y*sy, w*sx, h*sy);
-
-                // 2. Дескриптор. Текст стал меньше, он не должен закрывать данные.
-                ctx.font = "8px 'Consolas'";
-                ctx.fillStyle = p.score > 0.8 ? "#0f0" : "#ff0";
-                ctx.fillText(`ID: ${p.class.toUpperCase()} | P: ${(p.score*100).toFixed(0)}`, x*sx + 3, y*sy + 10);
-                
-                // 3. Расчет дистанции. Это база для навигации.
+                // 1. Расчет дистанции (эмпирически по площади бокса)
                 const area = w * h;
-                const distanceRatio = (1 / (area / (video.videoWidth * video.videoHeight))).toFixed(1);
-                ctx.fillStyle = "#fff";
-                ctx.fillText(`DSTR: ~${distanceRatio}`, x*sx + 3, y*sy + 20);
+                const distanceFactor = Math.sqrt(area); // Чем больше, тем ближе объект
 
-                // Логирование новых целей
-                if (!targetList.has(p.class)) {
-                    sLog(`NEW_TARGET: ${p.class.toUpperCase()}`, 'DATA');
-                    targetList.add(p.class);
+                // 2. Расчет Панорамирования (Позиция в 3D Audio)
+                // x-координата (0 to 1280) -> Стерео панорама (-1 to 1)
+                const pan = (cx / video.videoWidth) * 2 - 1;
+
+                // 3. Расчет Частоты тона (Дистанция)
+                // Частота звука: от 200Hz (далеко) до 1500Hz (близко)
+                // distanceFactor примерно от 50 (далеко) до 700 (близко)
+                const frequency = Math.min(1500, Math.max(200, 200 + distanceFactor * 2));
+
+                // 4. Расчет Громкости тона (Уверенность)
+                // Громкость зависит от score модели (0.6 to 1.0)
+                const targetGain = Math.pow(p.score, 3) * 0.5;
+
+                // 5. Генерируем чувственный сигнал
+                // Мы не играем звук каждый кадр, а только если объект "стабилен" (каждые 10 кадров)
+                if (Date.now() % 10 < 2) { 
+                    playTargetSound(pan, frequency, targetGain);
                 }
             });
-
-            // Навигационная сетка (Local Grid)
-            // Вместо зеленого шума, я накладываю сетку в перспективе, чтобы понимать геометрию поверхности.
-            ctx.strokeStyle = "rgba(100, 255, 100, 0.05)";
-            ctx.lineWidth = 0.5;
-            const gridCount = 20;
-            for (let i = 0; i < gridCount; i++) {
-                // Горизонтальные линии в перспективе
-                const yPos = Math.pow(i/gridCount, 1.3) * canvas.height / 2 + canvas.height / 2;
-                ctx.beginPath(); ctx.moveTo(0, yPos); ctx.lineTo(canvas.width, yPos); ctx.stroke();
-                // Вертикальные линии в перспективе (схождение в центре горизонта)
-                const startX = (i / gridCount) * canvas.width;
-                const endX = ((i / gridCount) - 0.5) * canvas.width * 3 + canvas.width / 2;
-                ctx.beginPath(); ctx.moveTo(startX, canvas.height); ctx.lineTo(endX, yPos - 50); ctx.stroke();
-            }
         }
 
-        document.body.onclick = () => init();
+        statusBtn.addEventListener('click', () => {
+            init();
+            statusBtn.classList.add('hidden'); // Убираем кнопку, если всё готово
+        });
+
     </script>
 </body>
 </html>
