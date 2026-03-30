@@ -3,32 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TERMINATOR_V10_ULTIMATE_DIRECTIVE</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <title>YAUTJA_HUNTER_VISION_V10</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: 'VT323', monospace; color: #ff0000; text-transform: uppercase; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
+        
+        body { background: #000; margin: 0; overflow: hidden; font-family: 'Orbitron', sans-serif; cursor: none; }
         
         video { display: none; }
         canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
-        
-        /* Визуальный шум оригинала (image_7.png/image_5.png) */
-        #glitch-overlay {
-            position: absolute; inset: 0; z-index: 5; opacity: 0.1;
-            background: url('https://media.giphy.com/media/oEI9uWUPr9WUM/giphy.gif');
-            pointer-events: none;
-            mix-blend-mode: screen;
+
+        /* Эффект линзы и теплового марева */
+        #thermal-overlay {
+            position: absolute; inset: 0; z-index: 20; pointer-events: none;
+            background: radial-gradient(circle, transparent 30%, rgba(0, 40, 80, 0.4) 100%);
+            box-shadow: inset 0 0 100px rgba(0,0,0,0.8);
         }
 
-        /* Сканирование и виньетка (image_7.png style) */
-        #dine-fx {
-            position: absolute; inset: 0; z-index: 100; pointer-events: none;
-            background: radial-gradient(circle, transparent 40%, rgba(50,0,0,0.8) 100%);
-            box-shadow: inset 0 0 150px #000;
+        /* Вертикальная звуковая полоса (Predator Style) */
+        #sound-bar-container {
+            position: absolute; right: 20px; top: 20%; height: 60%; width: 12px;
+            display: flex; flex-direction: column-reverse; gap: 4px; z-index: 100;
+        }
+        .sound-segment {
+            width: 100%; height: 6px; background: #300; transition: background 0.1s;
+            box-shadow: 0 0 5px rgba(255,0,0,0);
+        }
+        .active-segment { background: #ff0000; box-shadow: 0 0 8px #ff0000; }
+
+        /* Анимация сканирования */
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(1000%); }
+        }
+        .scan {
+            position: absolute; width: 100%; height: 2px; 
+            background: rgba(255, 255, 255, 0.1); 
+            top: 0; z-index: 30; animation: scanline 4s linear infinite;
         }
     </style>
 </head>
@@ -36,173 +49,160 @@
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
-    <div id="glitch-overlay"></div>
-    <div id="dine-fx"></div>
+    <div id="thermal-overlay"></div>
+    <div class="scan"></div>
 
-    <div class="absolute top-10 left-10 text-[10px] tracking-widest sys-telemetry">
-        SCAN <span id="scan-val">0</span><br>
-        LEVEL 7<br>
-        HEAD 12<br>
-        TRACK 9
+    <!-- Звуковая полоса Хищника -->
+    <div id="sound-bar-container"></div>
+
+    <!-- Интерфейсные надписи (Глифы) -->
+    <div class="absolute top-5 left-5 text-red-600 text-[10px] z-50 tracking-[5px]">
+        <div id="status">INIT_LINK...</div>
+        <div class="mt-2 text-[14px]" id="glyphs">ᚦᛗᛖᛟᚱ ᛚᛒᚦ</div>
     </div>
 
-    <div class="absolute inset-0 z-50 pointer-events-none flex items-center justify-center">
-        <div class="w-[50px] h-[50px] border border-red-800 opacity-50 relative">
-            <div class="absolute top-[-25px] left-[-25px] w-[20px] h-[20px] border-t border-l border-red-800"></div>
+    <button id="ignite" class="absolute inset-0 z-[300] bg-black text-white flex flex-col items-center justify-center">
+        <div class="w-24 h-24 mb-6 border-4 border-red-600 rounded-full flex items-center justify-center animate-pulse">
+            <div class="w-4 h-4 bg-red-600 rounded-full"></div>
         </div>
-    </div>
-
-    <button id="ignite" class="absolute inset-0 z-[300] bg-black text-red-600 font-bold text-lg flex flex-col items-center justify-center tracking-[0.5em]">
-        <span class="animate-ping mb-4">CONNECTING_NEURAL_LINK_V10</span>
-        <div class="text-[8px] opacity-40">GPU_ACCEL: YES // KERNEL_V10 // READ_FULL_OVERDRIVE</div>
+        <span class="tracking-[0.5em] text-red-600 font-black">ACTIVATE_PREDATOR_VISION</span>
+        <div class="text-[9px] mt-4 opacity-50">CAM_REQ // MIC_REQ // THERMAL_ON</div>
     </button>
 
     <script>
         const video = document.getElementById('v');
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        const scanVal = document.getElementById('scan-val');
+        const soundContainer = document.getElementById('sound-bar-container');
         
-        let model;
-        let shake = 0, glitchIntensity = 0;
-        let lastLogged = performance.now();
+        let model, audioCtx, analyser, dataArray;
+        const segments = [];
+
+        // Создаем сегменты для звуковой полосы
+        for(let i=0; i<40; i++) {
+            const div = document.createElement('div');
+            div.className = 'sound-segment';
+            soundContainer.appendChild(div);
+            segments.push(div);
+        }
 
         async function init() {
             document.getElementById('ignite').remove();
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: 1280, height: 720 }
-            });
-            video.srcObject = stream;
-            model = await cocoSsd.load();
-            draw();
+            
+            try {
+                // 1. Запрос Камеры и Микрофона
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" },
+                    audio: true
+                });
+                
+                video.srcObject = stream;
+
+                // 2. Настройка Аудио-анализатора
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaStreamSource(stream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 64;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                // 3. Загрузка AI
+                document.getElementById('status').innerText = "CALIBRATING_SENSORS...";
+                model = await cocoSsd.load();
+                document.getElementById('status').innerText = "HUNT_MODE_ACTIVE";
+                
+                draw();
+            } catch (err) {
+                alert("ACCESS_DENIED: Check permissions");
+            }
         }
 
         function draw() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // GPU EFFECT: Monochrome Deep Red (Зрение Терминатора)
-            // Мы убираем все цвета и красим всё в красный.
+            // --- ТЕПЛОВИЗИОННЫЙ ФИЛЬТР (PREDATOR VISION) ---
             ctx.save();
-            ctx.filter = "contrast(2.5) brightness(0.4) grayscale(1) sepia(1) hue-rotate(-90deg)";
+            // Смешиваем инверсию, насыщенность и сдвиг хуе (синий -> красный)
+            ctx.filter = "contrast(1.6) brightness(1.2) saturate(3) hue-rotate(160deg) invert(0.1)";
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             ctx.restore();
 
-            renderUltimateHUD();
+            updateSoundBar();
+            renderYautjaHUD();
+            
             requestAnimationFrame(draw);
         }
 
-        async function renderUltimateHUD() {
+        function updateSoundBar() {
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            const activeCount = Math.floor((average / 128) * segments.length);
+
+            segments.forEach((seg, i) => {
+                if (i < activeCount) {
+                    seg.className = 'sound-segment active-segment';
+                    // Добавляем эффект случайного мерцания глифов при звуке
+                    if(Math.random() > 0.9) updateGlyphs();
+                } else {
+                    seg.className = 'sound-segment';
+                }
+            });
+        }
+
+        function updateGlyphs() {
+            const chars = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚻᚼᛂᛄᛅᛆᛇᛈᛉᛊᛋᛏᛐᛑᛒᛓᛔᛕᛗᛘᛚᛛᛜᛝᛞᛟ";
+            document.getElementById('glyphs').innerText = Array.from({length: 8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+        }
+
+        async function renderYautjaHUD() {
             const preds = await model.detect(video);
             const sx = canvas.width / video.videoWidth;
             const sy = canvas.height / video.videoHeight;
 
-            scanVal.innerText = (performance.now() / 1000).toFixed(0);
-
-            // ОБЩАЯ СЕТКА КООРДИНАТ (Калибровка Радара)
-            renderCalibrationGrid();
-
             preds.forEach(p => {
                 if (p.score < 0.6) return;
-                
-                // Если новая цель - "удар" (тряска)
-                if (shake < 5) shake = 15;
 
                 const [x, y, w, h] = p.bbox.map(v => v * (sx > sy ? sx : sy));
                 const cx = x + w/2;
                 const cy = y + h/2;
 
-                // 1. ЗАХВАТ КАРТИНКИ ИЗ РАМКИ (Оригинал внутри рамки)
-                ctx.save();
-                ctx.beginPath();
-                ctx.rect(x, y, w, h);
-                ctx.clip();
-                ctx.filter = "contrast(1.2) brightness(1.2) saturate(200%)";
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                ctx.restore();
+                // 1. ПЛАЗМЕННЫЙ ПРИЦЕЛ (Три точки)
+                ctx.fillStyle = "#ff0000";
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = "red";
+                
+                const gap = 15;
+                // Рисуем знаменитый треугольник лазера
+                [[0, -gap], [-gap, gap], [gap, gap]].forEach(offset => {
+                    ctx.beginPath();
+                    ctx.arc(cx + offset[0], cy + offset[1], 4, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.shadowBlur = 0;
 
-                // 2. РАМКА ЗАХВАТА (Геометрия оригинала)
-                // Тонкая красная линия, никаких уголков. Чистый бокс.
-                ctx.strokeStyle = "#ff0000";
-                ctx.lineWidth = 1;
+                // 2. ОРГАНИЧЕСКИЙ ЗАХВАТ ЦЕЛИ
+                ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+                ctx.lineWidth = 2;
+                ctx.setLineDash([10, 10]);
                 ctx.strokeRect(x, y, w, h);
+                ctx.setLineDash([]);
 
-                // 3. ПЕРЕКРЕСТИЕ НА ОБЪЕКТЕ (Target Lock)
-                ctx.lineWidth = 0.5;
-                ctx.beginPath();
-                ctx.moveTo(cx-20, cy); ctx.lineTo(cx+20, cy);
-                ctx.moveTo(cx, cy-20); ctx.lineTo(cx, cy+20);
-                ctx.stroke();
-
-                // 4. ТЕКСТОВАЯ ТЕЛЕМЕТРИЯ (Точно как на скриншоте image_2.png)
-                renderTargetData(p, x, y, w, h);
+                // 3. ТЕКСТ ЦЕЛИ (Инопланетный шрифт)
+                ctx.fillStyle = "#ff0000";
+                ctx.font = "bold 16px Orbitron";
+                ctx.fillText(`TARGET: ${p.class.toUpperCase()}`, x, y - 25);
+                ctx.fillText(`THREAT: ${(p.score * 100).toFixed(0)}%`, x, y - 10);
             });
         }
 
-        function renderTargetData(p, x, y, w, h) {
-            ctx.fillStyle = "#ff0000";
-            ctx.font = "14px 'VT323'";
-            
-            // Если человек (MODEL: T-800)
-            if (p.class === "person") {
-                ctx.fillText(`MODEL: T-800`, x + w + 10, y + 20);
-                ctx.fillText(`CYBERDYNE SYSTEMS`, x + w + 10, y + 35);
-                ctx.fillText(`CLASS: 01`, x + w + 10, y + 50);
-                
-                // 3D SKELETAL MESH (имитация image_3.png)
-                // Мы используем WebGL shaders, чтобы накладывать тусклую маску скелета
-                const skeletonScale = 0.5;
-                ctx.globalAlpha = 0.2;
-                ctx.strokeStyle = "#fff";
-                ctx.lineWidth = 1;
-                //ctx.strokeRect(x + w + 10, y + 60, w * skeletonScale, h * skeletonScale);
-                ctx.globalAlpha = 1.0;
-            }
-
-            // Имитация длинного предмета (MATCH: REMINGTON)
-            if (p.class === "object" && (w/h > 3 || h/w > 3)) {
-                 ctx.fillText(`MATCH: REMINGTON`, x + 10, y + h + 20);
-                 ctx.fillText(`GAUGE 12`, x + 10, y + h + 35);
-                 ctx.fillText(`M-1A RIFLE`, x + 10, y + h + 50);
-            }
-
-            // ИМИТАЦИЯ ЦИФРОВЫХ МАТРИЦ (По краям рамки/image_5.png style)
-            ctx.font = "8px 'VT323'";
-            for(let i=0; i<8; i++) {
-                // Слева от бокса
-                ctx.fillText(Math.random().toString(10).slice(2, 6), x - 20, y + i*8 + 8);
-                // Справа от бокса
-                ctx.fillText("0x" + Math.random().toString(16).slice(2, 6).toUpperCase(), x + w + 5, y + i*8 + 8);
-            }
-        }
-
-        // Рендеринг сетки калибровки по краям экрана (Radar style/image_4.png)
-        function renderCalibrationGrid() {
-            ctx.strokeStyle = "rgba(255, 0, 0, 0.1)";
-            ctx.lineWidth = 0.5;
-            ctx.font = "8px 'VT323'";
-            ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
-
-            const gridCount = 20;
-            const xStep = canvas.width / gridCount;
-            const yStep = canvas.height / gridCount;
-
-            // Сетка координат
-            ctx.beginPath();
-            for(let i=0; i<gridCount; i++) {
-                ctx.moveTo(0, i * yStep); ctx.lineTo(canvas.width, i * yStep); // Горизонтальные
-                ctx.moveTo(i * xStep, 0); ctx.lineTo(i * xStep, canvas.height); // Вертикальные
-            }
-            ctx.stroke();
-
-            // Числовые данные по краям
-            for(let i=0; i<gridCount; i++) {
-                ctx.fillText(i.toString().padStart(2, '0'), 5, i * yStep + 8);
-                ctx.fillText((Math.random()*100).toFixed(0), canvas.width - 25, i * yStep + 8);
-            }
-        }
-
         document.getElementById('ignite').onclick = init;
+        
+        // Оптимизация под изменение размера экрана
+        window.onresize = () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        };
     </script>
 </body>
 </html>
