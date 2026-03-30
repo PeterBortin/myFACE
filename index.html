@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cyber Mesh Terminal v2.0</title>
+  <title>Cyber Mesh Terminal v3.0</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -12,11 +12,11 @@
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
     
-    /* Кнопка запуска (защита от блокировки браузером) */
+    /* Заглушка запуска */
     #overlay-start {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 100; display: flex;
-      justify-content: center; align-items: center; cursor: pointer;
+      flex-direction: column; justify-content: center; align-items: center; cursor: pointer;
     }
     #overlay-start h1 { border: 1px solid #fff; padding: 20px; text-transform: uppercase; letter-spacing: 5px; }
 
@@ -28,30 +28,47 @@
       object-fit: cover; transform: scaleX(-1); z-index: 1;
     }
 
+    /* Кнопка смены камеры */
+    #switch-camera {
+      position: absolute; top: 20px; right: 20px; z-index: 110;
+      background: rgba(0,0,0,0.5); border: 1px solid #fff; color: #fff;
+      padding: 10px 15px; cursor: pointer; font-family: inherit;
+      text-transform: uppercase; font-size: 12px; transition: 0.3s;
+    }
+    #switch-camera:hover { background: #fff; color: #000; }
+
     .interface-overlay {
       position: absolute; top: 20px; left: 20px; z-index: 10;
-      font-size: 12px; text-shadow: 0 0 5px #fff;
+      font-size: 12px; text-shadow: 0 0 5px #fff; pointer-events: none;
     }
 
+    /* Нижний блок: Звук + Лог-Терминал */
     .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: linear-gradient(to top, rgba(0,0,0,1), transparent);
+      z-index: 10; background: linear-gradient(to top, rgba(0,0,0,1) 70%, transparent);
       padding-bottom: 20px;
     }
 
-    #audio_visualizer { width: 80%; height: 60px; margin-bottom: 5px; }
+    #audio_visualizer { width: 100%; height: 50px; margin-bottom: 5px; }
 
+    /* Терминал как лог */
     #terminal-box {
-      width: 85%; height: 120px; background: rgba(0, 0, 0, 0.8);
-      border: 1px solid #fff; padding: 15px; box-sizing: border-box;
-      overflow: hidden; position: relative;
+      width: 90%; height: 150px; background: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255,255,255,0.5); padding: 10px; box-sizing: border-box;
+      overflow-y: auto; display: flex; flex-direction: column;
+      scrollbar-width: thin; scrollbar-color: #fff transparent;
     }
+    
+    #terminal-box::-webkit-scrollbar { width: 4px; }
+    #terminal-box::-webkit-scrollbar-thumb { background: #fff; }
 
-    #terminal-output {
-      margin: 0; font-size: 18px; line-height: 1.4;
-      text-transform: uppercase; color: #fff;
+    .log-entry {
+      margin: 2px 0; font-size: 14px; line-height: 1.2;
+      text-transform: uppercase; color: rgba(255,255,255,0.8);
+      border-left: 2px solid #fff; padding-left: 8px;
     }
+    .log-entry.interim { color: #555; border-left-color: #555; }
 
     .cursor { animation: blink 1s infinite; }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -60,12 +77,15 @@
 
 <body>
 
-  <div id="overlay-start" onclick="startSystem()">
+  <div id="overlay-start" onclick="initSystem()">
     <h1>INITIALIZE SYSTEM</h1>
+    <p style="font-size: 10px; margin-top: 10px;">CLICK TO GRANT PERMISSIONS</p>
   </div>
 
+  <button id="switch-camera">Switch Camera</button>
+
   <div id="container">
-    <video class="input_video"></video>
+    <video class="input_video" playsinline></video>
     <canvas class="output_canvas"></canvas>
     
     <div class="interface-overlay">
@@ -75,8 +95,10 @@
 
     <div class="bottom-peripherals">
       <canvas id="audio_visualizer"></canvas>
-      <div id="terminal-box">
-        <p id="terminal-output">READY FOR INPUT...<span class="cursor">_</span></p>
+      <div id="terminal-box" id="log-container">
+        <!-- Сюда падают логи -->
+        <div id="log-content"></div>
+        <p id="interim-text" style="margin: 0; font-size: 14px; color: #aaa; text-transform: uppercase;"></p>
       </div>
     </div>
   </div>
@@ -85,23 +107,31 @@
     const videoElement = document.querySelector('.input_video');
     const canvasElement = document.querySelector('.output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const terminalOutput = document.getElementById('terminal-output');
+    const logContent = document.getElementById('log-content');
+    const interimText = document.getElementById('interim-text');
+    const terminalBox = document.getElementById('terminal-box');
     const voxStatus = document.getElementById('vox-status');
+    const switchBtn = document.getElementById('switch-camera');
+
+    let currentFacingMode = 'user';
+    let cameraInstance = null;
 
     // --- АУДИО ВИЗУАЛИЗАЦИЯ ---
-    let audioCtx, analyser, dataArray, source;
+    let audioCtx, analyser, dataArray;
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
 
     async function initAudio() {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      analyser = audioCtx.createAnalyser();
-      source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-      analyser.fftSize = 1024;
-      dataArray = new Uint8Array(analyser.frequencyBinCount);
-      drawWave();
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        const source = audioCtx.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 512;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        drawWave();
+      } catch(e) { console.log("Audio init failed"); }
     }
 
     function drawWave() {
@@ -109,12 +139,10 @@
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
       analyser.getByteTimeDomainData(dataArray);
-      
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-      aCtx.lineWidth = 2;
-      aCtx.strokeStyle = '#ffffff';
+      aCtx.lineWidth = 1;
+      aCtx.strokeStyle = 'rgba(255,255,255,0.5)';
       aCtx.beginPath();
-
       let sliceWidth = audioCanvas.width / dataArray.length;
       let x = 0;
       for (let i = 0; i < dataArray.length; i++) {
@@ -123,28 +151,42 @@
         if (i === 0) aCtx.moveTo(x, y); else aCtx.lineTo(x, y);
         x += sliceWidth;
       }
-      aCtx.lineTo(audioCanvas.width, audioCanvas.height / 2);
       aCtx.stroke();
     }
 
-    // --- РАСПОЗНАВАНИЕ РЕЧИ (RU/EN) ---
+    // --- ЛОГИРОВАНИЕ ТЕРМИНАЛА ---
+    function addLog(text) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      const time = new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit'});
+      entry.innerText = `[${time}] ${text}`;
+      logContent.appendChild(entry);
+      terminalBox.scrollTop = terminalBox.scrollHeight;
+    }
+
+    // --- РАСПОЗНАВАНИЕ РЕЧИ ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'ru-RU'; // Базовый, но Chrome ловит и EN
+      recognition.lang = 'ru-RU';
 
       recognition.onresult = (event) => {
-        let text = "";
+        let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          text += event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            addLog(event.results[i][0].transcript);
+            interim = "";
+          } else {
+            interim += event.results[i][0].transcript;
+          }
         }
-        terminalOutput.innerHTML = `> ${text}<span class="cursor">_</span>`;
+        interimText.innerText = interim ? `>> ${interim}...` : "";
+        terminalBox.scrollTop = terminalBox.scrollHeight;
       };
-
       recognition.onstart = () => voxStatus.innerText = "> VOX: LISTENING";
-      recognition.onend = () => recognition.start(); // Авто-рестарт
+      recognition.onend = () => recognition.start();
       window.startSpeech = () => recognition.start();
     }
 
@@ -153,22 +195,23 @@
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
-      
-      // ЧЕРНЫЙ ФОН
       canvasCtx.fillStyle = '#000';
       canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-
-      // Прозрачный силуэт видео (5%)
       canvasCtx.globalAlpha = 0.05;
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
       if (results.multiFaceLandmarks) {
         for (const landmarks of results.multiFaceLandmarks) {
-          // БЕЛАЯ СЕТКА
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(255,255,255,0.3)', lineWidth: 0.5});
+          // Основная сетка
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(255,255,255,0.2)', lineWidth: 0.5});
+          // ГУБЫ (Жирно)
           drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#ffffff', lineWidth: 2});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#ffffff', lineWidth: 1});
+          // ГЛАЗА (Теперь тоже жирно)
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#ffffff', lineWidth: 2});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#ffffff', lineWidth: 2});
+          // Овал лица
+          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: 'rgba(255,255,255,0.5)', lineWidth: 1});
         }
       }
       canvasCtx.restore();
@@ -178,17 +221,30 @@
     faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
 
-    const camera = new Camera(videoElement, {
-      onFrame: async () => { await faceMesh.send({image: videoElement}); },
-      width: 1280, height: 720
+    async function startCamera() {
+      if(cameraInstance) await cameraInstance.stop();
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => { await faceMesh.send({image: videoElement}); },
+        facingMode: currentFacingMode,
+        width: 1280, height: 720
+      });
+      cameraInstance.start();
+      // Отражение только для фронталки
+      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
+    }
+
+    switchBtn.addEventListener('click', () => {
+      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+      startCamera();
+      addLog(`CAMERA_SWITCHED: ${currentFacingMode.toUpperCase()}`);
     });
 
-    // Функция запуска по клику
-    window.startSystem = function() {
+    window.initSystem = function() {
       document.getElementById('overlay-start').style.display = 'none';
       initAudio();
       if (window.startSpeech) window.startSpeech();
-      camera.start();
+      startCamera();
+      addLog("SYSTEM_INITIALIZED");
     }
   </script>
 </body>
