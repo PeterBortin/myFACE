@@ -3,127 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SENSORY_ADAPT_V1_CORE</title>
+    <title>NEURAL_VISUAL_STREAM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; font-family: 'monospace'; color: #fff; overflow: hidden; }
-        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        #status {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100;
-            background: rgba(0,0,0,0.8); color: #0f0; padding: 10px 20px; border-radius: 20px;
-            font-size: 14px; text-transform: uppercase; font-weight: bold; border: 2px solid #0f0;
-            cursor: pointer; pointer-events: auto; text-shadow: 0 0 10px #0f0;
+        body { background: #000; margin: 0; overflow: hidden; }
+        /* Видео скрыто - мозг не должен видеть "сырье" */
+        video { display: none; }
+        /* Основной холст для нейро-визуализации */
+        canvas { 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 100vw; height: 100vh;
+            filter: blur(0.5px) contrast(200%) brightness(150%);
         }
     </style>
 </head>
 <body>
 
     <video id="v" autoplay playsinline muted></video>
-    <button id="status">CONNECT_SENSORY_OS</button>
+    <canvas id="c"></canvas>
+
+    <!-- Кнопка только для инициализации в браузере -->
+    <button id="start" class="absolute inset-0 z-50 text-white font-mono text-xs tracking-[1em] bg-black">
+        INITIALIZE_NEURAL_LINK
+    </button>
 
     <script>
         const video = document.getElementById('v');
-        const statusBtn = document.getElementById('status');
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
         let model;
-        let objectTracker = new Map(); // Храним ID объектов для отслеживания движения
-        let audioCtx;
-        let globalGainer;
 
-        // Инициализация звукового движка (3D Audio)
-        function initAudio() {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            globalGainer = audioCtx.createGain();
-            globalGainer.gain.value = 0.3; // Громкость по умолчанию
-            globalGainer.connect(audioCtx.destination);
-            statusBtn.innerText = "SENSORY_OS: LIVE";
-        }
-
-        // Синтез звука для объекта
-        function playTargetSound(pan, frequency, gainVal) {
-            const panner = audioCtx.createStereoPanner();
-            panner.pan.value = pan; // -1 (слева) до 1 (справа)
+        async function connect() {
+            document.getElementById('start').remove();
             
-            const osc = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            
-            osc.type = 'sine'; // Чистый тон
-            osc.frequency.value = frequency; // Тон зависит от дистанции
-            gainNode.gain.value = gainVal; // Громкость зависит от уверенности
-            
-            osc.connect(gainNode);
-            gainNode.connect(panner);
-            panner.connect(globalGainer);
-            
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.15); // Короткий импульс
-        }
-
-        async function init() {
-            if (!audioCtx) initAudio(); // Если звук еще не инициализирован
-            statusBtn.innerText = "LOCALIZING...";
-            statusBtn.classList.add('animate-pulse');
-
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", frameRate: { ideal: 60 }, width: 1280 }
+                video: { facingMode: "environment", width: 640, height: 480 } // Оптимально для скорости
             });
             video.srcObject = stream;
             
-            statusBtn.innerText = "LOADING_VISION_MODEL...";
             model = await cocoSsd.load();
-            statusBtn.innerText = "CORE_READY. TAP_TO_CONNECT.";
-            statusBtn.classList.remove('animate-pulse');
-
-            // Запускаем цикл обработки
-            processingLoop();
+            render();
         }
 
-        async function processingLoop() {
+        async function render() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
             const predictions = await model.detect(video);
-            processSensoryData(predictions);
-            requestAnimationFrame(processingLoop);
-        }
 
-        function processSensoryData(preds) {
-            preds.forEach((p, index) => {
-                const [x, y, w, h] = p.bbox;
-                const cx = (x + w/2); // Центроид
-                const cy = (y + h/2);
+            // ФОН: Рисуем только контуры мира (Edge Detection эмуляция)
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Получаем "сырые" очертания через наложение фильтров
+            ctx.globalCompositeOperation = "screen";
+            ctx.filter = "grayscale(100%) invert(100%) opacity(20%)";
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.filter = "none";
 
-                // Если уверенность низкая, мы не должны давать ложные сигналы
+            const sx = canvas.width / video.videoWidth;
+            const sy = canvas.height / video.videoHeight;
+
+            // СЕМАНТИЧЕСКИЙ СЛОЙ (То, что идет в нейроны)
+            predictions.forEach(p => {
                 if (p.score < 0.6) return;
 
-                // 1. Расчет дистанции (эмпирически по площади бокса)
-                const area = w * h;
-                const distanceFactor = Math.sqrt(area); // Чем больше, тем ближе объект
+                const [x, y, w, h] = p.bbox;
+                
+                // Рисуем "Световую массу" объекта
+                // Мозгу важно знать ОБЪЕМ и ПОЗИЦИЮ, а не детали
+                const gradient = ctx.createRadialGradient(
+                    (x + w/2) * sx, (y + h/2) * sy, 0,
+                    (x + w/2) * sx, (y + h/2) * sy, (w/2) * sx
+                );
+                
+                // Цветовое кодирование смыслов:
+                // Живое/Опасное (человек, собака) - Красный спектр
+                // Транспорт - Синий спектр
+                // Препятствия - Белый
+                let color = "255, 255, 255";
+                if (p.class === "person") color = "255, 50, 50";
+                if (p.class === "car" || p.class === "truck") color = "50, 150, 255";
 
-                // 2. Расчет Панорамирования (Позиция в 3D Audio)
-                // x-координата (0 to 1280) -> Стерео панорама (-1 to 1)
-                const pan = (cx / video.videoWidth) * 2 - 1;
+                gradient.addColorStop(0, `rgba(${color}, 0.8)`);
+                gradient.addColorStop(1, `rgba(${color}, 0)`);
 
-                // 3. Расчет Частоты тона (Дистанция)
-                // Частота звука: от 200Hz (далеко) до 1500Hz (близко)
-                // distanceFactor примерно от 50 (далеко) до 700 (близко)
-                const frequency = Math.min(1500, Math.max(200, 200 + distanceFactor * 2));
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.ellipse((x + w/2) * sx, (y + h/2) * sy, (w/2) * sx, (h/2) * sy, 0, 0, Math.PI * 2);
+                ctx.fill();
 
-                // 4. Расчет Громкости тона (Уверенность)
-                // Громкость зависит от score модели (0.6 to 1.0)
-                const targetGain = Math.pow(p.score, 3) * 0.5;
-
-                // 5. Генерируем чувственный сигнал
-                // Мы не играем звук каждый кадр, а только если объект "стабилен" (каждые 10 кадров)
-                if (Date.now() % 10 < 2) { 
-                    playTargetSound(pan, frequency, targetGain);
-                }
+                // Выделяем границы объекта яркой линией (стимуляция краев)
+                ctx.strokeStyle = `rgba(${color}, 1)`;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x * sx, y * sy, w * sx, h * h * sy / h);
             });
+
+            requestAnimationFrame(render);
         }
 
-        statusBtn.addEventListener('click', () => {
-            init();
-            statusBtn.classList.add('hidden'); // Убираем кнопку, если всё готово
-        });
-
+        document.getElementById('start').onclick = connect;
     </script>
 </body>
 </html>
