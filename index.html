@@ -3,186 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>T-800_OPERATING_OS</title>
+    <title>TERMINATOR_V9_CINEMATIC</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500&display=swap');
-        body { background: #000; margin: 0; overflow: hidden; font-family: 'Fira Code', monospace; color: #ff0000; text-transform: uppercase; }
-        
+        body { background: #000; margin: 0; overflow: hidden; font-family: 'Fira Code', monospace; }
         video { display: none; }
-        canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
         
-        /* Визуальный шум Терминатора */
-        #noise-overlay {
-            position: absolute; inset: 0; z-index: 5; opacity: 0.1;
-            background: url('https://media.giphy.com/media/oEI9uWUPr9WUM/giphy.gif');
-            pointer-events: none;
+        /* Виньетка и сканирование */
+        #overlay {
+            position: absolute; inset: 0; z-index: 100; pointer-events: none;
+            background: radial-gradient(circle, transparent 40%, rgba(50,0,0,0.6) 100%);
+            box-shadow: inset 0 0 100px #000;
         }
-
-        .sys-text { position: absolute; color: #ff0000; font-size: 9px; text-shadow: 0 0 5px #ff0000; z-index: 20; pointer-events: none; }
-        #log-top-left { top: 10px; left: 10px; }
-        #log-top-right { top: 10px; right: 10px; text-align: right; }
-        #log-bottom { bottom: 10px; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap; }
+        #scanlines {
+            position: absolute; inset: 0; z-index: 101; pointer-events: none;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 3px 100%;
+        }
     </style>
 </head>
 <body>
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
-    <div id="noise-overlay"></div>
+    <div id="overlay"></div>
+    <div id="scanlines"></div>
 
-    <div id="log-top-left" class="sys-text">
-        [CYBERDYNE SYSTEM 1.0]<br>
-        [A17_PRO_PROCESSOR: OK]<br>
-        [BATTERY: 98%]
-    </div>
-    <div id="log-top-right" class="sys-text">
-        SERIAL: T-800 // T-800-CS1<br>
-        MISSION: [AWAITING_INPUT]<br>
-        SYSTEM_INTEGRITY: [100%]
-    </div>
-    <div id="log-bottom" class="sys-text">
-        <span class="animate-pulse">>>> SCANNING_FOR_TARGETS... >>></span>
-    </div>
-
-    <button id="ignite" class="absolute inset-0 z-[200] bg-black text-red-500 font-bold text-xs tracking-[1.5em] flex flex-col items-center justify-center">
-        <span class="mb-4 animate-pulse">TERMINAL_BOOT_V8.2</span>
-        <div class="text-[8px] opacity-40">GPU_ACCEL: YES // NEURAL_NET: READY // AUDIO: ARMED</div>
+    <button id="ignite" class="absolute inset-0 z-[200] bg-black text-red-600 font-black text-2xl flex flex-col items-center justify-center tracking-[0.5em]">
+        <span class="animate-ping mb-4">CONNECTING_NEURAL_LINK</span>
+        <div class="text-[8px] opacity-50 font-normal">A17_PRO_GPU // KERNEL_V9_CINEMATIC // READY</div>
     </button>
 
     <script>
         const video = document.getElementById('v');
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        const logBottom = document.getElementById('log-bottom');
-        
-        let model;
-        let audioCtx, globalGain, initSound, lockSound;
-        let lastLogged = 0;
-        let targets = new Set(); // Краткосрочная память ID целей
+        let model, shake = 0;
 
-        // Загрузка звуковых буферов
-        async function loadSound(url) {
-            const response = await fetch(url);
-            const arrayBuffer = await response.arrayBuffer();
-            return await audioCtx.decodeAudioData(arrayBuffer);
-        }
-
-        async function initAudio() {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            globalGain = audioCtx.createGain();
-            globalGain.gain.value = 0.5;
-            globalGain.connect(audioCtx.destination);
-            
-            // Загрузка звуков (заглушки - нужны реальные ссылки на звуки терминатора)
-            initSound = await loadSound('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptrackid=20815'); // Гидравлика
-            lockSound = await loadSound('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptrackid=12952'); // Бип наводки
-        }
-
-        function playSound(buffer) {
-            if (!audioCtx || !buffer) return;
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(globalGain);
-            source.start(0);
-        }
-
-        async function activate() {
+        async function init() {
             document.getElementById('ignite').remove();
-            
-            // Инициализация звука
-            try { await initAudio(); playSound(initSound); } catch(err) { console.warn("Audio not loaded"); }
-
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: "environment", width: 1280 }
             });
             video.srcObject = stream;
             model = await cocoSsd.load();
-            run();
+            draw();
         }
 
-        function run() {
+        function draw() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // GPU EFFECT: Monochrome Deep Red (Зрение Терминатора)
-            // Мы убираем все цвета и красим всё в красный с высоким контрастом.
-            ctx.filter = "contrast(2.5) brightness(0.6) grayscale(1) invert(1) hue-rotate(-90deg)";
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            ctx.filter = "none"; // Отключаем фильтр для рисования HUD
+            // ЭФФЕКТ ТРЯСКИ (SHAKE) ПРИ ЗАХВАТЕ
+            let offsetX = (Math.random() - 0.5) * shake;
+            let offsetY = (Math.random() - 0.5) * shake;
+            if (shake > 0) shake *= 0.9; // Затухание
 
-            processPredictions();
-            requestAnimationFrame(run);
+            // БАЗОВЫЙ ФИЛЬТР: КРАСНЫЙ КИНО-НЕГАТИВ
+            ctx.save();
+            ctx.translate(offsetX, offsetY);
+            ctx.filter = "contrast(2.2) brightness(0.5) grayscale(1) sepia(1) hue-rotate(-90deg)";
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            renderCinematicHUD();
+            requestAnimationFrame(draw);
         }
 
-        async function processPredictions() {
+        async function renderCinematicHUD() {
             const preds = await model.detect(video);
             const sx = canvas.width / video.videoWidth;
             const sy = canvas.height / video.videoHeight;
 
             preds.forEach(p => {
                 if (p.score < 0.6) return;
+                
+                // Если новая цель - даем "удар" (тряску)
+                if (shake < 5) shake = 15;
+
                 const [x, y, w, h] = p.bbox.map(v => v * (sx > sy ? sx : sy));
                 const cx = x + w/2;
                 const cy = y + h/2;
 
-                // Звук захвата цели
-                if (!targets.has(p.class)) {
-                    playSound(lockSound);
-                    targets.add(p.class);
-                }
-
-                // 1. Анимированные уголки наведения (Glint effect)
-                ctx.strokeStyle = "#ff0000";
-                ctx.lineWidth = 1;
-                const cornerLen = 15;
-                const offset = Math.sin(Date.now()/100) * 3;
-                
-                // Top-Left
-                ctx.beginPath(); ctx.moveTo(x+offset, y+offset+cornerLen); ctx.lineTo(x+offset, y+offset); ctx.lineTo(x+offset+cornerLen, y+offset); ctx.stroke();
-                // Bottom-Right
-                ctx.beginPath(); ctx.moveTo(x+w-offset, y+h-offset-cornerLen); ctx.lineTo(x+w-offset, y+h-offset); ctx.lineTo(x+w-offset-cornerLen, y+h-offset); ctx.stroke();
-
-                // 2. Перекрестие на объекте
+                // 1. ЗАХВАТ КАРТИНКИ ИЗ РАМКИ (Эффект "чистого зрения")
+                // Мы вырезаем объект и рисуем его поверх красного фильтра в оригинальном цвете
+                ctx.save();
                 ctx.beginPath();
-                ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
-                ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
+                ctx.rect(x, y, w, h);
+                ctx.clip();
+                ctx.filter = "contrast(1.5) brightness(1.2) saturate(200%)";
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
+
+                // 2. КИНО-РАМКА (Ударные углы)
+                ctx.strokeStyle = "#ff0000";
+                ctx.lineWidth = 3;
+                const s = 30; // Размер углов
+                
+                // Отрисовка Г-образных углов
+                ctx.beginPath();
+                ctx.moveTo(x, y+s); ctx.lineTo(x, y); ctx.lineTo(x+s, y); // TL
+                ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s); // TR
+                ctx.moveTo(x, y+h-s); ctx.lineTo(x, y+h); ctx.lineTo(x+s, y+h); // BL
+                ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s); // BR
                 ctx.stroke();
 
-                // 3. Блок ASCII-анализа (Текст рядом с объектом)
+                // 3. ЛУЧИ ДАННЫХ (Connectors)
+                ctx.lineWidth = 0.5;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(x, y); ctx.lineTo(0, 0); // В верхний левый угол
+                ctx.moveTo(x+w, y); ctx.lineTo(canvas.width, 0); // В верхний правый
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // 4. ТЕКСТОВАЯ ТЕЛЕМЕТРИЯ
                 ctx.fillStyle = "#ff0000";
-                ctx.font = "8px 'Fira Code'";
+                ctx.font = "900 12px 'Fira Code'";
+                ctx.fillText(`>> TARGET: ${p.class.toUpperCase()}`, x + 5, y + 20);
+                ctx.font = "400 8px 'Fira Code'";
+                ctx.fillText(`ANALYSIS_COMPLETE: ${Math.random().toString(16).slice(2,8)}`, x + 5, y + 35);
                 
-                // Дескриптор цели
-                const priority = p.class === "person" ? "HIGH" : "MED";
-                ctx.fillText(`ID: ${p.class.toUpperCase()} // PRIORITY: ${priority}`, x, y - 10);
-                ctx.fillText(`PROB: ${(p.score*100).toFixed(0)}%`, x, y - 2);
-
-                // Имитация ASCII кода
-                const ascii = Math.random().toString(36).substring(2, 6).toUpperCase();
-                for(let i=0; i<3; i++) {
-                    ctx.fillText(ascii, x + w + 5, y + (i*8) + 8);
-                }
-
-                // 4. Логирование в командную строку (HUD)
-                if (Date.now() - lastLogged > 2000) {
-                    const time = (performance.now()/1000).toFixed(1);
-                    logBottom.innerHTML = `[${time}] NEW TARGET: ${p.class.toUpperCase()} | P: ${priority}`;
-                    logBottom.classList.remove('animate-pulse');
-                    lastLogged = Date.now();
-                }
+                // Перекрестие в центре
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(cx-20, cy); ctx.lineTo(cx+20, cy);
+                ctx.moveTo(cx, cy-20); ctx.lineTo(cx, cy+20);
+                ctx.stroke();
             });
+            
+            // Имитация загрузки кода по краям
+            renderSideData();
+        }
 
-            // Восстановление пульсации, если целей нет
-            if (preds.length === 0 && !logBottom.classList.contains('animate-pulse')) {
-                 logBottom.classList.add('animate-pulse');
-                 logBottom.innerText = ">>> SCANNING_FOR_TARGETS... >>>";
+        function renderSideData() {
+            ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+            ctx.font = "7px 'Fira Code'";
+            for(let i=0; i<20; i++) {
+                ctx.fillText(Math.random().toString(2).slice(2, 25), 15, 60 + i*10);
+                ctx.fillText("0x" + Math.random().toString(16).slice(2, 6), canvas.width - 40, 60 + i*10);
             }
         }
 
-        document.getElementById('ignite').onclick = activate;
+        document.getElementById('ignite').onclick = init;
     </script>
 </body>
 </html>
