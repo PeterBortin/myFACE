@@ -3,42 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>YAUTJA_SYSTEM_OVERRIDE</title>
+    <title>YAUTJA_SYSTEM_OVERRIDE_V2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: monospace; }
+        body { background: #000; margin: 0; overflow: hidden; font-family: monospace; user-select: none; }
         video { display: none; }
-        canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; transition: filter 0.3s ease; }
 
-        /* Эффект шума и помех (как на скриншоте 1) */
+        /* Эффект шума и сканирующих линий (Скриншот 1) */
         #glitch-overlay {
             position: absolute; inset: 0; z-index: 25; pointer-events: none;
-            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 2px);
-            opacity: 0.3;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                        repeating-linear-gradient(0deg, rgba(255, 0, 0, 0.05) 0px, rgba(255, 0, 0, 0.05) 1px, transparent 2px);
+            background-size: 100% 4px, 100% 3px;
+            opacity: 0.6;
         }
 
-        /* Виньетка и свечение */
+        /* Сильная виньетка для атмосферы */
         #vignette {
             position: absolute; inset: 0; z-index: 30; pointer-events: none;
-            background: radial-gradient(circle, transparent 20%, rgba(40, 0, 0, 0.4) 100%);
+            background: radial-gradient(circle, transparent 30%, rgba(0, 0, 0, 0.8) 100%);
         }
 
-        /* Контейнер для аудио-волны (Скриншот 5) */
+        /* Аудио-волна слева (Скриншот 5) */
         #audio-wave-container {
-            position: absolute; left: 10px; top: 15%; height: 70%; width: 60px;
+            position: absolute; left: 20px; top: 20%; height: 60%; width: 50px;
             z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
         .wave-bar {
-            width: 4px; background: #ff0000; margin: 1px 0;
-            box-shadow: 0 0 10px #ff0000; transition: width 0.05s ease;
+            width: 6px; background: #ff0000; margin: 1px 0; height: 2px;
+            box-shadow: 0 0 10px #ff0000; transition: width 0.05s ease, background 0.1s ease;
         }
 
-        #ui-layer {
-            position: absolute; inset: 0; z-index: 50; pointer-events: none;
-            border: 2px solid rgba(255, 0, 0, 0.2); margin: 10px;
+        /* Кнопка переключения режима */
+        #mode-toggle {
+            position: absolute; bottom: 30px; right: 30px; z-index: 200;
+            background: rgba(100, 0, 0, 0.3); border: 2px solid #ff0000; color: #ff0000;
+            padding: 10px 20px; font-weight: bold; cursor: pointer; text-transform: uppercase;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.5); transition: all 0.2s;
         }
+        #mode-toggle:active { transform: scale(0.95); background: rgba(255, 0, 0, 0.4); }
+
+        /* Оверлей загрузки */
+        #ignite {
+            position: absolute; inset: 0; z-index: 300; bg-black; color: #ff0000;
+            display: flex; flex-direction: column; items-center justify-center; cursor: pointer;
+        }
+
+        /* Анимации */
+        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        .animate-pulse-fast { animation: pulse 0.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
     </style>
 </head>
 <body>
@@ -48,15 +64,22 @@
     
     <div id="glitch-overlay"></div>
     <div id="vignette"></div>
-    <div id="ui-layer">
-        <div id="top-telemetry" class="absolute top-4 right-10 text-red-600 text-xl tracking-tighter"></div>
+    
+    <div id="ui-layer" class="absolute inset-0 z-50 pointer-events-none p-4">
+        <div id="top-telemetry" class="absolute top-6 right-12 text-red-600 text-2xl tracking-tight opacity-80"></div>
+        <div class="absolute bottom-6 left-12 text-red-600 text-xs">
+            SYS_STATUS: <span class="animate-pulse">ACTIVE</span><br>
+            MODE: <span id="mode-status">NORMAL</span>
+        </div>
     </div>
 
     <div id="audio-wave-container"></div>
 
-    <button id="ignite" class="absolute inset-0 z-[300] bg-black text-red-600 flex flex-col items-center justify-center">
-        <div class="mb-6 animate-pulse text-4xl font-bold tracking-[1em]">SEARCHING...</div>
-        <div class="text-[10px] opacity-60">LINKING_YAUTJA_GAUNTLET_V2.6</div>
+    <button id="mode-toggle" class="hidden">HUNT_MODE</button>
+
+    <button id="ignite" class="bg-black">
+        <div class="mb-6 animate-pulse text-4xl font-bold tracking-[1em] text-red-600">INITIALIZING</div>
+        <div class="text-[10px] opacity-60 text-red-600">YAUTJA_GAUNTLET_OS_V3.1</div>
     </button>
 
     <script>
@@ -65,12 +88,16 @@
         const ctx = canvas.getContext('2d');
         const waveContainer = document.getElementById('audio-wave-container');
         const telemetry = document.getElementById('top-telemetry');
+        const modeToggle = document.getElementById('mode-toggle');
+        const modeStatus = document.getElementById('mode-status');
 
         let model, audioCtx, analyser, dataArray;
+        let isThermal = false;
+        let animationFrameId;
         const waveBars = [];
-        const barCount = 50;
+        const barCount = 40;
 
-        // Создаем бары для симметричной волны (Скриншот 5)
+        // Создаем бары для волны
         for(let i=0; i < barCount; i++) {
             const bar = document.createElement('div');
             bar.className = 'wave-bar';
@@ -78,11 +105,18 @@
             waveBars.push(bar);
         }
 
-        // Эмуляция глифов Хищника (на основе ваших картинок)
-        const yautjaSymbols = ["ᚦ", "ᛗ", "ᛖ", "ᛟ", "ᚱ", "ᛚ", "ᛒ", "ᚦ", "ᛘ", "ᛞ"];
+        // Глифы (на основе скриншотов)
+        const yautjaSymbols = ["ᚦ", "ᛗ", "ᛖ", "ᛟ", "ᚱ", "ᛚ", "ᛒ", "ᚦ", "ᛘ", "ᛞ", "⚡", "⚙"];
+
+        // Конфигурация фильтров (Скриншот 6 - Thermal)
+        const filters = {
+            normal: "contrast(1.2) brightness(0.9) saturate(1.1) sepia(0.3) hue-rotate(-10deg)",
+            thermal: "contrast(2) brightness(1.1) saturate(2.5) hue-rotate(130deg)"
+        };
 
         async function init() {
             document.getElementById('ignite').remove();
+            modeToggle.classList.remove('hidden');
             
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
@@ -91,92 +125,205 @@
                 });
                 video.srcObject = stream;
 
-                // Настройка звука
+                // Настройка аудио
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
                 analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 128;
+                analyser.fftSize = 64; // Меньше размер для более резкой реакции
                 source.connect(analyser);
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
 
+                // Загрузка модели
                 model = await cocoSsd.load();
+                applyFilter();
                 draw();
             } catch (err) {
-                console.error("Access denied", err);
+                console.error("Initialization failed:", err);
+                alert("Enable camera/mic access.");
             }
         }
 
+        function applyFilter() {
+            canvas.style.filter = isThermal ? filters.thermal : filters.normal;
+            modeStatus.innerText = isThermal ? "THERMAL" : "NORMAL";
+            modeStatus.className = isThermal ? "text-yellow-400" : "text-red-600";
+        }
+
+        modeToggle.onclick = () => {
+            isThermal = !isThermal;
+            applyFilter();
+        };
+
         function draw() {
+            if (video.paused || video.ended) return;
+
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // --- ТЕРМАЛЬНЫЙ ФИЛЬТР (Скриншот 6) ---
-            ctx.save();
-            // Цвета: Синий (холод), Зеленый (средне), Красный/Желтый (жар)
-            ctx.filter = "contrast(1.8) brightness(1.1) saturate(2.5) hue-rotate(140deg)";
+            // 1. Отрисовка видеопотока
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            ctx.restore();
 
-            updateVisuals();
+            // 2. Обновление UI элементов (аудио, текст)
+            updateStaticUI();
+
+            // 3. Отрисовка постоянного центрального прицела
+            drawCentralCrosshair();
+
+            // 4. Отрисовка детекции и самонаведения
             renderDetections();
-            requestAnimationFrame(draw);
+
+            animationFrameId = requestAnimationFrame(draw);
         }
 
-        function updateVisuals() {
-            // Обновление звуковой волны (Симметрия)
-            analyser.getByteFrequencyData(dataArray);
-            waveBars.forEach((bar, i) => {
-                const val = dataArray[i % dataArray.length];
-                const width = Math.max(2, (val / 255) * 50);
-                bar.style.width = `${width}px`;
-                // Цвет меняется от красного к желтому при пиках
-                bar.style.background = val > 200 ? '#ffff00' : '#ff0000';
-            });
+        function updateStaticUI() {
+            // Аудио-волна (Симметричная)
+            if(analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                const mid = Math.floor(barCount / 2);
+                waveBars.forEach((bar, i) => {
+                    // Рассчитываем индекс так, чтобы высокие частоты были в центре
+                    const distFromMid = Math.abs(i - mid);
+                    const dataIndex = Math.max(0, mid - distFromMid);
+                    const val = dataArray[dataIndex];
+                    
+                    const width = Math.max(4, (val / 255) * 60);
+                    bar.style.width = `${width}px`;
+                    // Смена цвета при пиках (красный -> желтый)
+                    bar.style.background = val > 210 ? '#ffff00' : '#ff0000';
+                    bar.style.boxShadow = val > 210 ? '0 0 15px #ffff00' : '0 0 10px #ff0000';
+                });
+            }
 
-            // Случайные глифы в углу
-            if(Math.random() > 0.9) {
-                telemetry.innerText = Array.from({length: 6}, () => yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)]).join(' ');
+            // Случайные глифы телеметрии
+            if(Math.random() > 0.95) {
+                const len = 5 + Math.floor(Math.random() * 4);
+                telemetry.innerText = Array.from({length: len}, () => yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)]).join(' ');
             }
         }
 
+        function drawCentralCrosshair() {
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const time = Date.now() * 0.002;
+
+            ctx.save();
+            
+            // Три красные точки (Скриншот 2)
+            ctx.fillStyle = "#ff0000";
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "red";
+            const r = 20; // Радиус расположения точек
+            const dotRad = 4;
+            [[0, -r], [-r * 0.86, r * 0.5], [r * 0.86, r * 0.5]].forEach(offset => {
+                ctx.beginPath();
+                ctx.arc(cx + offset[0], cy + offset[1], dotRad, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Анимированные статические скобки вокруг центра
+            ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 5;
+            const bracketSize = 40 + Math.sin(time) * 3; // Легкая пульсация
+            const gap = 10;
+
+            // Левая скобка
+            ctx.beginPath();
+            ctx.moveTo(cx - bracketSize, cy - bracketSize/2);
+            ctx.lineTo(cx - bracketSize - gap, cy - bracketSize/2);
+            ctx.lineTo(cx - bracketSize - gap, cy + bracketSize/2);
+            ctx.lineTo(cx - bracketSize, cy + bracketSize/2);
+            ctx.stroke();
+
+            // Правая скобка
+            ctx.beginPath();
+            ctx.moveTo(cx + bracketSize, cy - bracketSize/2);
+            ctx.lineTo(cx + bracketSize + gap, cy - bracketSize/2);
+            ctx.lineTo(cx + bracketSize + gap, cy + bracketSize/2);
+            ctx.lineTo(cx + bracketSize, cy + bracketSize/2);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
         async function renderDetections() {
+            if (!model) return;
             const predictions = await model.detect(video);
-            const sx = canvas.width / video.videoWidth;
-            const sy = canvas.height / video.videoHeight;
+            
+            const time = Date.now() * 0.005; // Для анимации вращения
 
             predictions.forEach(p => {
-                if (p.score < 0.6) return;
-                const [x, y, w, h] = p.bbox.map(v => v * (sx > sy ? sx : sy));
-                const cx = x + w/2;
-                const cy = y + h/2;
+                // Детектируем только людей ('person') с высокой уверенностью
+                if (p.class !== 'person' || p.score < 0.65) return;
 
-                // ПРИЦЕЛ (Три красные точки - Скриншот 2)
-                ctx.fillStyle = "#ff0000";
+                const [x, y, w, h] = p.bbox;
+                // Масштабирование координат под размер холста
+                const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+                const xS = x * scale;
+                const yS = y * scale;
+                const wS = w * scale;
+                const hS = h * scale;
+                const cx = xS + wS/2;
+                const cy = yS + hS/2;
+
+                // --- ПРИЦЕЛ САМОНАВЕДЕНИЯ (Вращающиеся 3 полоски) ---
+                ctx.save();
+                ctx.translate(cx, cy); // Переносим центр координат на объект
+                ctx.rotate(time); // Вращение
+
+                ctx.strokeStyle = "#ff0000";
+                ctx.lineWidth = 3;
                 ctx.shadowBlur = 20;
                 ctx.shadowColor = "red";
-                const r = 18;
-                [[0, -r], [-r, r], [r, r]].forEach(offset => {
+                
+                // Пульсация размера прицела
+                const targetAnimRad = (Math.max(wS, hS) / 2) * (1 + Math.sin(time * 2) * 0.05) + 10;
+                
+                // Рисуем 3 полоски по кругу (угол 120 градусов)
+                for(let i=0; i<3; i++) {
+                    ctx.rotate((Math.PI * 2) / 3);
                     ctx.beginPath();
-                    ctx.arc(cx + offset[0], cy + offset[1], 5, 0, Math.PI * 2);
-                    ctx.fill();
-                });
-                ctx.shadowBlur = 0;
+                    // Дуга (полоска)
+                    ctx.arc(0, 0, targetAnimRad, -0.2, 0.2); 
+                    ctx.stroke();
+                    
+                    // Маленький перпендикулярный штрих на конце полоски
+                    ctx.beginPath();
+                    ctx.moveTo(targetAnimRad - 5, 0);
+                    ctx.lineTo(targetAnimRad + 5, 0);
+                    ctx.stroke();
+                }
+                ctx.restore();
 
-                // РАМКА ЗАХВАТА (Скриншот 2 - красные контуры)
-                ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
-                ctx.lineWidth = 1;
-                ctx.setLineDash([5, 5]);
-                ctx.strokeRect(x, y, w, h);
-                ctx.setLineDash([]);
-
-                // ТЕКСТ ОБЪЕКТА ГЛИФАМИ
-                ctx.font = "20px monospace";
+                // --- ТЕКСТОВАЯ ИНФОРМАЦИЯ О ЦЕЛИ ---
                 ctx.fillStyle = "#ff0000";
-                ctx.fillText(yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)], x, y - 10);
+                ctx.font = "bold 16px monospace";
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = "red";
+                
+                // Глифы + Процент уверенности
+                const glyph = yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)];
+                const conf = Math.round(p.score * 100);
+                ctx.fillText(`${glyph} TARGET: ${conf}%`, xS, yS - 15);
+                
+                // Рамка объекта (пунктир, как на скриншоте 2)
+                ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
+                ctx.lineWidth = 1;
+                ctx.setLineDash([8, 4]);
+                ctx.strokeRect(xS, yS, wS, hS);
+                ctx.setLineDash([]); // Сброс пунктира
             });
         }
 
         document.getElementById('ignite').onclick = init;
+        
+        // Обработка изменения размера окна
+        window.addEventListener('resize', () => {
+            if(analyser) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+        });
     </script>
 </body>
 </html>
