@@ -2,418 +2,203 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>Hi-Tech Face Scan Terminal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>NEURAL INTERFACE v2.0</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
-    body { 
-      margin: 0; 
-      background: #000; 
-      overflow: hidden; 
-      font-family: 'Courier New', Courier, monospace; /* Hi-Tech шрифт */
-      color: #00ff41; 
-      user-select: none;
+    :root {
+      --glitch-color: #00ff41;
+      --accent-color: #00ffff;
+      --error-color: #ff3333;
     }
-    #container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', monospace; color: var(--glitch-color); }
     
-    /* Видео скрыто */
-    .input_video { display: none; }
-    
-    /* Канвас на весь экран */
-    .output_canvas {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1); /* Зеркальное отображение для фронталки */
+    /* Слои */
+    #ui-wrapper { position: relative; width: 100vw; height: 100vh; }
+    video { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0.4; }
+    canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 2; }
+
+    /* HUD Элементы */
+    .hud-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 10;
+      border: 20px solid transparent;
+      border-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 0H0V10' stroke='%2300ff41' stroke-width='2'/%3E%3Cpath d='M90 0H100V10' stroke='%2300ff41' stroke-width='2'/%3E%3Cpath d='M10 100H0V90' stroke='%2300ff41' stroke-width='2'/%3E%3Cpath d='M90 100H100V90' stroke='%2300ff41' stroke-width='2'/%3E%3C/svg%3E") 20;
     }
 
-    /* Верхний статус-бар */
-    .status-bar {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
-      display: flex;
-      justify-content: space-between;
-      z-index: 10;
-      font-size: 12px;
-      text-shadow: 0 0 5px #00ff41;
+    .top-info {
+      position: absolute; top: 30px; left: 30px; right: 30px;
+      display: flex; justify-content: space-between; font-size: 10px; letter-spacing: 2px;
     }
 
-    /* Кнопки переключения режимов внизу */
-    .mode-switch {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 15px;
-      z-index: 20;
+    .controls {
+      position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 20px; z-index: 100;
     }
-    .mode-btn {
-      background: rgba(0, 255, 65, 0.1);
-      border: 1px solid #00ff41;
-      color: #00ff41;
-      padding: 10px 20px;
-      font-family: monospace;
-      cursor: pointer;
-      text-transform: uppercase;
-      transition: all 0.2s;
+    .btn {
+      background: rgba(0, 255, 65, 0.1); border: 1px solid var(--glitch-color);
+      color: var(--glitch-color); padding: 12px 24px; font-size: 11px;
+      text-transform: uppercase; cursor: pointer; transition: 0.3s;
+      backdrop-filter: blur(5px);
     }
-    .mode-btn:active, .mode-btn.active {
-      background: #00ff41;
-      color: #000;
-      box-shadow: 0 0 15px #00ff41;
-    }
+    .btn.active { background: var(--glitch-color); color: #000; box-shadow: 0 0 20px var(--glitch-color); }
 
-    /* Эффект шума/помех на весь экран */
-    #glitch-overlay {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: repeating-linear-gradient(0deg, rgba(0,255,65,0.03) 0px, rgba(0,255,65,0.03) 1px, transparent 1px, transparent 2px);
-      pointer-events: none;
-      z-index: 5;
-    }
+    /* SVG Фильтр для свечения */
+    .bloom { filter: url(#glow); }
   </style>
 </head>
-
 <body>
-  <div class="status-bar">
-    <div id="sys-status">SYS: ONLINE</div>
-    <div id="temp-status">CORE_TEMP: 34°C</div>
-    <div id="time-status"></div>
-  </div>
 
-  <div id="container">
+  <!-- SVG Фильтры для "шейдерного" эффекта -->
+  <svg style="position: absolute; width: 0; height: 0;">
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </svg>
+
+  <div id="ui-wrapper">
     <video class="input_video"></video>
     <canvas class="output_canvas"></canvas>
-    <div id="glitch-overlay"></div>
-  </div>
+    
+    <div class="hud-overlay"></div>
+    <div class="top-info">
+      <div id="status-text">NEURAL_LINK: ACTIVE</div>
+      <div id="target-id">TARGET: UNKNOWN</div>
+      <div id="clock">00:00:00</div>
+    </div>
 
-  <div class="mode-switch">
-    <button class="mode-btn active" onclick="setMode('SCAN')">Сканирование</button>
-    <button class="mode-btn" onclick="setMode('RECOGNIZE')">Распознавание</button>
+    <div class="controls">
+      <button class="btn active" onclick="changeMode('SCAN', this)">Scan</button>
+      <button class="btn" onclick="changeMode('RECOGNIZE', this)">Identify</button>
+    </div>
   </div>
 
   <script type="module">
-    // --- Глобальные переменные и настройки ---
-    const videoElement = document.getElementsByClassName('input_video')[0];
-    const canvasElement = document.getElementsByClassName('output_canvas')[0];
-    const canvasCtx = canvasElement.getContext('2d');
+    const video = document.querySelector('.input_video');
+    const canvas = document.querySelector('.output_canvas');
+    const ctx = canvas.getContext('2d');
     
-    // Цветовая палитра
-    const COLOR_GREEN = '#00ff41';
-    const COLOR_WHITE = '#ffffff';
-    const COLOR_CYAN = '#00ffff';
-    const COLOR_RED = '#ff3333';
-    const COLOR_UI_BG = 'rgba(0, 20, 10, 0.7)';
+    let mode = 'SCAN';
+    let particles = [];
+    let scannerPos = 0;
+    let scannerDir = 1;
 
-    // Режимы работы
-    const MODES = { SCAN: 'SCAN', RECOGNIZE: 'RECOGNIZE' };
-    let currentMode = MODES.SCAN;
-
-    // Состояния конечного автомата (для анимаций)
-    const STATES = { IDLE: 'IDLE', ACTIVE: 'ACTIVE', PROCESSING: 'PROCESSING', COMPLETE: 'COMPLETE', UNKNOWN: 'UNKNOWN' };
-    let currentState = STATES.IDLE;
-    
-    let stateTimer = 0; // Для управления длительностью анимаций
-    let analysisData = {}; // Данные текущего анализа
-    let terminalLog = []; // Лог терминала
-
-    // --- Класс для терминала дешифрования ---
-    class DecryptionTerminal {
-      constructor(ctx, x, y, width, height) {
-        this.ctx = ctx;
+    class Particle {
+      constructor(x, y, color) {
         this.x = x; this.y = y;
-        this.width = width; this.height = height;
-        this.lines = [];
-        this.maxLines = 10;
-        this.charIndex = 0;
-        this.currentLineText = "";
+        this.color = color;
+        this.size = Math.random() * 2 + 1;
+        this.speedX = (Math.random() - 0.5) * 4;
+        this.speedY = (Math.random() - 0.5) * 4;
+        this.life = 1.0;
       }
-
-      addLog(text) {
-        this.lines.push(`> ${text}`);
-        if (this.lines.length > this.maxLines) this.lines.shift();
+      update() {
+        this.x += this.speedX; this.y += this.speedY;
+        this.life -= 0.02;
       }
-
-      clear() { this.lines = []; }
-
-      // Анимация печатающегося текста
-      typeLog(text) {
-        this.currentLineText = "";
-        this.charIndex = 0;
-        const typeInterval = setInterval(() => {
-          this.currentLineText += text[this.charIndex];
-          this.charIndex++;
-          if (this.charIndex >= text.length) {
-            clearInterval(typeInterval);
-            this.addLog(this.currentLineText);
-            this.currentLineText = "";
-          }
-        }, 30); // Скорость печати
-      }
-
-      draw() {
-        this.ctx.save();
-        this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Сброс трансформации (чтобы текст не был зеркальным)
-        
-        // Фон терминала
-        this.ctx.fillStyle = COLOR_UI_BG;
-        this.ctx.fillRect(this.x, this.y, this.width, this.height);
-        this.ctx.strokeStyle = COLOR_GREEN;
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(this.x, this.y, this.width, this.height);
-
-        // Отрисовка логов
-        this.ctx.fillStyle = COLOR_GREEN;
-        this.ctx.font = '12px monospace';
-        this.ctx.textBaseline = 'top';
-        this.lines.forEach((line, index) => {
-          this.ctx.fillText(line, this.x + 5, this.y + 5 + (index * 15));
-        });
-
-        // Текущая печатающаяся строка
-        if (this.currentLineText) {
-          this.ctx.fillText(`> ${this.currentLineText}_`, this.x + 5, this.y + 5 + (this.lines.length * 15));
-        }
-
-        this.ctx.restore();
+      draw(ctx) {
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = this.life;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
       }
     }
 
-    const terminal = new DecryptionTerminal(canvasCtx, 20, 100, 250, 200);
-
-    // --- Вспомогательные функции рисования ---
-    
-    // Рисует анимированный прицел
-    function drawReticle(ctx, face_box) {
-      const { x, y, width, height } = face_box;
-      const t = Date.now() * 0.005;
-      const p = 10; // отступ
-
-      ctx.save();
-      ctx.strokeStyle = COLOR_GREEN;
-      ctx.lineWidth = 2;
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = COLOR_GREEN;
-
-      // Углы
-      const len = 30 + Math.sin(t) * 5;
-      // ВЛ
-      ctx.beginPath(); ctx.moveTo(x-p, y-p+len); ctx.lineTo(x-p, y-p); ctx.lineTo(x-p+len, y-p); ctx.stroke();
-      // ВП
-      ctx.beginPath(); ctx.moveTo(x+width+p-len, y-p); ctx.lineTo(x+width+p, y-p); ctx.lineTo(x+width+p, y-p+len); ctx.stroke();
-      // НЛ
-      ctx.beginPath(); ctx.moveTo(x-p, y+height+p-len); ctx.lineTo(x-p, y+height+p); ctx.lineTo(x-p+len, y+height+p); ctx.stroke();
-      // НП
-      ctx.beginPath(); ctx.moveTo(x+width+p-len, y+height+p); ctx.lineTo(x+width+p, y+height+p); ctx.lineTo(x+width+p, y+height+p-len); ctx.stroke();
-
-      // Круг сканирования
-      ctx.lineWidth = 1;
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.arc(x + width/2, y + height/2, width * 0.7, t, t + Math.PI/2);
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    // Рисует блок статуса рядом с лицом
-    function drawFaceStatus(ctx, face_box, state, data) {
-      const { x, y, width } = face_box;
-      const ui_x = x + width + 30;
-      const ui_y = y - 20;
-
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // Сброс зеркальности
-
-      // Заголовок
-      ctx.fillStyle = (state === STATES.COMPLETE) ? COLOR_CYAN : COLOR_GREEN;
-      ctx.font = 'bold 16px monospace';
-      ctx.fillText(`STATUS: ${state}`, ui_x, ui_y);
-
-      // Данные
-      ctx.fillStyle = COLOR_GREEN;
-      ctx.font = '12px monospace';
-      if (state === STATES. PROCESSING) {
-        const dots = ".".repeat(Math.floor((Date.now() % 1000) / 333));
-        ctx.fillText(`АНАЛИЗ ДАННЫХ${dots}`, ui_x, ui_y + 20);
-      } else if (state === STATES.COMPLETE || state === STATES.SCAN) {
-        ctx.fillText(`ID: ${data.id || "PENDING"}`, ui_x, ui_y + 20);
-          if(data.name) ctx.fillText(`NAME: ${data.name}`, ui_x, ui_y + 35);
-        ctx.fillText(`BIOMETRICS: ${data.bio || "CALCULATING"}`, ui_x, ui_y + 50);
-      } else if (state === STATES.UNKNOWN) {
-          ctx.fillStyle = COLOR_RED;
-          ctx.fillText(`ПРЕДУПРЕЖДЕНИЕ: ОШИБКА ID`, ui_x, ui_y + 20);
-      }
-
-      ctx.restore();
-    }
-
-    // --- Основная функция обработки ---
     function onResults(results) {
-      // Устанавливаем размер канваса под видео ( object-fit cover на CSS)
-      if (canvasElement.width !== videoElement.videoWidth) {
-        canvasElement.width = videoElement.videoWidth;
-        canvasElement.height = videoElement.videoHeight;
-      }
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-      // Рисуем само видео (затемненное)
-      canvasCtx.globalAlpha = 0.3;
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.globalAlpha = 1.0;
-
-      // Обновляем часы в статус-баре
-      const now = new Date();
-      document.getElementById('time-status').innerText = now.toLocaleTimeString();
+      // Обновляем часы
+      document.getElementById('clock').innerText = new Date().toLocaleTimeString();
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
+        const face = results.multiFaceLandmarks[0];
 
-        // Расчет Bounding Box лица для UI
-        let minX = 1, minY = 1, maxX = 0, maxY = 0;
-        for (const landmark of landmarks) {
-          minX = Math.min(minX, landmark.x); minY = Math.min(minY, landmark.y);
-          maxX = Math.max(maxX, landmark.x); maxY = Math.max(maxY, landmark.y);
-        }
-        const face_box = {
-          x: minX * canvasElement.width, y: minY * canvasElement.height,
-          width: (maxX - minX) * canvasElement.width, height: (maxY - minY) * canvasElement.height
-        };
+        // 1. Рисуем сетку (без отзеркаливания текста, вручную инвертируем X координаты)
+        ctx.save();
+        // ВАЖНО: Мы НЕ используем scaleX(-1) на канвасе, чтобы текст был читаем.
+        // Вместо этого мы инвертируем координаты MediaPipe: x = canvas.width - (x * canvas.width)
+        
+        const mapX = (val) => canvas.width - (val * canvas.width);
+        const mapY = (val) => val * canvas.height;
 
-        // --- ЛОГИКА КОНЕЧНОГО АВТОМАТА ---
-        switch (currentState) {
-          case STATES.IDLE:
-            currentState = STATES.ACTIVE;
-            terminal.clear();
-            terminal.typeLog(`ОБНАРУЖЕН БИО-СИГНАЛ...`);
-            analysisData = {};
-            break;
+        // Линии сетки
+        ctx.strokeStyle = (mode === 'SCAN') ? '#00ff41' : '#00ffff';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        FACEMESH_TESSELATION.forEach(([a, b]) => {
+          const p1 = face[a]; const p2 = face[b];
+          ctx.moveTo(mapX(p1.x), mapY(p1.y));
+          ctx.lineTo(mapX(p2.x), mapY(p2.y));
+        });
+        ctx.stroke();
 
-          case STATES.ACTIVE:
-            drawReticle(canvasCtx, face_box);
-            if (Date.now() - stateTimer > 1500) { // Ждем 1.5 сек прицеливания
-              currentState = STATES.PROCESSING;
-              stateTimer = Date.now();
-              terminal.typeLog(`НАЧАЛО ${currentMode === MODES.SCAN ? 'СКАНИРОВАНИЯ' : 'РАСПОЗНАВАНИЯ'}...`);
-            }
-            break;
+        // 2. Анимированный сканер (горизонтальная линия)
+        scannerPos += 0.01 * scannerDir;
+        if (scannerPos > 1 || scannerPos < 0) scannerDir *= -1;
+        
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 15; ctx.shadowColor = '#00ff41';
+        ctx.beginPath();
+        const scanY = mapY(scannerPos);
+        ctx.moveTo(0, scanY); ctx.lineTo(canvas.width, scanY);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
 
-          case STATES.PROCESSING:
-            drawReticle(canvasCtx, face_box);
-            // Анимация сетки (пульсация)
-            const pulse = 0.5 + Math.sin(Date.now() * 0.01) * 0.2;
-            
-            // Основная сетка
-            drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
-              {color: COLOR_GREEN, lineWidth: pulse});
+        // 3. Текстовая информация (теперь НЕ отзеркалена)
+        const pIndex = 10; // Точка на лбу
+        const tx = mapX(face[pIndex].x) + 50;
+        const ty = mapY(face[pIndex].y);
 
-            // !!! КОНТУРЫ ГЛАЗ И ГУБ ЦВЕТОМ СЕТКИ !!!
-            drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: COLOR_GREEN, lineWidth: 1});
-            drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: COLOR_GREEN, lineWidth: 1});
-            drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: COLOR_GREEN, lineWidth: 1});
-
-            // Эмуляция задержки анализа
-            if (Date.now() - stateTimer > 3000) { // АНАЛИЗ идет 3 секунды
-              stateTimer = Date.now();
-              
-              if (currentMode === MODES.SCAN) {
-                // РЕЖИМ СКАНИРОВАНИЯ -> Успех
-                currentState = STATES.COMPLETE;
-                analysisData = { id: `BIO_${Math.floor(Math.random()*10000)}`, bio: "98.7% VALID" };
-                terminal.typeLog(`ДАННЫЕ ЗАПИСАНЫ. ID СОЗДАН.`);
-              } else {
-                // РЕЖИМ РАСПОЗНАВАНИЯ -> Эмуляция (50/50 успех или неизвестно)
-                if (Math.random() > 0.5) {
-                  currentState = STATES.COMPLETE;
-                  analysisData = { id: "USR_NEO_77", name: "АНДЕРСОН, Т.", bio: "СОВПАДЕНИЕ" };
-                  terminal.typeLog(`ДОСТУП РАЗРЕШЕН. ПРИВЕТСТВУЮ, Т.`);
-                } else {
-                  currentState = STATES.UNKNOWN;
-                  terminal.typeLog(`ОШИБКА: ОБЪЕКТ НЕ НАЙДЕН В БАЗЕ.`);
-                }
-              }
-            }
-            break;
-
-          case STATES.COMPLETE:
-            // Финальная сетка (Cyan)
-            drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
-              {color: COLOR_CYAN, lineWidth: 1});
-            drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: COLOR_CYAN, lineWidth: 1.5});
-            drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: COLOR_CYAN, lineWidth: 1.5});
-            break;
-            
-          case STATES.UNKNOWN:
-             // Сетка ошибки (Red)
-            drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
-              {color: COLOR_RED, lineWidth: 1});
-            drawReticle(canvasCtx, face_box); // Оставляем прицел
-            break;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText(`[ ANALYSIS ${Math.floor(scannerPos * 100)}% ]`, tx, ty);
+        ctx.fillStyle = '#00ff41';
+        ctx.fillText(`LAT: ${face[pIndex].x.toFixed(4)}`, tx, ty + 20);
+        ctx.fillText(`LNG: ${face[pIndex].y.toFixed(4)}`, tx, ty + 35);
+        
+        if (mode === 'RECOGNIZE' && scannerPos > 0.8) {
+            ctx.fillStyle = '#00ffff';
+            ctx.fillText("MATCH FOUND: SUBJECT_01", tx, ty + 60);
         }
 
-        // Рисуем UI элементы
-        drawFaceStatus(canvasCtx, face_box, currentState, analysisData);
-
-      } else {
-        // Лицо потеряно
-        if (currentState !== STATES.IDLE) {
-          currentState = STATES.IDLE;
-          stateTimer = Date.now();
-          terminal.clear();
-          terminal.addLog(`СИГНАЛ ПОТЕРЯН.`);
+        // 4. Частицы
+        if (Math.random() > 0.5) {
+          const pt = face[Math.floor(Math.random() * face.length)];
+          particles.push(new Particle(mapX(pt.x), mapY(pt.y), ctx.strokeStyle));
         }
+
+        ctx.restore();
       }
 
-      // Отрисовка терминала всегда поверх всего
-      terminal.draw();
-      canvasCtx.restore();
+      // Обновление и отрисовка частиц
+      particles = particles.filter(p => p.life > 0);
+      particles.forEach(p => { p.update(); p.draw(ctx); });
     }
 
-    // --- Кнопки интерфейса ---
-    window.setMode = (mode) => {
-      if (currentMode === mode) return;
-      currentMode = mode;
-      
-      // Обновление CSS кнопок
-      const btns = document.querySelectorAll('.mode-btn');
-      btns.forEach(btn => btn.classList.remove('active'));
-      event.target.classList.add('active');
-
-      // Сброс состояния для перезапуска анимации
-      currentState = STATES.IDLE;
-      stateTimer = Date.now();
-      terminal.clear();
-      terminal.addLog(`РЕЖИМ ИЗМЕНЕН: ${mode}`);
-    }
-
-    // --- Инициализация MediaPipe ---
-    const faceMesh = new FaceMesh({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-    }});
-
-    faceMesh.setOptions({
-      maxNumFaces: 1, // Оптимизация для одного лица
-      refineLandmarks: true, // Улучшенные глаза/губы
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
-
+    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
     faceMesh.onResults(onResults);
 
-    const camera = new Camera(videoElement, {
-      onFrame: async () => { await faceMesh.send({image: videoElement}); },
-      width: 1280, height: 720
+    const camera = new Camera(video, {
+      onFrame: async () => { await faceMesh.send({image: video}); },
+      width: 640, height: 480
     });
     camera.start();
 
+    window.changeMode = (newMode, btn) => {
+      mode = newMode;
+      document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('status-text').innerText = `NEURAL_LINK: ${newMode}`;
+    };
   </script>
 </body>
 </html>
