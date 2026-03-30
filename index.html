@@ -3,200 +3,132 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TERMINAL_OVERRIDE_V2</title>
+    <title>MACHINE_CORE_V3_CLEAN</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500&display=swap');
-        body { background: #000; color: #00ff41; font-family: 'Fira Code', monospace; overflow: hidden; margin: 0; text-transform: uppercase; }
-        #v { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1) contrast(1.5); }
-        #c { position: absolute; width: 100%; height: 100%; z-index: 10; }
-        .terminal-grid { pointer-events: none; position: absolute; inset: 0; display: grid; grid-template-columns: 250px 1fr 250px; grid-template-rows: 1fr 200px; gap: 10px; padding: 20px; z-index: 20; }
-        .panel { border: 1px solid rgba(0, 255, 65, 0.3); background: rgba(0, 20, 0, 0.7); backdrop-blur: 5px; padding: 10px; overflow: hidden; }
-        .stat-val { color: #fff; float: right; }
-        .blink { animation: blink 1s infinite; }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-        .scan-line { position: absolute; width: 100%; height: 4px; background: rgba(0, 255, 65, 0.2); top: 0; animation: scan 4s linear infinite; z-index: 5; }
-        @keyframes scan { from { top: 0; } to { top: 100%; } }
+        body { background: #000; margin: 0; font-family: 'monospace'; color: #fff; overflow: hidden; }
+        canvas { position: absolute; top: 0; left: 0; z-index: 5; }
+        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.2; }
+        
+        #kernel-log {
+            position: absolute; bottom: 10px; left: 10px; z-index: 10;
+            font-size: 9px; line-height: 1.2; color: #0f0; pointer-events: none;
+            text-shadow: 1px 1px 1px #000;
+        }
+        .vitals {
+            position: absolute; top: 10px; right: 10px; z-index: 10;
+            text-align: right; font-size: 10px; color: #fff;
+        }
     </style>
 </head>
 <body>
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
-    <div class="scan-line"></div>
 
-    <div class="terminal-grid">
-        <!-- ЛЕВАЯ ПАНЕЛЬ: ТЕЛЕМЕТРИЯ СЕНСОРОВ -->
-        <div class="panel">
-            <h2 class="border-b border-green-500 mb-2 pb-1 text-xs">SENSORS_FUSION</h2>
-            <div class="space-y-1 text-[10px]">
-                <p>GRAVITY_X: <span id="gx" class="stat-val">0.00</span></p>
-                <p>GRAVITY_Y: <span id="gy" class="stat-val">0.00</span></p>
-                <p>GRAVITY_Z: <span id="gz" class="stat-val">0.00</span></p>
-                <p>ROTATION_B: <span id="rb" class="stat-val">0.00</span></p>
-                <p>ROTATION_G: <span id="rg" class="stat-val">0.00</span></p>
-                <div class="mt-4 border-t border-green-900 pt-2 text-[9px] opacity-70">
-                    <p>DEVICE: iPhone 15 Pro</p>
-                    <p>ENGINE: WebGL_Accelerated</p>
-                    <p>CORE: ARM_NEON_OPTIMIZED</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- ЦЕНТР: ПУСТО (ЗДЕСЬ ОСНОВНОЙ ВИЗУАЛ) -->
-        <div></div>
-
-        <!-- ПРАВАЯ ПАНЕЛЬ: ОБЪЕКТНЫЙ АНАЛИЗ -->
-        <div class="panel">
-            <h2 class="border-b border-green-500 mb-2 pb-1 text-xs">OBJECT_PRIORITY</h2>
-            <div id="obj-list" class="space-y-2 text-[9px]">
-                <!-- Сюда динамически падают цели -->
-            </div>
-        </div>
-
-        <!-- НИЖНЯЯ ПАНЕЛЬ: ЛОГ ВЫЧИСЛЕНИЙ -->
-        <div class="panel col-span-3">
-            <h2 class="border-b border-green-500 mb-1 pb-1 text-xs">NEURAL_PROCESSOR_LOG</h2>
-            <div id="console-log" class="text-[9px] h-32 overflow-hidden leading-tight">
-                [0.000] SYSTEM_BOOT: OK...<br>
-                [0.002] WAITING_FOR_USER_INIT...
-            </div>
-        </div>
+    <div id="kernel-log">SYSTEM_READY_V3.0.1_STABLE</div>
+    <div class="vitals" id="vitals">
+        FPS: -- | LAT: --ms<br>
+        GYRO: STABLE<br>
+        NET: LOCAL_AXIS
     </div>
-
-    <button id="init-btn" class="absolute inset-0 z-[100] bg-black text-green-500 font-bold flex items-center justify-center tracking-[0.5em] text-2xl">
-        <span class="blink">CONNECT_TO_CORE</span>
-    </button>
 
     <script>
         const video = document.getElementById('v');
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        const log = document.getElementById('console-log');
-        const objList = document.getElementById('obj-list');
+        const log = document.getElementById('kernel-log');
+        const vitals = document.getElementById('vitals');
         
         let model;
-        let lastFrameTime = performance.now();
-        let tracker = {}; // Моя память объектов
+        let objectMemory = new Map();
 
-        function sysLog(msg) {
-            const time = (performance.now() / 1000).toFixed(3);
-            log.innerHTML = `[${time}] ${msg}<br>` + log.innerHTML;
-        }
-
-        async function start() {
-            document.getElementById('init-btn').remove();
-            sysLog("INITIALIZING_VISION_STREAM...");
+        async function engineInit() {
+            log.innerText = ">> MAPPING_DEVICES...";
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment", frameRate: { ideal: 60 } }
+            });
+            video.srcObject = stream;
             
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", width: 1280, height: 720 },
-                });
-                video.srcObject = stream;
-                
-                sysLog("LOADING_TFJS_COCO_SSD_V2...");
-                model = await cocoSsd.load();
-                sysLog("NEURAL_WEIGHTS_LOADED_SUCCESSFULLY");
-
-                window.addEventListener('devicemotion', (e) => {
-                    document.getElementById('gx').innerText = e.accelerationIncludingGravity.x.toFixed(2);
-                    document.getElementById('gy').innerText = e.accelerationIncludingGravity.y.toFixed(2);
-                    document.getElementById('gz').innerText = e.accelerationIncludingGravity.z.toFixed(2);
-                });
-
-                requestAnimationFrame(loop);
-            } catch (err) {
-                sysLog("CRITICAL_ERROR: " + err.message);
-            }
+            log.innerText = ">> LOADING_NEURAL_WEIGHTS...";
+            model = await cocoSsd.load();
+            log.innerText = ">> KERNEL_ACTIVE. MONITORING_FLUX.";
+            
+            requestAnimationFrame(processingLoop);
         }
 
-        async function loop() {
-            const now = performance.now();
-            const fps = (1000 / (now - lastFrameTime)).toFixed(1);
-            lastFrameTime = now;
-
+        async function processingLoop() {
+            const start = performance.now();
+            
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-
+            
+            // Нейронный проход
             const predictions = await model.detect(video);
-            processDeepLogic(predictions);
-            renderVisuals(predictions, fps);
+            const end = performance.now();
+            
+            // Обновление метрик
+            const lat = (end - start).toFixed(0);
+            vitals.innerHTML = `FPS: ${Math.round(1000/lat)} | LAT: ${lat}ms<br>DATA_FLUX: ACTIVE`;
 
-            requestAnimationFrame(loop);
+            renderMachineVision(predictions);
+            requestAnimationFrame(processingLoop);
         }
 
-        function processDeepLogic(preds) {
-            objList.innerHTML = '';
-            preds.forEach(p => {
-                const area = p.bbox[2] * p.bbox[3];
-                const threatLevel = (p.score * 100).toFixed(0);
-                const distance = Math.round(5000 / Math.sqrt(area)); // Эмпирическая дистанция
-
-                // Обновляем память
-                if (!tracker[p.class]) tracker[p.class] = { seen: 0 };
-                tracker[p.class].seen++;
-
-                const entry = document.createElement('div');
-                entry.className = threatLevel > 80 ? "text-white" : "text-green-700";
-                entry.innerHTML = `
-                    <div class="flex justify-between">
-                        <span>ID: ${p.class}</span>
-                        <span>DSTR: ~${distance}m</span>
-                    </div>
-                    <div class="w-full bg-green-900 h-1 mt-1">
-                        <div class="bg-green-400 h-full" style="width: ${threatLevel}%"></div>
-                    </div>
-                `;
-                objList.appendChild(entry);
-
-                if (tracker[p.class].seen === 1) sysLog(`NEW_TARGET_ACQUIRED: ${p.class.toUpperCase()}`);
-            });
-        }
-
-        function renderVisuals(preds, fps) {
+        function renderMachineVision(preds) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Сетка координат (Радар)
-            ctx.strokeStyle = "rgba(0, 255, 65, 0.1)";
-            ctx.beginPath();
-            ctx.arc(canvas.width/2, canvas.height/2, 200, 0, Math.PI*2);
-            ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2);
-            ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height);
-            ctx.stroke();
+            const sx = canvas.width / video.videoWidth;
+            const sy = canvas.height / video.videoHeight;
 
             preds.forEach(p => {
                 const [x, y, w, h] = p.bbox;
-                const sx = canvas.width / video.videoWidth;
-                const sy = canvas.height / video.videoHeight;
-                
-                // Рамка объекта
-                ctx.strokeStyle = "#00ff41";
-                ctx.lineWidth = 1;
-                ctx.strokeRect(x*sx, y*sy, w*sx, h*sy);
-                
-                // Перекрестие на объекте
                 const cx = (x + w/2) * sx;
                 const cy = (y + h/2) * sy;
+
+                // 1. Точка фокуса (Centroid)
+                ctx.fillStyle = "#fff";
                 ctx.beginPath();
-                ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
-                ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
+                ctx.arc(cx, cy, 3, 0, Math.PI*2);
+                ctx.fill();
+
+                // 2. Вектор привязки к горизонту
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx, canvas.height); // Линия до "пола"
                 ctx.stroke();
 
-                // Вывод сырых данных рядом с боксом
-                ctx.fillStyle = "#00ff41";
-                ctx.font = "8px 'Fira Code'";
-                ctx.fillText(`OBJ_REF: ${p.class}`, x*sx, y*sy - 15);
-                ctx.fillText(`CONF: ${(p.score*100).toFixed(2)}%`, x*sx, y*sy - 5);
-            });
+                // 3. Лаконичный дескриптор
+                ctx.font = "bold 10px monospace";
+                ctx.fillText(`${p.class.toUpperCase()} [${Math.round(p.score*100)}%]`, x*sx, y*sy - 5);
+                
+                // 4. Ограничивающий периметр (только углы для чистоты)
+                const cornerLen = 15;
+                ctx.strokeStyle = p.score > 0.8 ? "#0f0" : "#f00";
+                ctx.lineWidth = 2;
+                
+                // Top-Left
+                ctx.beginPath();
+                ctx.moveTo(x*sx, y*sy + cornerLen); ctx.lineTo(x*sx, y*sy); ctx.lineTo(x*sx + cornerLen, y*sy);
+                ctx.stroke();
+                // Bottom-Right
+                ctx.beginPath();
+                ctx.moveTo((x+w)*sx - cornerLen, (y+h)*sy); ctx.lineTo((x+w)*sx, (y+h)*sy); ctx.lineTo((x+w)*sx, (y+h)*sy - cornerLen);
+                ctx.stroke();
 
-            // Индикатор FPS
-            ctx.fillStyle = "#00ff41";
-            ctx.fillText(`PROCESSOR_LOAD: ${fps} FPS`, 20, canvas.height - 20);
+                // Логирование новых сущностей
+                if (!objectMemory.has(p.class)) {
+                    log.innerHTML = `>> NEW_ENTITY_LOCKED: ${p.class}<br>` + log.innerHTML.split('<br>').slice(0, 5).join('<br>');
+                    objectMemory.set(p.class, true);
+                }
+            });
         }
 
-        document.getElementById('init-btn').addEventListener('click', start);
+        document.body.onclick = () => engineInit();
     </script>
 </body>
 </html>
