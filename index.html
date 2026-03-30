@@ -1,459 +1,121 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>myEYE // VISION OS</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
-<style>
-:root{
-  --g:#00ff41;--g2:#00cc33;--g3:#003a12;
-  --y:#ffff00;--o:#ff9900;--r:#ff2244;--b:#00aaff;
-  --bg:#020804;--panel:rgba(2,8,4,.94);--border:rgba(0,255,65,.22);
-}
-*{margin:0;padding:0;box-sizing:border-box;}
-body,html{width:100%;height:100%;background:#000;overflow:hidden;
-  font-family:'Share Tech Mono',monospace;color:var(--g);
-  user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;}
-
-/* BOOT */
-#boot{position:fixed;inset:0;background:#000;z-index:300;display:flex;
-flex-direction:column;justify-content:center;align-items:center;}
-#boot-logo{font-family:'Orbitron',sans-serif;font-weight:900;
-font-size:clamp(30px,8vw,54px);letter-spacing:.18em;color:var(--g);
-text-shadow:0 0 30px var(--g),0 0 60px #004400;animation:gpulse 2s ease-in-out infinite;}
-#boot-sub{font-size:9px;letter-spacing:.45em;color:var(--g2);margin:6px 0 32px;}
-#boot-log{width:min(360px,86vw);font-size:9.5px;color:var(--g2);min-height:115px;line-height:1.9;}
-#boot-log .bl{opacity:0;animation:fi .22s forwards;}
-#pb-wrap{width:min(360px,86vw);height:2px;background:#0a1a0a;margin-top:18px;}
-#pb{height:100%;width:0;background:var(--g);box-shadow:0 0 8px var(--g);transition:width .3s;}
-#btn-start{margin-top:28px;display:none;background:none;border:1px solid var(--g);
-color:var(--g);font-family:'Orbitron',sans-serif;font-size:11px;
-letter-spacing:.3em;padding:13px 42px;cursor:pointer;transition:all .2s;}
-#btn-start:hover,#btn-start:active{background:var(--g);color:#000;box-shadow:0 0 20px var(--g);}
-
-/* LAYOUT */
-#app{position:fixed;inset:0;display:flex;flex-direction:column;}
-#vp{position:relative;flex:1 1 auto;overflow:hidden;background:#000;}
-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;
-filter:brightness(.55) contrast(1.38) saturate(.88);}
-canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;}
-
-#vp::after{content:'';position:absolute;inset:0;z-index:5;pointer-events:none;
-background:repeating-linear-gradient(0deg,transparent,transparent 3px,
-rgba(0,255,65,.016) 3px,rgba(0,255,65,.016) 4px);
-animation:scanroll 10s linear infinite;}
-
-.hc{position:absolute;width:52px;height:52px;z-index:10;pointer-events:none;}
-.hc::before,.hc::after{content:'';position:absolute;background:var(--g);box-shadow:0 0 5px var(--g);}
-.hc::before{width:2px;height:20px;}.hc::after{width:20px;height:2px;}
-#hc-tl{top:0;left:0;}#hc-tl::before{top:0;left:0;}#hc-tl::after{top:0;left:0;}
-#hc-tr{top:0;right:0;}#hc-tr::before{top:0;right:0;}#hc-tr::after{top:0;right:0;}
-#hc-bl{bottom:0;left:0;}#hc-bl::before{bottom:0;left:0;}#hc-bl::after{bottom:0;left:0;}
-#hc-br{bottom:0;right:0;}#hc-br::before{bottom:0;right:0;}#hc-br::after{bottom:0;right:0;}
-
-#xhair{position:absolute;top:50%;left:50%;z-index:8;pointer-events:none;
-width:22px;height:22px;margin:-11px;}
-#xhair::before{content:'';position:absolute;top:10px;left:0;width:22px;height:2px;
-background:rgba(0,255,65,.3);}
-#xhair::after{content:'';position:absolute;left:10px;top:0;width:2px;height:22px;
-background:rgba(0,255,65,.3);}
-
-#radar{position:absolute;top:50%;left:50%;z-index:7;width:6px;height:6px;margin:-3px;
-border-radius:50%;background:var(--g);pointer-events:none;
-box-shadow:0 0 0 0 rgba(0,255,65,.5);animation:rpulse 4s ease-out infinite;}
-
-#topbar{position:absolute;top:0;left:0;right:0;z-index:15;pointer-events:none;
-display:flex;align-items:center;justify-content:space-between;padding:10px 14px;}
-#sys-id{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;
-letter-spacing:.2em;color:var(--g);text-shadow:0 0 12px var(--g);}
-#badges{display:flex;gap:5px;}
-.badge{font-size:8px;letter-spacing:.12em;padding:3px 8px;
-border:1px solid var(--border);background:var(--panel);color:var(--g2);}
-.badge.hi{border-color:var(--g);color:var(--g);}
-.badge.al{border-color:var(--r);color:var(--r);}
-.badge.wn{border-color:var(--o);color:var(--o);}
-
-#night-btn{position:absolute;top:10px;left:14px;z-index:20;background:none;
-border:1px solid var(--border);color:var(--g2);font-family:'Share Tech Mono',monospace;
-font-size:8px;padding:4px 10px;cursor:pointer;letter-spacing:.1em;}
-#night-btn:hover,#night-btn:active{border-color:var(--b);color:var(--b);}
-
-#rpanel{position:absolute;top:50%;right:10px;transform:translateY(-50%);
-z-index:15;display:flex;flex-direction:column;gap:4px;pointer-events:none;}
-.rs{font-size:7px;letter-spacing:.1em;padding:4px 9px;border:1px solid var(--border);
-background:var(--panel);color:var(--g2);text-align:right;min-width:84px;}
-.rs span{display:block;color:var(--g);font-size:10px;}
-
-#statbar{position:absolute;bottom:0;left:0;right:0;z-index:15;
-display:flex;gap:1px;pointer-events:none;}
-.sc{flex:1;padding:5px 5px;background:var(--panel);
-border-top:1px solid var(--border);font-size:7px;
-letter-spacing:.07em;color:var(--g2);text-align:center;}
-.sc span{display:block;color:var(--g);font-size:10px;font-weight:bold;}
-
-#info-panel{position:absolute;bottom:0;left:0;right:0;z-index:25;
-background:rgba(2,8,4,.97);border-top:2px solid var(--g);
-padding:12px 16px 10px;transform:translateY(100%);
-transition:transform .28s cubic-bezier(.22,1,.36,1);pointer-events:none;}
-#info-panel.open{transform:translateY(0);pointer-events:all;}
-#info-close{position:absolute;top:10px;right:14px;background:none;
-border:1px solid var(--g2);color:var(--g2);font-family:'Share Tech Mono',monospace;
-font-size:9px;padding:3px 10px;cursor:pointer;letter-spacing:.1em;}
-#info-close:hover,#info-close:active{border-color:var(--r);color:var(--r);}
-#info-title{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;
-letter-spacing:.2em;color:var(--g);margin-bottom:8px;}
-#info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;font-size:9px;}
-.ik{color:var(--g2);}.iv{color:var(--g);}
-#info-desc{margin-top:8px;font-size:9px;color:var(--g2);line-height:1.6;
-border-top:1px solid var(--border);padding-top:6px;}
-
-#terminal{flex:0 0 auto;height:108px;background:var(--bg);
-border-top:1px solid var(--border);padding:7px 14px;overflow:hidden;z-index:20;}
-#term-hdr{font-family:'Orbitron',sans-serif;font-size:7px;letter-spacing:.28em;
-color:var(--g3);margin-bottom:5px;display:flex;align-items:center;gap:8px;}
-#term-hdr::before{content:'';flex:1;height:1px;background:var(--g3);}
-#term-lines{font-size:9px;line-height:1.72;}
-.tl{opacity:0;animation:si .18s forwards;}
-.tok{color:var(--g);}.twarn{color:var(--o);}.talert{color:var(--r);}.tinfo{color:var(--b);}.ttap{color:var(--y);}
-
-@keyframes gpulse{0%,100%{text-shadow:0 0 20px var(--g),0 0 40px #003300;}
-50%{text-shadow:0 0 45px var(--g),0 0 90px #00aa44;}}
-@keyframes fi{to{opacity:1;}}
-@keyframes si{from{opacity:0;transform:translateX(-5px);}to{opacity:.93;transform:none;}}
-@keyframes scanroll{from{background-position:0 0;}to{background-position:0 120px;}}
-@keyframes rpulse{0%{box-shadow:0 0 0 0 rgba(0,255,65,.5);}
-70%{box-shadow:0 0 0 70px rgba(0,255,65,0);}100%{box-shadow:0 0 0 0 rgba(0,255,65,0);}}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gemini Vision: Prototype 0.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Подключаем нейросеть для распознавания объектов -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <style>
+        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
+        .scanner-line {
+            height: 2px;
+            background: rgba(0, 255, 65, 0.5);
+            box-shadow: 0 0 15px #00ff41;
+            position: absolute;
+            width: 100%;
+            animation: scan 3s linear infinite;
+            z-index: 10;
+        }
+        @keyframes scan {
+            0% { top: 0%; }
+            100% { top: 100%; }
+        }
+    </style>
 </head>
-<body>
+<body class="relative h-screen w-screen flex flex-col items-center justify-center">
 
-<div id="boot">
-  <div id="boot-logo">myEYE</div>
-  <div id="boot-sub">VISION OS // v3.0</div>
-  <div id="boot-log"></div>
-  <div id="pb-wrap"><div id="pb"></div></div>
-  <button id="btn-start" onclick="initCamera()">[ ACTIVATE ]</button>
-</div>
-
-<div id="app" style="display:none;">
-  <div id="vp">
-    <video id="video" playsinline muted autoplay></video>
-    <canvas id="canvas"></canvas>
-    <div class="hc" id="hc-tl"></div><div class="hc" id="hc-tr"></div>
-    <div class="hc" id="hc-bl"></div><div class="hc" id="hc-br"></div>
-    <div id="xhair"></div><div id="radar"></div>
-    <button id="night-btn" onclick="toggleNight()">☾ NIGHT</button>
-
-    <div id="topbar">
-      <div id="sys-id">myEYE</div>
-      <div id="badges">
-        <div class="badge hi" id="b-fps">-- FPS</div>
-        <div class="badge hi" id="b-obj">0 OBJ</div>
-        <div class="badge" id="b-mode">SCAN</div>
-        <div class="badge" id="b-rng">STD</div>
-      </div>
-    </div>
-
-    <div id="rpanel">
-      <div class="rs">HUMANS<span id="cp">0</span></div>
-      <div class="rs">VEHICLES<span id="cv">0</span></div>
-      <div class="rs">ANIMALS<span id="ca">0</span></div>
-      <div class="rs">OBJECTS<span id="co">0</span></div>
-    </div>
-
-    <div id="statbar">
-      <div class="sc">FARTHEST<span id="s-dist">---</span></div>
-      <div class="sc">THREATS<span id="s-thr">0</span></div>
-      <div class="sc">CONF AVG<span id="s-conf">---%</span></div>
-      <div class="sc">TRACKED<span id="s-trk">0</span></div>
-    </div>
-
-    <div id="info-panel">
-      <button id="info-close" onclick="closeInfo()">✕ CLOSE</button>
-      <div id="info-title">---</div>
-      <div id="info-grid"></div>
-      <div id="info-desc"></div>
-    </div>
-  </div>
-
-  <div id="terminal">
-    <div id="term-hdr"><span>NEURAL_FEED // TAP BOX → OBJECT REPORT</span></div>
-    <div id="term-lines"></div>
-  </div>
-</div>
-
-<script>
-const CFG={
-  FOCAL:900,
-  CONF:0.18,
-  MAX_DET:50,
-  SKIP:1, 
-  SMOOTH:0.18, 
-  TTL:25,
-  IOU:0.25
-};
-
-const OBJ_H={
-  person:1.75, car:1.55, truck:2.9, bus:3.3, motorcycle:1.15, bicycle:1.05,
-  'fire hydrant':0.65, 'stop sign':0.8, 'traffic light':0.45, dog:0.5, cat:0.3,
-  'cell phone':0.15, bottle:0.28, backpack:0.55, default:1.0
-};
-
-const CAT={
-  HUMAN:['person'],
-  VEHICLE:['car','truck','bus','motorcycle','bicycle'],
-  ANIMAL:['bird','cat','dog','horse','sheep','cow','elephant']
-};
-const THREAT=new Set(['person','car','truck','bus','motorcycle']);
-
-const COL={
-  person:'#ffff00', car:'#ff2244', truck:'#ff2244', bus:'#ff4466', motorcycle:'#ff6600',
-  'cell phone':'#88aaff', bottle:'#88ff88', backpack:'#00ffff', _d:'#00ff41'
-};
-
-const DESC={
-  person:'Обнаружен человек. Оценка позы и траектории активна.',
-  car:'Легковой автомобиль. Классификация по габаритам кузова.',
-  truck:'Грузовой транспорт. Повышенная зона риска.',
-  'cell phone':'Мобильное устройство связи.',
-  backpack:'Носимый груз / рюкзак.',
-  _d:'Объект идентифицирован нейросетью COCO-SSD.'
-};
-
-function getCol(c){return COL[c]||COL._d;}
-function getDesc(c){return DESC[c]||DESC._d;}
-function dist(bbox,cls){
-  const rh=OBJ_H[cls]||OBJ_H.default;
-  const px=Math.max(bbox[2],bbox[3]);
-  return px<3?999:Math.min(999,+(CFG.FOCAL*rh/px).toFixed(1));
-}
-function hexA(hex,a){
-  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-function iou(a,b){
-  const ix=Math.max(a[0],b[0]),iy=Math.max(a[1],b[1]);
-  const iw=Math.min(a[0]+a[2],b[0]+b[2])-ix,ih=Math.min(a[1]+a[3],b[1]+b[3])-iy;
-  if(iw<=0||ih<=0) return 0;
-  return (iw*ih)/(a[2]*a[3]+b[2]*b[3]-iw*ih);
-}
-
-class Tracker{
-  constructor(){this.tracks={};this.nid=1;}
-  update(preds){
-    for(const k in this.tracks){
-      this.tracks[k].age++;
-      this.tracks[k].seen=false;
-      if(this.tracks[k].age>CFG.TTL) delete this.tracks[k];
-    }
-    for(const p of preds){
-      let best=null, bs=CFG.IOU;
-      for(const id in this.tracks){
-        const t=this.tracks[id];
-        if(t.cls!==p.class) continue;
-        const s=iou(t.sm,p.bbox);
-        if(s>bs){bs=s;best=t;}
-      }
-      if(best){
-        best.sm=best.sm.map((v,i)=>v+(p.bbox[i]-v)*CFG.SMOOTH);
-        best.score=best.score+(p.score-best.score)*CFG.SMOOTH;
-        best.age=0; best.seen=true;
-        p._tid=best.id;
-      }else{
-        const id=this.nid++;
-        this.tracks[id]={id,cls:p.class,sm:[...p.bbox],score:p.score,age:0,seen:true,born:Date.now()};
-        p._tid=id;
-      }
-    }
-    return Object.values(this.tracks).filter(t=>t.age<2);
-  }
-}
-
-const video=document.getElementById('video');
-const canvas=document.getElementById('canvas');
-const ctx=canvas.getContext('2d');
-const termEl=document.getElementById('term-lines');
-let model=null, running=false, lastPred=[], lastFpsT=0, fpsCnt=0;
-let termQ=[], logThr={}, nightMode=false, selTid=null;
-const tracker=new Tracker();
-
-async function bootSeq(){
-  const bootLog=document.getElementById('boot-log');
-  const pbEl=document.getElementById('pb');
-  const BOOT=[[0,"INIT VISION_OS v3.0..."],[300,"TENSORFLOW_JS: LOADING"],[600,"MODEL: COCO-SSD LITE"],[900,"ANTI-FLICKER: ACTIVE"],[1200,"UI: TERMINAL READY"]];
-  for(let i=0;i<BOOT.length;i++){
-    await new Promise(r=>setTimeout(r,BOOT[i][0]-(i?BOOT[i-1][0]:0)));
-    const d=document.createElement('div');d.className='bl';d.textContent='> '+BOOT[i][1];
-    bootLog.appendChild(d);pbEl.style.width=((i+1)/BOOT.length*100)+'%';
-  }
-  model=await cocoSsd.load({base:'lite_mobilenet_v2'});
-  document.getElementById('btn-start').style.display='block';
-}
-
-async function initCamera(){
-  try {
-    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280}}});
-    video.srcObject=s;
-    video.onloadedmetadata=()=>{
-      video.play();
-      document.getElementById('boot').style.display='none';
-      document.getElementById('app').style.display='flex';
-      running=true;
-      log("VISION_OS v3.0 ONLINE",'ok');
-      requestAnimationFrame(renderLoop);
-    };
-  } catch(e) { log("ERR: CAMERA ACCESS DENIED",'alert'); }
-}
-
-function log(txt,type='ok'){
-  termQ.push({txt,type});
-  if(termQ.length>5) termQ.shift();
-  termEl.innerHTML='';
-  termQ.forEach(q=>{
-    const d=document.createElement('div');
-    d.className='tl t'+q.type; d.textContent='> '+q.txt;
-    termEl.appendChild(d);
-  });
-}
-
-function canLog(cls, id){
-  const now=Date.now();
-  const key=cls+id;
-  if(!logThr[key]||now-logThr[key]>4000){logThr[key]=now;return true;}
-  return false;
-}
-
-function toggleNight(){
-  nightMode=!nightMode;
-  video.style.filter=nightMode?'brightness(.4) contrast(1.7) saturate(0) sepia(.9) hue-rotate(80deg)':'brightness(.55) contrast(1.38) saturate(.88)';
-  log('NIGHT_MODE: '+(nightMode?'ON':'OFF'),nightMode?'warn':'ok');
-}
-
-async function renderLoop(now){
-  if(!running) return requestAnimationFrame(renderLoop);
-  fpsCnt++;
-  if(now-lastFpsT>1000){
-    document.getElementById('b-fps').textContent=fpsCnt+' FPS';
-    fpsCnt=0;lastFpsT=now;
-  }
-
-  if(video.readyState === 4){
-    canvas.width=video.videoWidth;
-    canvas.height=video.videoHeight;
-    const raw=await model.detect(video,CFG.MAX_DET,CFG.CONF);
-    lastPred=tracker.update(raw);
-  }
-  
-  draw();
-  updateHUD();
-  requestAnimationFrame(renderLoop);
-}
-
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  lastPred.forEach(p=>{
-    const [x,y,w,h]=p.sm;
-    const col=getCol(p.cls);
-    const d=dist(p.sm, p.cls);
-    const isSel = p.id === selTid;
+    <!-- Слой видео (Мои глаза) -->
+    <video id="webcam" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover opacity-60"></video>
+    <canvas id="overlay" class="absolute inset-0 w-full h-full z-20"></canvas>
     
-    // Плавная рамка
-    ctx.strokeStyle=col;
-    ctx.lineWidth=isSel ? 4 : 2;
-    ctx.strokeRect(x,y,w,h);
-    ctx.fillStyle=hexA(col, isSel ? 0.2 : 0.05);
-    ctx.fillRect(x,y,w,h);
+    <!-- Визуальный эффект сканирования -->
+    <div class="scanner-line"></div>
 
-    // Углы
-    const s=Math.min(20, w*0.3);
-    ctx.lineWidth=4;
-    ctx.beginPath();
-    ctx.moveTo(x,y+s);ctx.lineTo(x,y);ctx.lineTo(x+s,y);
-    ctx.moveTo(x+w-s,y);ctx.lineTo(x+w,y);ctx.lineTo(x+w,y+s);
-    ctx.moveTo(x,y+h-s);ctx.lineTo(x,y+h);ctx.lineTo(x+s,y+h);
-    ctx.moveTo(x+w-s,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w,y+h-s);
-    ctx.stroke();
+    <!-- HUD (Интерфейс дополненной реальности) -->
+    <div class="absolute top-5 left-5 z-30 pointer-events-none bg-black/50 p-4 border border-green-500/30 rounded-lg">
+        <h2 class="text-xs font-bold uppercase tracking-widest mb-2">System Status: Active</h2>
+        <div id="telemetry" class="text-[10px] space-y-1">
+            <p>GYRO: <span id="gyro-val">Wait...</span></p>
+            <p>GPS: <span id="gps-val">Locating...</span></p>
+            <p>OBJECTS: <span id="obj-count">0</span></p>
+        </div>
+    </div>
 
-    // Ярлык
-    ctx.fillStyle='rgba(0,0,0,0.8)';
-    ctx.fillRect(x, y-30, Math.min(w, 140), 30);
-    ctx.fillStyle=col;
-    ctx.font="bold 11px 'Share Tech Mono'";
-    ctx.fillText(`${p.cls.toUpperCase()} #${p.id}`, x+5, y-18);
-    ctx.font="9px 'Share Tech Mono'";
-    ctx.fillText(`${d}m | ${Math.round(p.score*100)}%`, x+5, y-6);
-  });
-}
+    <!-- Контрольная панель -->
+    <div class="absolute bottom-10 z-30 flex gap-4">
+        <button id="start-btn" class="px-6 py-2 border border-green-500 hover:bg-green-500/20 transition-all uppercase text-sm">
+            Инициализировать зрение
+        </button>
+    </div>
 
-function updateHUD(){
-  const total=lastPred.length;
-  document.getElementById('b-obj').textContent=total+' OBJ';
-  let P=0,V=0,A=0,O=0,thr=0,maxD=0;
-  
-  lastPred.forEach(p=>{
-    const d=dist(p.sm, p.cls);
-    if(d>maxD && d<999) maxD=d;
-    if(CAT.HUMAN.includes(p.cls)) P++;
-    else if(CAT.VEHICLE.includes(p.cls)) V++;
-    else if(CAT.ANIMAL.includes(p.cls)) A++;
-    else O++;
-    if(THREAT.has(p.cls)) thr++;
-    
-    if(canLog(p.cls, p.id)){
-      log(`${p.cls.toUpperCase()} #${p.id} — ${d}m`, THREAT.has(p.cls)?'warn':'info');
-    }
-  });
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('overlay');
+        const ctx = canvas.getContext('2d');
+        let model;
 
-  document.getElementById('cp').textContent=P;
-  document.getElementById('cv').textContent=V;
-  document.getElementById('ca').textContent=A;
-  document.getElementById('co').textContent=O;
-  document.getElementById('s-thr').textContent=thr;
-  document.getElementById('s-dist').textContent=maxD>0 ? Math.round(maxD)+'m' : '---';
-  document.getElementById('s-trk').textContent=Object.keys(tracker.tracks).length;
-}
+        // 1. Доступ к камере iPhone 15
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+                audio: false
+            });
+            video.srcObject = stream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => resolve(video);
+            });
+        }
 
-function handleTap(e){
-  const rect=canvas.getBoundingClientRect();
-  const sx=canvas.width/rect.width, sy=canvas.height/rect.height;
-  const cx=(e.clientX-rect.left)*sx, cy=(e.clientY-rect.top)*sy;
-  
-  const hit=lastPred.find(p=>{
-    const [x,y,w,h]=p.sm;
-    return cx>=x&&cx<=x+w&&cy>=y&&cy<=y+h;
-  });
+        // 2. Инициализация нейросети (COCO-SSD)
+        async function loadModel() {
+            model = await cocoSsd.load();
+            console.log("Мозг загружен");
+        }
 
-  if(hit){
-    selTid=hit.id;
-    const d=dist(hit.sm, hit.cls);
-    const alive=Math.round((Date.now()-hit.born)/1000);
-    document.getElementById('info-title').textContent=hit.cls.toUpperCase();
-    document.getElementById('info-title').style.color=getCol(hit.cls);
-    document.getElementById('info-grid').innerHTML=`
-      <div class="ik">ID ТРЕКА</div><div class="iv">#${hit.id}</div>
-      <div class="ik">ДИСТАНЦИЯ</div><div class="iv">${d}m</div>
-      <div class="ik">ТОЧНОСТЬ</div><div class="iv">${Math.round(hit.score*100)}%</div>
-      <div class="ik">ВРЕМЯ</div><div class="iv">${alive}s</div>
-    `;
-    document.getElementById('info-desc').textContent=getDesc(hit.cls);
-    document.getElementById('info-panel').classList.add('open');
-    log(`OTЧЕТ ПО ОБЪЕКТУ #${hit.id} СФОРМИРОВАН`, 'tap');
-  } else {
-    closeInfo();
-  }
-}
+        // 3. Чтение гироскопа
+        window.addEventListener('deviceorientation', (event) => {
+            document.getElementById('gyro-val').innerText = 
+                `α:${Math.round(event.alpha)} β:${Math.round(event.beta)} γ:${Math.round(event.gamma)}`;
+        });
 
-canvas.addEventListener('click',handleTap);
-function closeInfo(){
-  selTid=null;
-  document.getElementById('info-panel').classList.remove('open');
-}
+        // 4. Цикл предсказания (То, как я вижу объекты)
+        async function detectFrame() {
+            const predictions = await model.detect(video);
+            renderPredictions(predictions);
+            requestAnimationFrame(detectFrame);
+        }
 
-bootSeq();
-</script>
+        function renderPredictions(predictions) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            document.getElementById('obj-count').innerText = predictions.length;
+
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                ctx.strokeStyle = "#00ff41";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, width, height);
+                
+                ctx.fillStyle = "#00ff41";
+                ctx.font = "18px Courier New";
+                ctx.fillText(
+                    `${prediction.class.toUpperCase()} ${Math.round(prediction.score * 100)}%`, 
+                    x, y > 20 ? y - 5 : 20
+                );
+            });
+        }
+
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            await setupCamera();
+            await loadModel();
+            detectFrame();
+            document.getElementById('start-btn').classList.add('hidden');
+        });
+    </script>
 </body>
 </html>
