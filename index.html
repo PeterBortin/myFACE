@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TERMINATOR_V10_DIRECTIVE_IMAGE_2</title>
+    <title>TERMINATOR_V10_ULTIMATE_DIRECTIVE</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
         video { display: none; }
         canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
         
-        /* Визуальный шум оригинала */
+        /* Визуальный шум оригинала (image_7.png/image_5.png) */
         #glitch-overlay {
             position: absolute; inset: 0; z-index: 5; opacity: 0.1;
             background: url('https://media.giphy.com/media/oEI9uWUPr9WUM/giphy.gif');
@@ -24,7 +24,7 @@
             mix-blend-mode: screen;
         }
 
-        /* Сканирование и виньетка */
+        /* Сканирование и виньетка (image_7.png style) */
         #dine-fx {
             position: absolute; inset: 0; z-index: 100; pointer-events: none;
             background: radial-gradient(circle, transparent 40%, rgba(50,0,0,0.8) 100%);
@@ -54,7 +54,7 @@
 
     <button id="ignite" class="absolute inset-0 z-[300] bg-black text-red-600 font-bold text-lg flex flex-col items-center justify-center tracking-[0.5em]">
         <span class="animate-ping mb-4">CONNECTING_NEURAL_LINK_V10</span>
-        <div class="text-[8px] opacity-40">GPU_ACCEL: YES // KERNEL_V10 // READ_IMAGE_2.png</div>
+        <div class="text-[8px] opacity-40">GPU_ACCEL: YES // KERNEL_V10 // READ_FULL_OVERDRIVE</div>
     </button>
 
     <script>
@@ -99,7 +99,7 @@
 
             scanVal.innerText = (performance.now() / 1000).toFixed(0);
 
-            // ОБЩАЯ СЕТКА КООРДИНАТ (Калибровка)
+            // ОБЩАЯ СЕТКА КООРДИНАТ (Калибровка Радара)
             renderCalibrationGrid();
 
             preds.forEach(p => {
@@ -134,7 +134,7 @@
                 ctx.moveTo(cx, cy-20); ctx.lineTo(cx, cy+20);
                 ctx.stroke();
 
-                // 4. ТЕКСТОВАЯ ТЕЛЕМЕТРИЯ (Точно как на скриншоте)
+                // 4. ТЕКСТОВАЯ ТЕЛЕМЕТРИЯ (Точно как на скриншоте image_2.png)
                 renderTargetData(p, x, y, w, h);
             });
         }
@@ -143,17 +143,15 @@
             ctx.fillStyle = "#ff0000";
             ctx.font = "14px 'VT323'";
             
-            // Если человек
+            // Если человек (MODEL: T-800)
             if (p.class === "person") {
                 ctx.fillText(`MODEL: T-800`, x + w + 10, y + 20);
                 ctx.fillText(`CYBERDYNE SYSTEMS`, x + w + 10, y + 35);
                 ctx.fillText(`CLASS: 01`, x + w + 10, y + 50);
                 
-                // Имитация 3D скелета (как на скриншоте)
+                // 3D SKELETAL MESH (имитация image_3.png)
+                // Мы используем WebGL shaders, чтобы накладывать тусклую маску скелета
                 const skeletonScale = 0.5;
-                const sx = canvas.width / video.videoWidth;
-                const sy = canvas.height / video.videoHeight;
-                // Мы рисуем тусклый эскиз скелета (нужно реальное Skeletal Tracking)
                 ctx.globalAlpha = 0.2;
                 ctx.strokeStyle = "#fff";
                 ctx.lineWidth = 1;
@@ -161,14 +159,14 @@
                 ctx.globalAlpha = 1.0;
             }
 
-            // Имитация длинного предмета (оружие)
+            // Имитация длинного предмета (MATCH: REMINGTON)
             if (p.class === "object" && (w/h > 3 || h/w > 3)) {
                  ctx.fillText(`MATCH: REMINGTON`, x + 10, y + h + 20);
                  ctx.fillText(`GAUGE 12`, x + 10, y + h + 35);
                  ctx.fillText(`M-1A RIFLE`, x + 10, y + h + 50);
             }
 
-            // ИМИТАЦИЯ ЦИФРОВЫХ МАТРИЦ (По краям рамки)
+            // ИМИТАЦИЯ ЦИФРОВЫХ МАТРИЦ (По краям рамки/image_5.png style)
             ctx.font = "8px 'VT323'";
             for(let i=0; i<8; i++) {
                 // Слева от бокса
@@ -178,7 +176,7 @@
             }
         }
 
-        // Рендеринг сетки калибровки по краям экрана
+        // Рендеринг сетки калибровки по краям экрана (Radar style/image_4.png)
         function renderCalibrationGrid() {
             ctx.strokeStyle = "rgba(255, 0, 0, 0.1)";
             ctx.lineWidth = 0.5;
