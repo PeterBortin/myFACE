@@ -3,25 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TERMINATOR_V9_CINEMATIC</title>
+    <title>TERMINATOR_V9_1_FULL_OVERDRIVE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: 'Fira Code', monospace; }
-        video { display: none; }
-        canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500;700&display=swap');
+        body { background: #000; margin: 0; overflow: hidden; font-family: 'Fira Code', monospace; color: #ff0000; text-transform: uppercase; }
         
-        /* Виньетка и сканирование */
-        #overlay {
+        video { display: none; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
+        
+        /* Глич-слой (Шум) */
+        #glitch-overlay {
+            position: absolute; inset: 0; z-index: 5; opacity: 0.15;
+            background: url('https://media.giphy.com/media/oEI9uWUPr9WUM/giphy.gif');
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+
+        /* Виньетка и сканирование (Кино-эффект) */
+        #cine-fx {
             position: absolute; inset: 0; z-index: 100; pointer-events: none;
-            background: radial-gradient(circle, transparent 40%, rgba(50,0,0,0.6) 100%);
-            box-shadow: inset 0 0 100px #000;
+            background: radial-gradient(circle, transparent 30%, rgba(50,0,0,0.8) 100%);
+            box-shadow: inset 0 0 150px #000;
         }
         #scanlines {
             position: absolute; inset: 0; z-index: 101; pointer-events: none;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            background-size: 100% 4px, 3px 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 50%);
+            background-size: 100% 4px; opacity: 0.3;
+        }
+
+        /* Бегущая полоса Терминатора */
+        #terminal-log {
+            position: absolute; bottom: 20px; left: 20px; z-index: 200;
+            width: 250px; h-[200px] overflow: hidden;
+            font-size: 8px; line-height: 1.1; color: #ff0000;
+            text-shadow: 0 0 5px #ff0000; pointer-events: none;
+            text-align: left;
         }
     </style>
 </head>
@@ -29,51 +48,85 @@
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
-    <div id="overlay"></div>
+    <div id="glitch-overlay"></div>
+    <div id="cine-fx"></div>
     <div id="scanlines"></div>
 
-    <button id="ignite" class="absolute inset-0 z-[200] bg-black text-red-600 font-black text-2xl flex flex-col items-center justify-center tracking-[0.5em]">
-        <span class="animate-ping mb-4">CONNECTING_NEURAL_LINK</span>
-        <div class="text-[8px] opacity-50 font-normal">A17_PRO_GPU // KERNEL_V9_CINEMATIC // READY</div>
+    <div id="terminal-log">
+        [CYBERDYNE SYSTEMS 1.0]<br>
+        [A17_PRO_GPU_ACCEL: YES]<br>
+        [NEURAL_NET: READY]<br>
+        [WAITING_FOR_BOOT_INIT]
+    </div>
+
+    <button id="ignite" class="absolute inset-0 z-[300] bg-black text-red-600 font-black text-2xl flex flex-col items-center justify-center tracking-[0.5em]">
+        <span class="animate-ping mb-4">CONNECT_TO_HUNTER</span>
+        <div class="text-[8px] opacity-50 font-normal">A17_PRO_GPU // KERNEL_V9.1 // READY</div>
     </button>
 
     <script>
         const video = document.getElementById('v');
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        let model, shake = 0;
+        const termLog = document.getElementById('terminal-log');
+        let model;
+        let shake = 0, glitchIntensity = 0;
+
+        // Расширенный список классов для симуляции тотальной сегментации
+        const semanticClasses = ["person", "car", "bicycle", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"];
 
         async function init() {
             document.getElementById('ignite').remove();
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: 1280 }
+                video: { facingMode: "environment", width: 1280, height: 720 }
             });
             video.srcObject = stream;
             model = await cocoSsd.load();
+            sysLog("KERNEL_READY. NEURAL_LINK_ACTIVE.");
             draw();
+        }
+
+        // Логирование в бегущую полосу
+        function sysLog(msg, type = "SYSTEM") {
+            const time = (performance.now() / 1000).toFixed(3);
+            termLog.innerHTML = `[${time}] ${type}::${msg}<br>` + termLog.innerHTML.split('<br>').slice(0, 15).join('<br>');
         }
 
         function draw() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // ЭФФЕКТ ТРЯСКИ (SHAKE) ПРИ ЗАХВАТЕ
+            // 1. СЛОЙ 1: ЭФФЕКТ УДАРА (SHAKE)
             let offsetX = (Math.random() - 0.5) * shake;
             let offsetY = (Math.random() - 0.5) * shake;
-            if (shake > 0) shake *= 0.9; // Затухание
+            if (shake > 0) shake *= 0.9;
 
-            // БАЗОВЫЙ ФИЛЬТР: КРАСНЫЙ КИНО-НЕГАТИВ
+            // 2. СЛОЙ 2: КИНЕМАТОГРАФИЧЕСКИЙ КРАСНЫЙ ФИЛЬТР
             ctx.save();
             ctx.translate(offsetX, offsetY);
-            ctx.filter = "contrast(2.2) brightness(0.5) grayscale(1) sepia(1) hue-rotate(-90deg)";
+            ctx.filter = "contrast(2.5) brightness(0.5) grayscale(1) invert(1) hue-rotate(-90deg)";
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             ctx.restore();
 
-            renderCinematicHUD();
+            // 3. СЛОЙ 3: ГЛИЧ И ПОМЕХИ (Рандомно)
+            if (Math.random() > 0.98 || glitchIntensity > 0) {
+                if (glitchIntensity === 0) glitchIntensity = 20; // Длительность глича
+                ctx.save();
+                ctx.translate((Math.random()-0.5)*10, (Math.random()-0.5)*10);
+                // Смещение каналов
+                ctx.globalCompositeOperation = "difference";
+                ctx.drawImage(video, 5, 0, canvas.width, canvas.height);
+                ctx.globalCompositeOperation = "source-over";
+                ctx.restore();
+                glitchIntensity--;
+                if (Math.random() > 0.9) sysLog("DATA_FLUX_INSTABILITY", "WARN");
+            }
+
+            renderOverdriveHUD();
             requestAnimationFrame(draw);
         }
 
-        async function renderCinematicHUD() {
+        async function renderOverdriveHUD() {
             const preds = await model.detect(video);
             const sx = canvas.width / video.videoWidth;
             const sy = canvas.height / video.videoHeight;
@@ -81,15 +134,14 @@
             preds.forEach(p => {
                 if (p.score < 0.6) return;
                 
-                // Если новая цель - даем "удар" (тряску)
-                if (shake < 5) shake = 15;
+                // Если новая цель - "удар" (тряска)
+                if (shake < 5) { shake = 20; sysLog(`NEW TARGET: ${p.class.toUpperCase()}`, "DATA"); }
 
                 const [x, y, w, h] = p.bbox.map(v => v * (sx > sy ? sx : sy));
                 const cx = x + w/2;
                 const cy = y + h/2;
 
-                // 1. ЗАХВАТ КАРТИНКИ ИЗ РАМКИ (Эффект "чистого зрения")
-                // Мы вырезаем объект и рисуем его поверх красного фильтра в оригинальном цвете
+                // 1. КИНЕМАТОГРАФИЧЕСКИЙ ЗАХВАТ КАРТИНКИ (Оригинал внутри рамки)
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(x, y, w, h);
@@ -98,12 +150,10 @@
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 ctx.restore();
 
-                // 2. КИНО-РАМКА (Ударные углы)
+                // 2. КИНО-РАМКА (Жирные Г-углы)
                 ctx.strokeStyle = "#ff0000";
-                ctx.lineWidth = 3;
-                const s = 30; // Размер углов
-                
-                // Отрисовка Г-образных углов
+                ctx.lineWidth = 4;
+                const s = 40; 
                 ctx.beginPath();
                 ctx.moveTo(x, y+s); ctx.lineTo(x, y); ctx.lineTo(x+s, y); // TL
                 ctx.moveTo(x+w-s, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+s); // TR
@@ -111,41 +161,56 @@
                 ctx.moveTo(x+w-s, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-s); // BR
                 ctx.stroke();
 
-                // 3. ЛУЧИ ДАННЫХ (Connectors)
-                ctx.lineWidth = 0.5;
-                ctx.setLineDash([5, 5]);
-                ctx.beginPath();
-                ctx.moveTo(x, y); ctx.lineTo(0, 0); // В верхний левый угол
-                ctx.moveTo(x+w, y); ctx.lineTo(canvas.width, 0); // В верхний правый
-                ctx.stroke();
-                ctx.setLineDash([]);
-
-                // 4. ТЕКСТОВАЯ ТЕЛЕМЕТРИЯ
+                // 3. ТЕКСТОВАЯ СЕМАНТИКА (Подпись ВСЕГО)
                 ctx.fillStyle = "#ff0000";
-                ctx.font = "900 12px 'Fira Code'";
-                ctx.fillText(`>> TARGET: ${p.class.toUpperCase()}`, x + 5, y + 20);
-                ctx.font = "400 8px 'Fira Code'";
-                ctx.fillText(`ANALYSIS_COMPLETE: ${Math.random().toString(16).slice(2,8)}`, x + 5, y + 35);
+                ctx.font = "900 16px 'Fira Code'";
+                
+                // Дескриптор цели
+                ctx.fillText(`ID: ${p.class.toUpperCase()}`, x + 5, y + 25);
+                ctx.font = "400 9px 'Fira Code'";
+                ctx.fillText(`HEX_ADDR: 0x${Math.random().toString(16).slice(2,8)}`, x + 5, y + 42);
                 
                 // Перекрестие в центре
-                ctx.lineWidth = 1;
+                ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(cx-20, cy); ctx.lineTo(cx+20, cy);
-                ctx.moveTo(cx, cy-20); ctx.lineTo(cx, cy+20);
+                ctx.moveTo(cx-25, cy); ctx.lineTo(cx+25, cy);
+                ctx.moveTo(cx, cy-25); ctx.lineTo(cx, cy+25);
                 ctx.stroke();
+
+                // 4. ДАТА-СТРИМЕРЫ (Лучи)
+                ctx.lineWidth = 1;
+                ctx.setLineDash([8, 8]);
+                ctx.beginPath();
+                ctx.moveTo(x, y); ctx.lineTo(0, 0); // TL
+                ctx.moveTo(x+w, y); ctx.lineTo(canvas.width, 0); // TR
+                ctx.stroke();
+                ctx.setLineDash([]);
             });
-            
-            // Имитация загрузки кода по краям
-            renderSideData();
+
+            // Имитация тотальной сегментации окружения (подписываем случайные зоны)
+            if (preds.length === 0 && Math.random() > 0.92) {
+                renderTotalSegmentation();
+            }
         }
 
-        function renderSideData() {
-            ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
-            ctx.font = "7px 'Fira Code'";
-            for(let i=0; i<20; i++) {
-                ctx.fillText(Math.random().toString(2).slice(2, 25), 15, 60 + i*10);
-                ctx.fillText("0x" + Math.random().toString(16).slice(2, 6), canvas.width - 40, 60 + i*10);
-            }
+        // Симуляция тотальной сегментации окружения (Подписываем случайные зоны)
+        function renderTotalSegmentation() {
+            const areaX = Math.random() * (canvas.width - 200);
+            const areaY = Math.random() * (canvas.height - 200);
+            const areaW = 200 + Math.random()*200;
+            const areaH = 150 + Math.random()*150;
+
+            const classes = ["building", "road", "wall", "sky", "pavement", "fence", "window", "door", "column", "floor"];
+            const targetClass = classes[Math.floor(Math.random()*classes.length)];
+
+            ctx.strokeStyle = "rgba(255, 0, 0, 0.3)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(areaX, areaY, areaW, areaH);
+
+            ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+            ctx.font = "900 12px 'Fira Code'";
+            ctx.fillText(`GEO_REF: ${targetClass.toUpperCase()}`, areaX + 5, areaY + 20);
+            sysLog(`GEO_REF: ${targetClass.toUpperCase()} LOCKED`, "GEO");
         }
 
         document.getElementById('ignite').onclick = init;
