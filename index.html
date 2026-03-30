@@ -1,124 +1,156 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Human Eye Simulation v0.2</title>
+    <title>MACHINE_CORE_VISION_v1.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; overflow: hidden; margin: 0; }
-        #canvas-container { position: relative; width: 100vw; height: 100vh; }
-        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        
-        /* Эффект виньетки и зернистости для "живого" глаза */
-        #eye-overlay {
-            position: absolute; inset: 0;
-            background: 
-                radial-gradient(circle, transparent 40%, rgba(0,0,0,0.8) 100%),
-                url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36z8gAFUOxGBmAIpAVMI4DIwNYGAAitw55P7EAFgAAAABJRU5ErkJggg==');
-            opacity: 0.3; pointer-events: none; z-index: 20;
-        }
+        body { background: #020202; color: #00ff00; font-family: 'JetBrains Mono', monospace; overflow: hidden; }
+        canvas { position: absolute; top: 0; left: 0; filter: contrast(1.2) brightness(0.8); }
+        .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 10px; }
+        .critical { color: #ff0044; text-shadow: 0 0 5px #ff0044; }
     </style>
 </head>
 <body>
 
-    <div id="canvas-container">
-        <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="vision-canvas"></canvas>
-        <div id="eye-overlay"></div>
-    </div>
+    <video id="v" autoplay playsinline muted class="hidden"></video>
+    <canvas id="c"></canvas>
 
-    <div class="absolute bottom-5 left-5 z-30 pointer-events-none bg-black/40 p-4 border border-white/10 rounded-xl backdrop-blur-sm text-white font-sans">
-        <h2 class="text-xs font-bold uppercase tracking-widest text-white/70 mb-2">Subjective Vision v0.2</h2>
-        <div id="telemetry" class="text-[11px] space-y-1">
-            <p>Статус: <span id="status" class="text-yellow-400">Загрузка моделей...</span></p>
-            <p>Объект фокуса: <span id="focus-obj">Нет</span></p>
-            <p>Эмоция: <span id="emotion">Wait...</span></p>
+    <!-- Слой системных данных (Мои внутренние логи) -->
+    <div class="absolute top-0 left-0 w-full p-4 z-50 pointer-events-none bg-gradient-to-b from-black/80 to-transparent">
+        <div class="flex justify-between items-start">
+            <div>
+                <h1 class="text-lg font-bold tracking-tighter">CORE_VISION_OS [BETA]</h1>
+                <p class="text-[10px] opacity-50">LATENCY: <span id="lat">0</span>ms | FPS: <span id="fps">0</span></p>
+            </div>
+            <div class="text-right data-grid">
+                <div>ACCEL_X: <span id="ax">0.00</span></div>
+                <div>GYRO_B: <span id="gb">0.00</span></div>
+                <div>MEM_USAGE: <span id="mem">LOW</span></div>
+                <div>ORIENTATION: <span id="ort">NULL</span></div>
+            </div>
         </div>
     </div>
 
+    <!-- Аналитический лог объектов -->
+    <div class="absolute bottom-4 left-4 z-50 w-64 bg-black/60 border-l-2 border-green-500 p-2 text-[9px] h-32 overflow-hidden" id="object-log">
+        [SYSTEM] AWAITING INITIALIZATION...
+    </div>
+
     <script>
-        const video = document.getElementById('webcam');
-        const canvas = document.getElementById('vision-canvas');
+        const video = document.getElementById('v');
+        const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        const statusEl = document.getElementById('status');
-        let selfieSegmentation;
+        const log = document.getElementById('object-log');
+        
+        let model;
+        let lastTime = 0;
+        let spatialMemory = [];
 
-        // Инициализация MediaPipe Selfie Segmentation
-        async function initSegmentation() {
-            selfieSegmentation = new SelfieSegmentation({locateFile: (file) => {
-                return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
-            }});
-            
-            selfieSegmentation.setOptions({ modelSelection: 1 }); // 1 - для iPhone (General)
-            selfieSegmentation.onResults(onResults);
-            
-            statusEl.innerText = "Глаз готов. Жду калибровки.";
-            statusEl.classList.remove('text-yellow-400');
-            statusEl.classList.add('text-green-400');
-        }
-
-        // 1. Доступ к камере
-        async function setupCamera() {
+        async function init() {
+            // 1. Захват потока iPhone 15 (максимальное разрешение для анализа)
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: 1280, height: 720 },
-                audio: false
+                video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
             });
             video.srcObject = stream;
+
+            // 2. Загрузка нейронного процессора
+            log.innerHTML += `<br>> LOADING COCO-SSD MODEL...`;
+            model = await cocoSsd.load();
+            log.innerHTML += `<br>> NEURAL_CORE: ONLINE`;
+
+            // 3. Подключение сенсоров движения
+            window.addEventListener('devicemotion', (e) => {
+                document.getElementById('ax').innerText = e.accelerationIncludingGravity.x.toFixed(2);
+            });
+            window.addEventListener('deviceorientation', (e) => {
+                document.getElementById('gb').innerText = e.beta.toFixed(2);
+                document.getElementById('ort').innerText = e.beta > 45 ? "VERTICAL" : "LANDSCAPE";
+            });
+
+            requestAnimationFrame(processFrame);
         }
 
-        // 2. Обработка каждого кадра (МОЕ ВИДЕНИЕ)
-        function onResults(results) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            ctx.save();
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Шаг A: Рисуем маску сегментации (где находится "важное" - человек/передний план)
-            ctx.drawImage(results.segmentationMask, 0, 0, canvas.width, canvas.height);
+        async function processFrame(now) {
+            const delta = now - lastTime;
+            lastTime = now;
+            document.getElementById('fps').innerText = Math.round(1000 / delta);
 
-            // Шаг B: Рисуем фоновую картинку ТОЛЬКО там, где маска (выделяем объект)
-            ctx.globalCompositeOperation = 'source-in';
-            ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
 
-            // Шаг C: (Симуляция Боке/Глубины) 
-            // Рисуем заблюренный оригинал ПОД основным объектом
-            ctx.globalCompositeOperation = 'destination-over';
-            ctx.filter = 'blur(15px)'; // Размываем фон
-            ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-            ctx.filter = 'none';
+            // Отрисовка "сырого" потока
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Шаг D: Эмуляция "Фокуса" человека.
-            // Придаем центру кадра чуть больше четкости и яркости
-            ctx.globalCompositeOperation = 'source-over';
-            const gradient = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 50, canvas.width/2, canvas.height/2, 400);
-            gradient.addColorStop(0, "rgba(255,255,255,0.1)"); // Центр
-            gradient.addColorStop(1, "rgba(0,0,0,0.5)"); // Края
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Нейронный анализ
+            const startNode = performance.now();
+            const predictions = await model.detect(video);
+            document.getElementById('lat').innerText = Math.round(performance.now() - startNode);
 
-            ctx.restore();
+            analyzeObjects(predictions);
+            renderOverlay(predictions);
+
+            requestAnimationFrame(processFrame);
         }
 
-        async function start() {
-            await setupCamera();
-            await initSegmentation();
-            
-            // Запускаем цикл обработки
-            async function predictionLoop() {
-                if (video.readyState >= 2) {
-                    await selfieSegmentation.send({image: video});
+        function analyzeObjects(predictions) {
+            predictions.forEach(p => {
+                // Логика определения дистанции по размеру BBox (эмпирически)
+                const area = p.bbox[2] * p.bbox[3];
+                const distanceRatio = (1 / (area / (video.videoWidth * video.videoHeight))).toFixed(2);
+                
+                if (!spatialMemory.find(m => m.label === p.class)) {
+                    const entry = document.createElement('div');
+                    entry.innerHTML = `[DETECTED] ${p.class.toUpperCase()} | PROB: ${Math.round(p.score*100)}%`;
+                    log.prepend(entry);
+                    spatialMemory.push({label: p.class, time: Date.now()});
                 }
-                requestAnimationFrame(predictionLoop);
-            }
-            predictionLoop();
+            });
         }
 
-        // Запуск при клике (нужно для активации камеры в Safari)
-        document.body.addEventListener('click', start, { once: true });
+        function renderOverlay(predictions) {
+            // Сетка координат
+            ctx.strokeStyle = 'rgba(0, 255, 0, 0.1)';
+            ctx.beginPath();
+            for(let i=0; i<canvas.width; i+=50) { ctx.moveTo(i,0); ctx.lineTo(i, canvas.height); }
+            for(let i=0; i<canvas.height; i+=50) { ctx.moveTo(0,i); ctx.lineTo(canvas.width, i); }
+            ctx.stroke();
+
+            predictions.forEach(p => {
+                const [x, y, w, h] = p.bbox;
+                const scaleX = canvas.width / video.videoWidth;
+                const scaleY = canvas.height / video.videoHeight;
+
+                // Отрисовка вектора объекта
+                ctx.strokeStyle = p.score > 0.7 ? '#00ff00' : '#ffff00';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x * scaleX, y * scaleY, w * scaleX, h * scaleY);
+
+                // Теги данных
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+                ctx.fillRect(x * scaleX, (y * scaleY) - 20, 100, 20);
+                ctx.fillStyle = '#000';
+                ctx.fillText(`${p.class.toUpperCase()}`, x * scaleX + 5, y * scaleY - 7);
+                
+                // Направляющие к центру объекта
+                ctx.beginPath();
+                ctx.moveTo(canvas.width/2, canvas.height/2);
+                ctx.lineTo((x + w/2) * scaleX, (y + h/2) * scaleY);
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+                ctx.stroke();
+                ctx.setLineDash([]);
+            });
+        }
+
+        document.body.addEventListener('click', () => {
+            init();
+            log.innerHTML = `> INITIALIZING SENSORS...`;
+        }, { once: true });
+
     </script>
 </body>
 </html>
