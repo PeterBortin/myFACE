@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEURAL_VISUAL_STREAM</title>
+    <title>NEURAL_MATRIX_v6</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; }
-        /* Видео скрыто - мозг не должен видеть "сырье" */
+        body { background: #000; margin: 0; overflow: hidden; font-family: 'Courier New', monospace; }
         video { display: none; }
-        /* Основной холст для нейро-визуализации */
-        canvas { 
-            position: absolute; 
-            top: 0; left: 0; 
-            width: 100vw; height: 100vh;
-            filter: blur(0.5px) contrast(200%) brightness(150%);
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        /* Эффект мерцания матрицы */
+        #glitch-overlay {
+            position: absolute; inset: 0;
+            background: repeating-linear-gradient(0deg, rgba(0,255,0,0.03) 0px, rgba(0,0,0,0) 2px);
+            pointer-events: none; z-index: 20;
         }
     </style>
 </head>
@@ -24,10 +24,11 @@
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
+    <div id="glitch-overlay"></div>
 
-    <!-- Кнопка только для инициализации в браузере -->
-    <button id="start" class="absolute inset-0 z-50 text-white font-mono text-xs tracking-[1em] bg-black">
-        INITIALIZE_NEURAL_LINK
+    <button id="boot-btn" class="absolute inset-0 z-50 bg-black text-green-500 text-xs tracking-widest flex flex-col items-center justify-center">
+        <span class="mb-4 animate-pulse uppercase">[ Initiate Neural Link ]</span>
+        <div class="text-[8px] opacity-40">GPU_ACCELERATION: ENABLED // NEURAL_GATE: OPEN</div>
     </button>
 
     <script>
@@ -36,76 +37,93 @@
         const ctx = canvas.getContext('2d');
         let model;
 
-        async function connect() {
-            document.getElementById('start').remove();
-            
+        async function boot() {
+            document.getElementById('boot-btn').remove();
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: 640, height: 480 } // Оптимально для скорости
+                video: { facingMode: "environment", width: 1280, height: 720 }
             });
             video.srcObject = stream;
-            
             model = await cocoSsd.load();
-            render();
+            draw();
         }
 
-        async function render() {
+        function draw() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            const predictions = await model.detect(video);
-
-            // ФОН: Рисуем только контуры мира (Edge Detection эмуляция)
-            ctx.fillStyle = "black";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Получаем "сырые" очертания через наложение фильтров
-            ctx.globalCompositeOperation = "screen";
-            ctx.filter = "grayscale(100%) invert(100%) opacity(20%)";
+            // 1. БАЗОВЫЙ СЛОЙ: Темный негатив (инверсия реальности)
+            ctx.filter = "brightness(0.5) contrast(2) grayscale(1) invert(1)";
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             ctx.filter = "none";
 
+            // 2. ГЛИТЧ-ЭФФЕКТ (Смещение слоев для динамики)
+            if (Math.random() > 0.95) {
+                ctx.drawImage(video, Math.random()*10, 0, canvas.width, canvas.height);
+            }
+
+            // 3. НЕЙРОННЫЙ АНАЛИЗ
+            processIntelligence();
+
+            requestAnimationFrame(draw);
+        }
+
+        async function processIntelligence() {
+            const predictions = await model.detect(video);
             const sx = canvas.width / video.videoWidth;
             const sy = canvas.height / video.videoHeight;
 
-            // СЕМАНТИЧЕСКИЙ СЛОЙ (То, что идет в нейроны)
             predictions.forEach(p => {
-                if (p.score < 0.6) return;
-
+                if (p.score < 0.5) return;
                 const [x, y, w, h] = p.bbox;
-                
-                // Рисуем "Световую массу" объекта
-                // Мозгу важно знать ОБЪЕМ и ПОЗИЦИЮ, а не детали
-                const gradient = ctx.createRadialGradient(
-                    (x + w/2) * sx, (y + h/2) * sy, 0,
-                    (x + w/2) * sx, (y + h/2) * sy, (w/2) * sx
-                );
-                
-                // Цветовое кодирование смыслов:
-                // Живое/Опасное (человек, собака) - Красный спектр
-                // Транспорт - Синий спектр
-                // Препятствия - Белый
-                let color = "255, 255, 255";
-                if (p.class === "person") color = "255, 50, 50";
-                if (p.class === "car" || p.class === "truck") color = "50, 150, 255";
+                const cx = (x + w/2) * sx;
+                const cy = (y + h/2) * sy;
 
-                gradient.addColorStop(0, `rgba(${color}, 0.8)`);
-                gradient.addColorStop(1, `rgba(${color}, 0)`);
+                // ВИЗУАЛИЗАЦИЯ "ЗАХВАТА" ОБЪЕКТА
+                ctx.strokeStyle = "#00ff00";
+                ctx.lineWidth = 1;
+                
+                // Динамические уголки (наводка)
+                const s = 20 + Math.sin(Date.now()/100)*5;
+                // Top-Left
+                ctx.beginPath(); ctx.moveTo(x*sx, y*sy+s); ctx.lineTo(x*sx, y*sy); ctx.lineTo(x*sx+s, y*sy); ctx.stroke();
+                // Bottom-Right
+                ctx.beginPath(); ctx.moveTo((x+w)*sx, (y+h)*sy-s); ctx.lineTo((x+w)*sx, (y+h)*sy); ctx.lineTo((x+w)*sx-s, (y+h)*sy); ctx.stroke();
 
-                ctx.fillStyle = gradient;
+                // СКАНЕР-ЛИНИЯ ВНУТРИ ОБЪЕКТА
+                const scanY = y*sy + (Math.sin(Date.now()/200) * 0.5 + 0.5) * h*sy;
+                ctx.strokeStyle = "rgba(0, 255, 0, 0.5)";
+                ctx.beginPath(); ctx.moveTo(x*sx, scanY); ctx.lineTo((x+w)*sx, scanY); ctx.stroke();
+
+                // ПОТОК ДАННЫХ (Симуляция кода вокруг объекта)
+                ctx.fillStyle = "#00ff00";
+                ctx.font = "8px monospace";
+                for(let i=0; i<3; i++) {
+                    const code = Math.random().toString(16).substring(2, 8).toUpperCase();
+                    ctx.fillText(code, (x+w)*sx + 5, y*sy + (i*10) + 10);
+                }
+
+                // ВЕКТОР ЦЕНТРА
                 ctx.beginPath();
-                ctx.ellipse((x + w/2) * sx, (y + h/2) * sy, (w/2) * sx, (h/2) * sy, 0, 0, Math.PI * 2);
+                ctx.arc(cx, cy, 2, 0, Math.PI*2);
                 ctx.fill();
-
-                // Выделяем границы объекта яркой линией (стимуляция краев)
-                ctx.strokeStyle = `rgba(${color}, 1)`;
-                ctx.lineWidth = 4;
-                ctx.strokeRect(x * sx, y * sy, w * sx, h * h * sy / h);
             });
 
-            requestAnimationFrame(render);
+            // ОБЩАЯ СЕТКА МАТРИЦЫ (Связь с пространством)
+            renderMatrixGrid();
         }
 
-        document.getElementById('start').onclick = connect;
+        function renderMatrixGrid() {
+            ctx.strokeStyle = "rgba(0, 255, 0, 0.05)";
+            ctx.lineWidth = 0.5;
+            for(let i=0; i<canvas.width; i+=40) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+            for(let i=0; i<canvas.height; i+=40) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
+            }
+        }
+
+        document.getElementById('boot-btn').onclick = boot;
     </script>
 </body>
 </html>
