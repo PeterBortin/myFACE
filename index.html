@@ -2,56 +2,261 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Full Body Matrix Mesh</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Hi-Tech Face Scan Terminal</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
-    body { margin: 0; background: #000; overflow: hidden; font-family: monospace; }
+    body { 
+      margin: 0; 
+      background: #000; 
+      overflow: hidden; 
+      font-family: 'Courier New', Courier, monospace; /* Hi-Tech шрифт */
+      color: #00ff41; 
+      user-select: none;
+    }
     #container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
     
-    /* Видео скрыто, рисуем на канвасе */
+    /* Видео скрыто */
     .input_video { display: none; }
     
-    /* Канвас на весь экран с зеркальным отображением */
+    /* Канвас на весь экран */
     .output_canvas {
-      max-width: 100%;
-      max-height: 100%;
-      transform: scaleX(-1);
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Зеркальное отображение для фронталки */
     }
 
-    .status {
+    /* Верхний статус-бар */
+    .status-bar {
       position: absolute;
-      top: 20px;
-      left: 20px;
-      color: #00ff41;
-      text-shadow: 0 0 5px #00ff41;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
       z-index: 10;
+      font-size: 12px;
+      text-shadow: 0 0 5px #00ff41;
+    }
+
+    /* Кнопки переключения режимов внизу */
+    .mode-switch {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      z-index: 20;
+    }
+    .mode-btn {
+      background: rgba(0, 255, 65, 0.1);
+      border: 1px solid #00ff41;
+      color: #00ff41;
+      padding: 10px 20px;
+      font-family: monospace;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .mode-btn:active, .mode-btn.active {
+      background: #00ff41;
+      color: #000;
+      box-shadow: 0 0 15px #00ff41;
+    }
+
+    /* Эффект шума/помех на весь экран */
+    #glitch-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: repeating-linear-gradient(0deg, rgba(0,255,65,0.03) 0px, rgba(0,255,65,0.03) 1px, transparent 1px, transparent 2px);
+      pointer-events: none;
+      z-index: 5;
     }
   </style>
 </head>
 
 <body>
-  <div class="status">SYSTEM: FULL_BODY_DETECTION_ACTIVE</div>
+  <div class="status-bar">
+    <div id="sys-status">SYS: ONLINE</div>
+    <div id="temp-status">CORE_TEMP: 34°C</div>
+    <div id="time-status"></div>
+  </div>
+
   <div id="container">
     <video class="input_video"></video>
     <canvas class="output_canvas"></canvas>
+    <div id="glitch-overlay"></div>
+  </div>
+
+  <div class="mode-switch">
+    <button class="mode-btn active" onclick="setMode('SCAN')">Сканирование</button>
+    <button class="mode-btn" onclick="setMode('RECOGNIZE')">Распознавание</button>
   </div>
 
   <script type="module">
+    // --- Глобальные переменные и настройки ---
     const videoElement = document.getElementsByClassName('input_video')[0];
     const canvasElement = document.getElementsByClassName('output_canvas')[0];
     const canvasCtx = canvasElement.getContext('2d');
+    
+    // Цветовая палитра
+    const COLOR_GREEN = '#00ff41';
+    const COLOR_WHITE = '#ffffff';
+    const COLOR_CYAN = '#00ffff';
+    const COLOR_RED = '#ff3333';
+    const COLOR_UI_BG = 'rgba(0, 20, 10, 0.7)';
 
-    // Настройки стилей рисования (цвета из референсов)
-    const style_matrix_green = {color: '#00ff41', lineWidth: 0.5};
-    const style_cyborg_cyan = {color: '#00ffff', lineWidth: 1.0};
-    const style_white_dot = {color: '#ffffff', lineWidth: 0.5};
+    // Режимы работы
+    const MODES = { SCAN: 'SCAN', RECOGNIZE: 'RECOGNIZE' };
+    let currentMode = MODES.SCAN;
 
+    // Состояния конечного автомата (для анимаций)
+    const STATES = { IDLE: 'IDLE', ACTIVE: 'ACTIVE', PROCESSING: 'PROCESSING', COMPLETE: 'COMPLETE', UNKNOWN: 'UNKNOWN' };
+    let currentState = STATES.IDLE;
+    
+    let stateTimer = 0; // Для управления длительностью анимаций
+    let analysisData = {}; // Данные текущего анализа
+    let terminalLog = []; // Лог терминала
+
+    // --- Класс для терминала дешифрования ---
+    class DecryptionTerminal {
+      constructor(ctx, x, y, width, height) {
+        this.ctx = ctx;
+        this.x = x; this.y = y;
+        this.width = width; this.height = height;
+        this.lines = [];
+        this.maxLines = 10;
+        this.charIndex = 0;
+        this.currentLineText = "";
+      }
+
+      addLog(text) {
+        this.lines.push(`> ${text}`);
+        if (this.lines.length > this.maxLines) this.lines.shift();
+      }
+
+      clear() { this.lines = []; }
+
+      // Анимация печатающегося текста
+      typeLog(text) {
+        this.currentLineText = "";
+        this.charIndex = 0;
+        const typeInterval = setInterval(() => {
+          this.currentLineText += text[this.charIndex];
+          this.charIndex++;
+          if (this.charIndex >= text.length) {
+            clearInterval(typeInterval);
+            this.addLog(this.currentLineText);
+            this.currentLineText = "";
+          }
+        }, 30); // Скорость печати
+      }
+
+      draw() {
+        this.ctx.save();
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Сброс трансформации (чтобы текст не был зеркальным)
+        
+        // Фон терминала
+        this.ctx.fillStyle = COLOR_UI_BG;
+        this.ctx.fillRect(this.x, this.y, this.width, this.height);
+        this.ctx.strokeStyle = COLOR_GREEN;
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(this.x, this.y, this.width, this.height);
+
+        // Отрисовка логов
+        this.ctx.fillStyle = COLOR_GREEN;
+        this.ctx.font = '12px monospace';
+        this.ctx.textBaseline = 'top';
+        this.lines.forEach((line, index) => {
+          this.ctx.fillText(line, this.x + 5, this.y + 5 + (index * 15));
+        });
+
+        // Текущая печатающаяся строка
+        if (this.currentLineText) {
+          this.ctx.fillText(`> ${this.currentLineText}_`, this.x + 5, this.y + 5 + (this.lines.length * 15));
+        }
+
+        this.ctx.restore();
+      }
+    }
+
+    const terminal = new DecryptionTerminal(canvasCtx, 20, 100, 250, 200);
+
+    // --- Вспомогательные функции рисования ---
+    
+    // Рисует анимированный прицел
+    function drawReticle(ctx, face_box) {
+      const { x, y, width, height } = face_box;
+      const t = Date.now() * 0.005;
+      const p = 10; // отступ
+
+      ctx.save();
+      ctx.strokeStyle = COLOR_GREEN;
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = COLOR_GREEN;
+
+      // Углы
+      const len = 30 + Math.sin(t) * 5;
+      // ВЛ
+      ctx.beginPath(); ctx.moveTo(x-p, y-p+len); ctx.lineTo(x-p, y-p); ctx.lineTo(x-p+len, y-p); ctx.stroke();
+      // ВП
+      ctx.beginPath(); ctx.moveTo(x+width+p-len, y-p); ctx.lineTo(x+width+p, y-p); ctx.lineTo(x+width+p, y-p+len); ctx.stroke();
+      // НЛ
+      ctx.beginPath(); ctx.moveTo(x-p, y+height+p-len); ctx.lineTo(x-p, y+height+p); ctx.lineTo(x-p+len, y+height+p); ctx.stroke();
+      // НП
+      ctx.beginPath(); ctx.moveTo(x+width+p-len, y+height+p); ctx.lineTo(x+width+p, y+height+p); ctx.lineTo(x+width+p, y+height+p-len); ctx.stroke();
+
+      // Круг сканирования
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(x + width/2, y + height/2, width * 0.7, t, t + Math.PI/2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Рисует блок статуса рядом с лицом
+    function drawFaceStatus(ctx, face_box, state, data) {
+      const { x, y, width } = face_box;
+      const ui_x = x + width + 30;
+      const ui_y = y - 20;
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // Сброс зеркальности
+
+      // Заголовок
+      ctx.fillStyle = (state === STATES.COMPLETE) ? COLOR_CYAN : COLOR_GREEN;
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(`STATUS: ${state}`, ui_x, ui_y);
+
+      // Данные
+      ctx.fillStyle = COLOR_GREEN;
+      ctx.font = '12px monospace';
+      if (state === STATES. PROCESSING) {
+        const dots = ".".repeat(Math.floor((Date.now() % 1000) / 333));
+        ctx.fillText(`АНАЛИЗ ДАННЫХ${dots}`, ui_x, ui_y + 20);
+      } else if (state === STATES.COMPLETE || state === STATES.SCAN) {
+        ctx.fillText(`ID: ${data.id || "PENDING"}`, ui_x, ui_y + 20);
+          if(data.name) ctx.fillText(`NAME: ${data.name}`, ui_x, ui_y + 35);
+        ctx.fillText(`BIOMETRICS: ${data.bio || "CALCULATING"}`, ui_x, ui_y + 50);
+      } else if (state === STATES.UNKNOWN) {
+          ctx.fillStyle = COLOR_RED;
+          ctx.fillText(`ПРЕДУПРЕЖДЕНИЕ: ОШИБКА ID`, ui_x, ui_y + 20);
+      }
+
+      ctx.restore();
+    }
+
+    // --- Основная функция обработки ---
     function onResults(results) {
-      // Подстройка канваса
+      // Устанавливаем размер канваса под видео ( object-fit cover на CSS)
       if (canvasElement.width !== videoElement.videoWidth) {
         canvasElement.width = videoElement.videoWidth;
         canvasElement.height = videoElement.videoHeight;
@@ -60,77 +265,155 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // Рисуем видео-фон (затемненный)
+      // Рисуем само видео (затемненное)
       canvasCtx.globalAlpha = 0.3;
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
-      // --- ЧАСТЬ 1: ЛИЦО (Matrix Mesh) ---
-      if (results.faceLandmarks) {
-        // Зеленая сетка
-        drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION, 
-          {color: '#00ff4133', lineWidth: 0.5}); // Сделаем чуть прозрачнее
+      // Обновляем часы в статус-баре
+      const now = new Date();
+      document.getElementById('time-status').innerText = now.toLocaleTimeString();
 
-        // Голубые контуры (глаза, губы)
-        drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_RIGHT_EYE, style_cyborg_cyan);
-        drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_LEFT_EYE, style_cyborg_cyan);
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
 
-        // Белые точки "Matrix DOT"
-        for (let i = 0; i < results.faceLandmarks.length; i += 4) { // Реже точки
-          const x = results.faceLandmarks[i].x * canvasElement.width;
-          const y = results.faceLandmarks[i].y * canvasElement.height;
-          canvasCtx.beginPath();
-          canvasCtx.arc(x, y, 1.2, 0, 2 * Math.PI);
-          canvasCtx.fillStyle = "#ffffff";
-          canvasCtx.fill();
+        // Расчет Bounding Box лица для UI
+        let minX = 1, minY = 1, maxX = 0, maxY = 0;
+        for (const landmark of landmarks) {
+          minX = Math.min(minX, landmark.x); minY = Math.min(minY, landmark.y);
+          maxX = Math.max(maxX, landmark.x); maxY = Math.max(maxY, landmark.y);
+        }
+        const face_box = {
+          x: minX * canvasElement.width, y: minY * canvasElement.height,
+          width: (maxX - minX) * canvasElement.width, height: (maxY - minY) * canvasElement.height
+        };
+
+        // --- ЛОГИКА КОНЕЧНОГО АВТОМАТА ---
+        switch (currentState) {
+          case STATES.IDLE:
+            currentState = STATES.ACTIVE;
+            terminal.clear();
+            terminal.typeLog(`ОБНАРУЖЕН БИО-СИГНАЛ...`);
+            analysisData = {};
+            break;
+
+          case STATES.ACTIVE:
+            drawReticle(canvasCtx, face_box);
+            if (Date.now() - stateTimer > 1500) { // Ждем 1.5 сек прицеливания
+              currentState = STATES.PROCESSING;
+              stateTimer = Date.now();
+              terminal.typeLog(`НАЧАЛО ${currentMode === MODES.SCAN ? 'СКАНИРОВАНИЯ' : 'РАСПОЗНАВАНИЯ'}...`);
+            }
+            break;
+
+          case STATES.PROCESSING:
+            drawReticle(canvasCtx, face_box);
+            // Анимация сетки (пульсация)
+            const pulse = 0.5 + Math.sin(Date.now() * 0.01) * 0.2;
+            
+            // Основная сетка
+            drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
+              {color: COLOR_GREEN, lineWidth: pulse});
+
+            // !!! КОНТУРЫ ГЛАЗ И ГУБ ЦВЕТОМ СЕТКИ !!!
+            drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: COLOR_GREEN, lineWidth: 1});
+            drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: COLOR_GREEN, lineWidth: 1});
+            drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: COLOR_GREEN, lineWidth: 1});
+
+            // Эмуляция задержки анализа
+            if (Date.now() - stateTimer > 3000) { // АНАЛИЗ идет 3 секунды
+              stateTimer = Date.now();
+              
+              if (currentMode === MODES.SCAN) {
+                // РЕЖИМ СКАНИРОВАНИЯ -> Успех
+                currentState = STATES.COMPLETE;
+                analysisData = { id: `BIO_${Math.floor(Math.random()*10000)}`, bio: "98.7% VALID" };
+                terminal.typeLog(`ДАННЫЕ ЗАПИСАНЫ. ID СОЗДАН.`);
+              } else {
+                // РЕЖИМ РАСПОЗНАВАНИЯ -> Эмуляция (50/50 успех или неизвестно)
+                if (Math.random() > 0.5) {
+                  currentState = STATES.COMPLETE;
+                  analysisData = { id: "USR_NEO_77", name: "АНДЕРСОН, Т.", bio: "СОВПАДЕНИЕ" };
+                  terminal.typeLog(`ДОСТУП РАЗРЕШЕН. ПРИВЕТСТВУЮ, Т.`);
+                } else {
+                  currentState = STATES.UNKNOWN;
+                  terminal.typeLog(`ОШИБКА: ОБЪЕКТ НЕ НАЙДЕН В БАЗЕ.`);
+                }
+              }
+            }
+            break;
+
+          case STATES.COMPLETE:
+            // Финальная сетка (Cyan)
+            drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
+              {color: COLOR_CYAN, lineWidth: 1});
+            drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: COLOR_CYAN, lineWidth: 1.5});
+            drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: COLOR_CYAN, lineWidth: 1.5});
+            break;
+            
+          case STATES.UNKNOWN:
+             // Сетка ошибки (Red)
+            drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
+              {color: COLOR_RED, lineWidth: 1});
+            drawReticle(canvasCtx, face_box); // Оставляем прицел
+            break;
+        }
+
+        // Рисуем UI элементы
+        drawFaceStatus(canvasCtx, face_box, currentState, analysisData);
+
+      } else {
+        // Лицо потеряно
+        if (currentState !== STATES.IDLE) {
+          currentState = STATES.IDLE;
+          stateTimer = Date.now();
+          terminal.clear();
+          terminal.addLog(`СИГНАЛ ПОТЕРЯН.`);
         }
       }
 
-      // --- ЧАСТЬ 2: ТЕЛО И РУКИ (Cyborg Pose Mesh) ---
-      if (results.poseLandmarks) {
-        // Рисуем скелет голубым цветом
-        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, style_cyborg_cyan);
-        
-        // Рисуем ключевые суставы точками
-        drawLandmarks(canvasCtx, results.poseLandmarks, 
-          {color: '#00ffff', fillColor: '#ffffff', lineWidth: 0.5, radius: 2});
-      }
-
-      // Дополнительная детализация рук, если они в кадре
-      if (results.leftHandLandmarks) {
-        drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS, style_cyborg_cyan);
-      }
-      if (results.rightHandLandmarks) {
-        drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS, style_cyborg_cyan);
-      }
-
+      // Отрисовка терминала всегда поверх всего
+      terminal.draw();
       canvasCtx.restore();
     }
 
-    // Инициализация объединенного движка Holistic
-    const holistic = new Holistic({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
+    // --- Кнопки интерфейса ---
+    window.setMode = (mode) => {
+      if (currentMode === mode) return;
+      currentMode = mode;
+      
+      // Обновление CSS кнопок
+      const btns = document.querySelectorAll('.mode-btn');
+      btns.forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // Сброс состояния для перезапуска анимации
+      currentState = STATES.IDLE;
+      stateTimer = Date.now();
+      terminal.clear();
+      terminal.addLog(`РЕЖИМ ИЗМЕНЕН: ${mode}`);
+    }
+
+    // --- Инициализация MediaPipe ---
+    const faceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
     }});
 
-    holistic.setOptions({
-      modelComplexity: 1, // 0 - быстрее, 2 - точнее, но медленнее
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+    faceMesh.setOptions({
+      maxNumFaces: 1, // Оптимизация для одного лица
+      refineLandmarks: true, // Улучшенные глаза/губы
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
     });
 
-    holistic.onResults(onResults);
+    faceMesh.onResults(onResults);
 
-    // Запуск камеры
     const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await holistic.send({image: videoElement});
-      },
-      width: 1280,
-      height: 720
+      onFrame: async () => { await faceMesh.send({image: videoElement}); },
+      width: 1280, height: 720
     });
-    
     camera.start();
+
   </script>
 </body>
 </html>
