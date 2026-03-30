@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Face Mesh Matrix Effect</title>
-  <!-- Подключаем библиотеки MediaPipe -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+  <title>Full Body Matrix Mesh</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
@@ -13,14 +12,14 @@
     body { margin: 0; background: #000; overflow: hidden; font-family: monospace; }
     #container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
     
-    /* Видео скрыто, мы рисуем его на канвасе */
+    /* Видео скрыто, рисуем на канвасе */
     .input_video { display: none; }
     
-    /* Канвас на весь экран */
+    /* Канвас на весь экран с зеркальным отображением */
     .output_canvas {
       max-width: 100%;
       max-height: 100%;
-      transform: scaleX(-1); /* Зеркальное отображение для фронталки */
+      transform: scaleX(-1);
     }
 
     .status {
@@ -35,7 +34,7 @@
 </head>
 
 <body>
-  <div class="status">SYSTEM: FACE_DETECTION_ACTIVE</div>
+  <div class="status">SYSTEM: FULL_BODY_DETECTION_ACTIVE</div>
   <div id="container">
     <video class="input_video"></video>
     <canvas class="output_canvas"></canvas>
@@ -46,8 +45,13 @@
     const canvasElement = document.getElementsByClassName('output_canvas')[0];
     const canvasCtx = canvasElement.getContext('2d');
 
+    // Настройки стилей рисования (цвета из референсов)
+    const style_matrix_green = {color: '#00ff41', lineWidth: 0.5};
+    const style_cyborg_cyan = {color: '#00ffff', lineWidth: 1.0};
+    const style_white_dot = {color: '#ffffff', lineWidth: 0.5};
+
     function onResults(results) {
-      // Устанавливаем размер канваса под видео
+      // Подстройка канваса
       if (canvasElement.width !== videoElement.videoWidth) {
         canvasElement.width = videoElement.videoWidth;
         canvasElement.height = videoElement.videoHeight;
@@ -56,54 +60,71 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // Рисуем само видео (слегка затемненное для эффекта)
-      canvasCtx.globalAlpha = 0.4;
+      // Рисуем видео-фон (затемненный)
+      canvasCtx.globalAlpha = 0.3;
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
-      if (results.multiFaceLandmarks) {
-        for (const landmarks of results.multiFaceLandmarks) {
-          
-          // 1. Рисуем соединительные линии (Сетка)
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
-            {color: '#00ff41', lineWidth: 0.5});
+      // --- ЧАСТЬ 1: ЛИЦО (Matrix Mesh) ---
+      if (results.faceLandmarks) {
+        // Зеленая сетка
+        drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION, 
+          {color: '#00ff4133', lineWidth: 0.5}); // Сделаем чуть прозрачнее
 
-          // 2. Рисуем контуры глаз и губ ярче
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#00ffff'});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#00ffff'});
+        // Голубые контуры (глаза, губы)
+        drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_RIGHT_EYE, style_cyborg_cyan);
+        drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_LEFT_EYE, style_cyborg_cyan);
 
-          // 3. Рисуем точки (как на референсах с точками)
-          // Ограничим количество точек для стиля "Matrix DOT"
-          for (let i = 0; i < landmarks.length; i += 3) { 
-            const x = landmarks[i].x * canvasElement.width;
-            const y = landmarks[i].y * canvasElement.height;
-            
-            canvasCtx.beginPath();
-            canvasCtx.arc(x, y, 1.5, 0, 2 * Math.PI);
-            canvasCtx.fillStyle = "#ffffff";
-            canvasCtx.fill();
-          }
+        // Белые точки "Matrix DOT"
+        for (let i = 0; i < results.faceLandmarks.length; i += 4) { // Реже точки
+          const x = results.faceLandmarks[i].x * canvasElement.width;
+          const y = results.faceLandmarks[i].y * canvasElement.height;
+          canvasCtx.beginPath();
+          canvasCtx.arc(x, y, 1.2, 0, 2 * Math.PI);
+          canvasCtx.fillStyle = "#ffffff";
+          canvasCtx.fill();
         }
       }
+
+      // --- ЧАСТЬ 2: ТЕЛО И РУКИ (Cyborg Pose Mesh) ---
+      if (results.poseLandmarks) {
+        // Рисуем скелет голубым цветом
+        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, style_cyborg_cyan);
+        
+        // Рисуем ключевые суставы точками
+        drawLandmarks(canvasCtx, results.poseLandmarks, 
+          {color: '#00ffff', fillColor: '#ffffff', lineWidth: 0.5, radius: 2});
+      }
+
+      // Дополнительная детализация рук, если они в кадре
+      if (results.leftHandLandmarks) {
+        drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS, style_cyborg_cyan);
+      }
+      if (results.rightHandLandmarks) {
+        drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS, style_cyborg_cyan);
+      }
+
       canvasCtx.restore();
     }
 
-    const faceMesh = new FaceMesh({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    // Инициализация объединенного движка Holistic
+    const holistic = new Holistic({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
     }});
 
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
+    holistic.setOptions({
+      modelComplexity: 1, // 0 - быстрее, 2 - точнее, но медленнее
+      smoothLandmarks: true,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
 
-    faceMesh.onResults(onResults);
+    holistic.onResults(onResults);
 
+    // Запуск камеры
     const camera = new Camera(videoElement, {
       onFrame: async () => {
-        await faceMesh.send({image: videoElement});
+        await holistic.send({image: videoElement});
       },
       width: 1280,
       height: 720
