@@ -2,203 +2,172 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>NEURAL INTERFACE v2.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cyber Mesh Interface</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
-    :root {
-      --glitch-color: #00ff41;
-      --accent-color: #00ffff;
-      --error-color: #ff3333;
-    }
-    body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', monospace; color: var(--glitch-color); }
-    
-    /* Слои */
-    #ui-wrapper { position: relative; width: 100vw; height: 100vh; }
-    video { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0.4; }
-    canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 2; }
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+    .input_video { display: none; }
+    .output_canvas { max-width: 100%; max-height: 100%; transform: scaleX(-1); }
 
-    /* HUD Элементы */
-    .hud-overlay {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      pointer-events: none; z-index: 10;
-      border: 20px solid transparent;
-      border-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 0H0V10' stroke='%2300ff41' stroke-width='2'/%3E%3Cpath d='M90 0H100V10' stroke='%2300ff41' stroke-width='2'/%3E%3Cpath d='M10 100H0V90' stroke='%2300ff41' stroke-width='2'/%3E%3Cpath d='M90 100H100V90' stroke='%2300ff41' stroke-width='2'/%3E%3C/svg%3E") 20;
+    .interface-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 30px;
+      box-sizing: border-box;
+      color: #ffffff;
+      text-shadow: 0 0 8px #fff;
     }
 
-    .top-info {
-      position: absolute; top: 30px; left: 30px; right: 30px;
-      display: flex; justify-content: space-between; font-size: 10px; letter-spacing: 2px;
+    #subtitle-box {
+      align-self: center;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px 20px;
+      border: 1px solid #ffffff;
+      font-size: 24px;
+      min-height: 40px;
+      max-width: 80%;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      opacity: 0;
+      transition: opacity 0.3s;
     }
 
-    .controls {
-      position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-      display: flex; gap: 20px; z-index: 100;
-    }
-    .btn {
-      background: rgba(0, 255, 65, 0.1); border: 1px solid var(--glitch-color);
-      color: var(--glitch-color); padding: 12px 24px; font-size: 11px;
-      text-transform: uppercase; cursor: pointer; transition: 0.3s;
-      backdrop-filter: blur(5px);
-    }
-    .btn.active { background: var(--glitch-color); color: #000; box-shadow: 0 0 20px var(--glitch-color); }
-
-    /* SVG Фильтр для свечения */
-    .bloom { filter: url(#glow); }
+    .active-text { opacity: 1 !important; }
+    .status-bar { font-size: 14px; color: #fff; }
   </style>
 </head>
+
 <body>
-
-  <!-- SVG Фильтры для "шейдерного" эффекта -->
-  <svg style="position: absolute; width: 0; height: 0;">
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </svg>
-
-  <div id="ui-wrapper">
+  <div id="container">
     <video class="input_video"></video>
     <canvas class="output_canvas"></canvas>
     
-    <div class="hud-overlay"></div>
-    <div class="top-info">
-      <div id="status-text">NEURAL_LINK: ACTIVE</div>
-      <div id="target-id">TARGET: UNKNOWN</div>
-      <div id="clock">00:00:00</div>
-    </div>
-
-    <div class="controls">
-      <button class="btn active" onclick="changeMode('SCAN', this)">Scan</button>
-      <button class="btn" onclick="changeMode('RECOGNIZE', this)">Identify</button>
+    <div class="interface-overlay">
+      <div class="status-bar">
+        <div>> CORE_INIT: SUCCESS</div>
+        <div>> AUDIO_VOX: LISTENING...</div>
+        <div id="lip-status">> MOUTH_CLOSED</div>
+      </div>
+      <div id="subtitle-box">...</div>
+      <div class="status-bar" style="text-align: right;">SECURE_CONNECTION // 0xAF44</div>
     </div>
   </div>
 
   <script type="module">
-    const video = document.querySelector('.input_video');
-    const canvas = document.querySelector('.output_canvas');
-    const ctx = canvas.getContext('2d');
-    
-    let mode = 'SCAN';
-    let particles = [];
-    let scannerPos = 0;
-    let scannerDir = 1;
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const subtitleBox = document.getElementById('subtitle-box');
+    const lipStatus = document.getElementById('lip-status');
 
-    class Particle {
-      constructor(x, y, color) {
-        this.x = x; this.y = y;
-        this.color = color;
-        this.size = Math.random() * 2 + 1;
-        this.speedX = (Math.random() - 0.5) * 4;
-        this.speedY = (Math.random() - 0.5) * 4;
-        this.life = 1.0;
-      }
-      update() {
-        this.x += this.speedX; this.y += this.speedY;
-        this.life -= 0.02;
-      }
-      draw(ctx) {
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = this.life;
-        ctx.fillRect(this.x, this.y, this.size, this.size);
-      }
+    // --- Настройка распознавания речи ---
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let finalTranscript = "";
+    
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'ru-RU'; // Или 'en-US'
+
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript = event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        subtitleBox.innerText = interimTranscript || finalTranscript;
+      };
+
+      recognition.start();
     }
 
     function onResults(results) {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
 
-      // Обновляем часы
-      document.getElementById('clock').innerText = new Date().toLocaleTimeString();
+      canvasCtx.save();
+      // Очищаем в черный
+      canvasCtx.fillStyle = '#000';
+      canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const face = results.multiFaceLandmarks[0];
+      // Рисуем видео с очень низкой прозрачностью (4%), чтобы был виден только силуэт
+      canvasCtx.globalAlpha = 0.04;
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.globalAlpha = 1.0;
 
-        // 1. Рисуем сетку (без отзеркаливания текста, вручную инвертируем X координаты)
-        ctx.save();
-        // ВАЖНО: Мы НЕ используем scaleX(-1) на канвасе, чтобы текст был читаем.
-        // Вместо этого мы инвертируем координаты MediaPipe: x = canvas.width - (x * canvas.width)
-        
-        const mapX = (val) => canvas.width - (val * canvas.width);
-        const mapY = (val) => val * canvas.height;
+      if (results.multiFaceLandmarks) {
+        for (const landmarks of results.multiFaceLandmarks) {
+          
+          // Рисуем сетку БЕЛЫМ цветом
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, 
+            {color: 'rgba(255, 255, 255, 0.3)', lineWidth: 0.5});
 
-        // Линии сетки
-        ctx.strokeStyle = (mode === 'SCAN') ? '#00ff41' : '#00ffff';
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        FACEMESH_TESSELATION.forEach(([a, b]) => {
-          const p1 = face[a]; const p2 = face[b];
-          ctx.moveTo(mapX(p1.x), mapY(p1.y));
-          ctx.lineTo(mapX(p2.x), mapY(p2.y));
-        });
-        ctx.stroke();
+          // Контуры глаз и губ
+          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#FFFFFF', lineWidth: 1});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#FFFFFF', lineWidth: 2});
 
-        // 2. Анимированный сканер (горизонтальная линия)
-        scannerPos += 0.01 * scannerDir;
-        if (scannerPos > 1 || scannerPos < 0) scannerDir *= -1;
-        
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.shadowBlur = 15; ctx.shadowColor = '#00ff41';
-        ctx.beginPath();
-        const scanY = mapY(scannerPos);
-        ctx.moveTo(0, scanY); ctx.lineTo(canvas.width, scanY);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
+          // --- АНАЛИЗ ГУБ ---
+          // Точка 13 (верхняя губа) и 14 (нижняя губа)
+          const topLip = landmarks[13];
+          const bottomLip = landmarks[14];
+          const lipDistance = Math.abs(topLip.y - bottomLip.y);
 
-        // 3. Текстовая информация (теперь НЕ отзеркалена)
-        const pIndex = 10; // Точка на лбу
-        const tx = mapX(face[pIndex].x) + 50;
-        const ty = mapY(face[pIndex].y);
-
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText(`[ ANALYSIS ${Math.floor(scannerPos * 100)}% ]`, tx, ty);
-        ctx.fillStyle = '#00ff41';
-        ctx.fillText(`LAT: ${face[pIndex].x.toFixed(4)}`, tx, ty + 20);
-        ctx.fillText(`LNG: ${face[pIndex].y.toFixed(4)}`, tx, ty + 35);
-        
-        if (mode === 'RECOGNIZE' && scannerPos > 0.8) {
-            ctx.fillStyle = '#00ffff';
-            ctx.fillText("MATCH FOUND: SUBJECT_01", tx, ty + 60);
+          // Если расстояние между губами больше порога, считаем, что человек говорит
+          if (lipDistance > 0.015) { 
+            subtitleBox.classList.add('active-text');
+            lipStatus.innerText = "> MOUTH_OPEN / ANALYZING...";
+            lipStatus.style.color = "#ff0000";
+          } else {
+            // Небольшая задержка перед исчезновением текста
+            setTimeout(() => {
+                if (lipDistance <= 0.015) {
+                    subtitleBox.classList.remove('active-text');
+                    lipStatus.innerText = "> MOUTH_CLOSED";
+                    lipStatus.style.color = "#fff";
+                }
+            }, 1000);
+          }
         }
-
-        // 4. Частицы
-        if (Math.random() > 0.5) {
-          const pt = face[Math.floor(Math.random() * face.length)];
-          particles.push(new Particle(mapX(pt.x), mapY(pt.y), ctx.strokeStyle));
-        }
-
-        ctx.restore();
       }
-
-      // Обновление и отрисовка частиц
-      particles = particles.filter(p => p.life > 0);
-      particles.forEach(p => { p.update(); p.draw(ctx); });
+      canvasCtx.restore();
     }
 
-    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+    const faceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+
     faceMesh.onResults(onResults);
 
-    const camera = new Camera(video, {
-      onFrame: async () => { await faceMesh.send({image: video}); },
-      width: 640, height: 480
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({image: videoElement});
+      },
+      width: 1280,
+      height: 720
     });
+    
     camera.start();
-
-    window.changeMode = (newMode, btn) => {
-      mode = newMode;
-      document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('status-text').innerText = `NEURAL_LINK: ${newMode}`;
-    };
   </script>
 </body>
 </html>
