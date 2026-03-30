@@ -3,147 +3,108 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEURAL_CORE_X</title>
+    <title>BERSERK_VISION_V7</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: 'monospace'; }
+        body { background: #000; margin: 0; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; }
         video { display: none; }
-        canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
-        
-        /* Эффект шума нейросети */
-        #noise {
-            position: absolute; inset: 0; z-index: 5; opacity: 0.05;
-            background: url('https://media.giphy.com/media/oEI9uWUPr9WUM/giphy.gif');
-            pointer-events: none;
-        }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; }
+        #ui-layer { position: absolute; inset: 0; z-index: 100; pointer-events: none; border: 20px solid rgba(255,0,0,0.1); }
+        .cr-text { position: absolute; color: #ff0000; font-size: 8px; text-transform: uppercase; }
     </style>
 </head>
 <body>
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
-    <div id="noise"></div>
+    <div id="ui-layer"></div>
 
-    <!-- Интерфейс инициализации -->
-    <div id="overlay" class="absolute inset-0 z-50 flex items-center justify-center bg-black cursor-pointer">
-        <div class="text-center">
-            <div class="text-green-500 text-[10px] tracking-[0.4em] mb-4 uppercase animate-pulse">
-                Establishing Neural Link...
-            </div>
-            <div class="h-[1px] w-48 bg-green-900 overflow-hidden">
-                <div class="h-full bg-green-400 w-1/2 animate-[slide_2s_infinite]"></div>
-            </div>
-        </div>
-    </div>
+    <button id="ignite" class="absolute inset-0 z-[200] bg-red-900/20 backdrop-blur-md text-red-500 font-black text-4xl italic tracking-tighter flex items-center justify-center">
+        FEED_THE_NEURONS
+    </button>
 
     <script>
         const video = document.getElementById('v');
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        const overlay = document.getElementById('overlay');
-        
         let model;
-        let particles = [];
-        let history = {}; // Память траекторий
 
-        async function activate() {
-            overlay.remove();
+        async function init() {
+            document.getElementById('ignite').remove();
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: 1280, height: 720 }
+                video: { facingMode: "environment", width: 1280 }
             });
             video.srcObject = stream;
             model = await cocoSsd.load();
-            run();
+            process();
         }
 
-        function run() {
+        function process() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // GPU СЛОЙ 1: Фантомная реальность
-            ctx.globalAlpha = 0.8;
-            ctx.filter = "contrast(1.5) brightness(0.6) grayscale(1) sepia(1) hue-rotate(80deg)";
+            // GPU EFFECT: DIFFERENCE FEEDBACK
+            ctx.filter = "contrast(300%) brightness(150%) grayscale(100%)";
+            ctx.globalCompositeOperation = "difference";
+            ctx.drawImage(video, 2, 2, canvas.width, canvas.height);
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            ctx.filter = "none";
-            ctx.globalAlpha = 1.0;
-
-            // ОБРАБОТКА ИНТЕЛЛЕКТА
-            analyze();
-
-            requestAnimationFrame(run);
+            
+            renderNeuralMess();
+            requestAnimationFrame(process);
         }
 
-        async function analyze() {
+        async function renderNeuralMess() {
             const preds = await model.detect(video);
             const sx = canvas.width / video.videoWidth;
             const sy = canvas.height / video.videoHeight;
 
+            // ФОНОВЫЙ ШУМ (ASCII-STREAMS)
+            ctx.globalCompositeOperation = "source-over";
+            ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+            ctx.font = "10px monospace";
+            for(let i=0; i<10; i++) {
+                ctx.fillText(Math.random().toString(2).substr(2, 20), Math.random()*canvas.width, Math.random()*canvas.height);
+            }
+
             preds.forEach(p => {
-                if (p.score < 0.5) return;
                 const [x, y, w, h] = p.bbox.map(v => v * (sx > sy ? sx : sy));
-                const cx = x + w/2;
-                const cy = y + h/2;
-
-                // 1. ПРЕДИКТИВНЫЙ ТРЕКИНГ (Хвосты движения)
-                if (!history[p.class]) history[p.class] = [];
-                history[p.class].push({x: cx, y: cy});
-                if (history[p.class].length > 20) history[p.class].shift();
-
-                ctx.strokeStyle = "rgba(0, 255, 100, 0.4)";
-                ctx.setLineDash([2, 4]);
+                
+                // КРОВАВЫЙ ТАРГЕТИНГ
+                ctx.strokeStyle = "#ff0000";
+                ctx.lineWidth = 0.5;
+                
+                // Хаотичные линии наведения
                 ctx.beginPath();
-                history[p.class].forEach((pos, i) => {
-                    ctx.lineTo(pos.x, pos.y);
-                });
-                ctx.stroke();
-                ctx.setLineDash([]);
-
-                // 2. ЦИФРОВОЙ СКАНЕР (Рамка-глайдер)
-                ctx.strokeStyle = "#0f0";
-                ctx.lineWidth = 1;
-                ctx.strokeRect(x, y, w, h);
-
-                // Анимированные заслонки
-                const anim = Math.sin(Date.now()/200) * 10;
-                ctx.beginPath();
-                ctx.moveTo(x-5, y+anim); ctx.lineTo(x-5, y+anim+20);
-                ctx.moveTo(x+w+5, y+h-anim); ctx.lineTo(x+w+5, y+h-anim-20);
+                ctx.moveTo(0, y); ctx.lineTo(canvas.width, y+h);
+                ctx.moveTo(x, 0); ctx.lineTo(x+w, canvas.height);
                 ctx.stroke();
 
-                // 3. МЕТАДАННЫЕ (Бинарный поток)
-                ctx.fillStyle = "#0f0";
-                ctx.font = "7px monospace";
-                ctx.fillText(`TARGET_LOCK: ${p.class.toUpperCase()}`, x, y - 12);
-                ctx.fillText(`VELOCITY_VECT: ${Math.random().toFixed(4)}`, x, y - 4);
-
-                // 4. ЭФФЕКТ ЧАСТИЦ (Энергия объекта)
-                if (Math.random() > 0.7) {
-                    particles.push({x: cx, y: cy, vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5, life: 1});
-                }
+                // ОБЪЕКТНЫЙ ГЛИТЧ
+                ctx.fillStyle = "rgba(255, 0, 0, 0.1)";
+                ctx.fillRect(x, y, w, h);
+                
+                // ТЕКСТОВАЯ ПЕРЕГРУЗКА
+                ctx.fillStyle = "#ff0000";
+                ctx.font = "bold 14px monospace";
+                ctx.fillText(`! ALERT: ${p.class.toUpperCase()} !`, x, y - 10);
+                ctx.font = "8px monospace";
+                ctx.fillText(`HEX_ADDR: 0x${Math.floor(Math.random()*16777215).toString(16)}`, x, y + h + 10);
+                ctx.fillText(`PROB_VAL: ${p.score.toFixed(10)}`, x, y + h + 20);
             });
 
-            updateParticles();
+            // ВЕКТОРНЫЙ ХАОС
+            for(let i=0; i<5; i++) {
+                ctx.beginPath();
+                ctx.strokeStyle = `rgba(255, 0, 0, ${Math.random() * 0.5})`;
+                ctx.moveTo(Math.random()*canvas.width, Math.random()*canvas.height);
+                ctx.lineTo(Math.random()*canvas.width, Math.random()*canvas.height);
+                ctx.stroke();
+            }
         }
 
-        function updateParticles() {
-            particles.forEach((p, i) => {
-                p.x += p.vx; p.y += p.vy; p.life -= 0.02;
-                ctx.fillStyle = `rgba(0, 255, 0, ${p.life})`;
-                ctx.fillRect(p.x, p.y, 2, 2);
-                if (p.life <= 0) particles.splice(i, 1);
-            });
-        }
-
-        overlay.onclick = activate;
-
-        // CSS Animation для загрузчика
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(200%); } }
-        `;
-        document.head.append(style);
+        document.getElementById('ignite').onclick = init;
     </script>
 </body>
 </html>
