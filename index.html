@@ -3,58 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>YAUTJA_SYSTEM_OVERRIDE_V2</title>
+    <title>YAUTJA_PRIME_HUD</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
         body { background: #000; margin: 0; overflow: hidden; font-family: monospace; user-select: none; }
         video { display: none; }
-        canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; transition: filter 0.3s ease; }
+        canvas { position: absolute; inset: 0; z-index: 10; transition: filter 0.3s ease; }
 
-        /* Эффект шума и сканирующих линий (Скриншот 1) */
+        /* Эффект вертикального дождя помех */
         #glitch-overlay {
             position: absolute; inset: 0; z-index: 25; pointer-events: none;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
-                        repeating-linear-gradient(0deg, rgba(255, 0, 0, 0.05) 0px, rgba(255, 0, 0, 0.05) 1px, transparent 2px);
-            background-size: 100% 4px, 100% 3px;
-            opacity: 0.6;
+            background: 
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+                repeating-linear-gradient(90deg, rgba(255, 0, 0, 0.03) 0px, rgba(255, 0, 0, 0.03) 1px, transparent 2px);
+            background-size: 100% 4px, 40px 100%;
         }
 
-        /* Сильная виньетка для атмосферы */
         #vignette {
             position: absolute; inset: 0; z-index: 30; pointer-events: none;
-            background: radial-gradient(circle, transparent 30%, rgba(0, 0, 0, 0.8) 100%);
+            background: radial-gradient(circle, transparent 20%, rgba(0, 0, 0, 0.9) 100%);
         }
 
-        /* Аудио-волна слева (Скриншот 5) */
-        #audio-wave-container {
-            position: absolute; left: 20px; top: 20%; height: 60%; width: 50px;
-            z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center;
-        }
         .wave-bar {
-            width: 6px; background: #ff0000; margin: 1px 0; height: 2px;
-            box-shadow: 0 0 10px #ff0000; transition: width 0.05s ease, background 0.1s ease;
+            width: 8px; background: #ff0000; margin: 1px 0;
+            box-shadow: 0 0 10px #ff0000; transition: width 0.05s ease;
         }
 
-        /* Кнопка переключения режима */
         #mode-toggle {
             position: absolute; bottom: 30px; right: 30px; z-index: 200;
-            background: rgba(100, 0, 0, 0.3); border: 2px solid #ff0000; color: #ff0000;
-            padding: 10px 20px; font-weight: bold; cursor: pointer; text-transform: uppercase;
-            box-shadow: 0 0 15px rgba(255, 0, 0, 0.5); transition: all 0.2s;
+            background: rgba(40, 0, 0, 0.6); border: 1px solid #ff0000; color: #ff0000;
+            padding: 12px 24px; font-size: 12px; letter-spacing: 2px;
         }
-        #mode-toggle:active { transform: scale(0.95); background: rgba(255, 0, 0, 0.4); }
 
-        /* Оверлей загрузки */
         #ignite {
-            position: absolute; inset: 0; z-index: 300; bg-black; color: #ff0000;
-            display: flex; flex-direction: column; items-center justify-center; cursor: pointer;
+            position: absolute; inset: 0; z-index: 300; background: #000; color: #ff0000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
-
-        /* Анимации */
-        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
-        .animate-pulse-fast { animation: pulse 0.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
     </style>
 </head>
 <body>
@@ -65,21 +51,22 @@
     <div id="glitch-overlay"></div>
     <div id="vignette"></div>
     
-    <div id="ui-layer" class="absolute inset-0 z-50 pointer-events-none p-4">
-        <div id="top-telemetry" class="absolute top-6 right-12 text-red-600 text-2xl tracking-tight opacity-80"></div>
-        <div class="absolute bottom-6 left-12 text-red-600 text-xs">
-            SYS_STATUS: <span class="animate-pulse">ACTIVE</span><br>
-            MODE: <span id="mode-status">NORMAL</span>
+    <div id="ui-layer" class="absolute inset-0 z-50 pointer-events-none p-6">
+        <div id="top-telemetry" class="absolute top-10 right-10 text-red-600 text-3xl font-bold"></div>
+        <div class="absolute bottom-10 left-10 text-red-600 text-[10px] leading-tight">
+            REC [●] <br>
+            CORE_TEMP: 38.2°C <br>
+            MODE: <span id="mode-status">NEUTRAL</span>
         </div>
     </div>
 
-    <div id="audio-wave-container"></div>
+    <div id="audio-wave-container" class="absolute left-6 top-1/4 h-1/2 flex flex-col justify-center"></div>
 
-    <button id="mode-toggle" class="hidden">HUNT_MODE</button>
+    <button id="mode-toggle" class="hidden">CHANGE_VISOR</button>
 
-    <button id="ignite" class="bg-black">
-        <div class="mb-6 animate-pulse text-4xl font-bold tracking-[1em] text-red-600">INITIALIZING</div>
-        <div class="text-[10px] opacity-60 text-red-600">YAUTJA_GAUNTLET_OS_V3.1</div>
+    <button id="ignite">
+        <div class="animate-pulse text-5xl font-black mb-4">TERMINAL_LINK</div>
+        <div class="opacity-50 text-xs tracking-widest">CONNECTING TO YAUTJA_NETWORK...</div>
     </button>
 
     <script>
@@ -87,243 +74,181 @@
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
         const waveContainer = document.getElementById('audio-wave-container');
-        const telemetry = document.getElementById('top-telemetry');
         const modeToggle = document.getElementById('mode-toggle');
         const modeStatus = document.getElementById('mode-status');
 
         let model, audioCtx, analyser, dataArray;
         let isThermal = false;
-        let animationFrameId;
         const waveBars = [];
-        const barCount = 40;
+        const yautjaSymbols = ["ᚦ", "ᛗ", "ᛖ", "ᛟ", "ᚱ", "ᛚ", "ᛒ", "ᛘ", "ᛞ"];
 
-        // Создаем бары для волны
-        for(let i=0; i < barCount; i++) {
+        // Инициализация аудио-бара
+        for(let i=0; i < 30; i++) {
             const bar = document.createElement('div');
-            bar.className = 'wave-bar';
+            bar.className = 'wave-bar h-1';
             waveContainer.appendChild(bar);
             waveBars.push(bar);
         }
 
-        // Глифы (на основе скриншотов)
-        const yautjaSymbols = ["ᚦ", "ᛗ", "ᛖ", "ᛟ", "ᚱ", "ᛚ", "ᛒ", "ᚦ", "ᛘ", "ᛞ", "⚡", "⚙"];
-
-        // Конфигурация фильтров (Скриншот 6 - Thermal)
-        const filters = {
-            normal: "contrast(1.2) brightness(0.9) saturate(1.1) sepia(0.3) hue-rotate(-10deg)",
-            thermal: "contrast(2) brightness(1.1) saturate(2.5) hue-rotate(130deg)"
-        };
-
         async function init() {
             document.getElementById('ignite').remove();
             modeToggle.classList.remove('hidden');
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
+            video.srcObject = stream;
             
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
-                    audio: true
-                });
-                video.srcObject = stream;
+            audioCtx = new AudioContext();
+            const source = audioCtx.createMediaStreamSource(stream);
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+            source.connect(analyser);
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-                // Настройка аудио
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioCtx.createMediaStreamSource(stream);
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 64; // Меньше размер для более резкой реакции
-                source.connect(analyser);
-                dataArray = new Uint8Array(analyser.frequencyBinCount);
+            model = await cocoSsd.load();
+            draw();
+        }
 
-                // Загрузка модели
-                model = await cocoSsd.load();
-                applyFilter();
-                draw();
-            } catch (err) {
-                console.error("Initialization failed:", err);
-                alert("Enable camera/mic access.");
+        function draw() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // Фоновый поток
+            ctx.save();
+            if (isThermal) {
+                ctx.filter = "contrast(1.8) brightness(1.2) saturate(2) hue-rotate(140deg)";
+            } else {
+                ctx.filter = "contrast(1.1) sepia(0.2) brightness(0.8)";
+            }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            drawScanLines();
+            drawCentralDots();
+            updateAudioUI();
+            renderDetections();
+
+            requestAnimationFrame(draw);
+        }
+
+        // 1. Вертикальные помехи (Референс 5)
+        function drawScanLines() {
+            ctx.strokeStyle = "rgba(255, 0, 0, 0.15)";
+            ctx.lineWidth = 1;
+            const time = Date.now() * 0.05;
+            for(let i = 0; i < 5; i++) {
+                let x = (time * (1 + i * 2)) % canvas.width;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
             }
         }
 
-        function applyFilter() {
-            canvas.style.filter = isThermal ? filters.thermal : filters.normal;
-            modeStatus.innerText = isThermal ? "THERMAL" : "NORMAL";
-            modeStatus.className = isThermal ? "text-yellow-400" : "text-red-600";
+        // 2. Центральные 3 точки (Референс 1)
+        function drawCentralDots() {
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const pulse = Math.sin(Date.now() * 0.005) * 2;
+            
+            ctx.save();
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "red";
+            ctx.fillStyle = "#ff0000";
+            
+            const r = 18;
+            [[0, -r], [-r, r*0.6], [r, r*0.6]].forEach(pos => {
+                ctx.beginPath();
+                ctx.arc(cx + pos[0], cy + pos[1], 4 + pulse, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
+        function updateAudioUI() {
+            analyser.getByteFrequencyData(dataArray);
+            waveBars.forEach((bar, i) => {
+                const val = dataArray[i % dataArray.length];
+                bar.style.width = `${(val / 255) * 50 + 5}px`;
+                bar.style.opacity = val / 255 + 0.2;
+            });
+        }
+
+        async function renderDetections() {
+            const predictions = await model.detect(video);
+            const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+
+            predictions.forEach(p => {
+                if (p.class !== 'person' || p.score < 0.6) return;
+
+                const [x, y, w, h] = p.bbox.map(v => v * scale);
+                const cx = x + w/2;
+                const cy = y + h/2;
+                const time = Date.now() * 0.003;
+
+                // 3. Треугольный прицел (Референс 2)
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(time * 0.5);
+                ctx.strokeStyle = "#ff0000";
+                ctx.lineWidth = 3;
+                
+                const side = (Math.max(w, h) / 2) + 20;
+                ctx.beginPath();
+                for(let i = 0; i < 3; i++) {
+                    const angle = (i * Math.PI * 2) / 3;
+                    const tx = Math.cos(angle) * side;
+                    const ty = Math.sin(angle) * side;
+                    i === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                ctx.restore();
+
+                // 4. Эффект Плетения / Био-сетка (Референс 3)
+                drawPlexus(x, y, w, h);
+            });
+        }
+
+        function drawPlexus(x, y, w, h) {
+            const points = [];
+            const count = 15;
+            const seed = Math.floor(Date.now() / 100);
+
+            // Генерируем точки внутри контура цели
+            for(let i=0; i<count; i++) {
+                points.push({
+                    x: x + (Math.sin(seed + i) * 0.5 + 0.5) * w,
+                    y: y + (Math.cos(seed * 0.5 + i) * 0.5 + 0.5) * h
+                });
+            }
+
+            ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+            ctx.fillStyle = "#ff0000";
+            ctx.lineWidth = 0.5;
+
+            points.forEach((p1, i) => {
+                ctx.beginPath();
+                ctx.arc(p1.x, p1.y, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                points.slice(i+1).forEach(p2 => {
+                    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                    if(dist < w * 0.4) {
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                    }
+                });
+            });
         }
 
         modeToggle.onclick = () => {
             isThermal = !isThermal;
-            applyFilter();
+            modeStatus.innerText = isThermal ? "THERMAL_HUNT" : "NEUTRAL";
+            modeStatus.style.color = isThermal ? "#ffff00" : "#ff0000";
         };
 
-        function draw() {
-            if (video.paused || video.ended) return;
-
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-
-            // 1. Отрисовка видеопотока
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // 2. Обновление UI элементов (аудио, текст)
-            updateStaticUI();
-
-            // 3. Отрисовка постоянного центрального прицела
-            drawCentralCrosshair();
-
-            // 4. Отрисовка детекции и самонаведения
-            renderDetections();
-
-            animationFrameId = requestAnimationFrame(draw);
-        }
-
-        function updateStaticUI() {
-            // Аудио-волна (Симметричная)
-            if(analyser) {
-                analyser.getByteFrequencyData(dataArray);
-                const mid = Math.floor(barCount / 2);
-                waveBars.forEach((bar, i) => {
-                    // Рассчитываем индекс так, чтобы высокие частоты были в центре
-                    const distFromMid = Math.abs(i - mid);
-                    const dataIndex = Math.max(0, mid - distFromMid);
-                    const val = dataArray[dataIndex];
-                    
-                    const width = Math.max(4, (val / 255) * 60);
-                    bar.style.width = `${width}px`;
-                    // Смена цвета при пиках (красный -> желтый)
-                    bar.style.background = val > 210 ? '#ffff00' : '#ff0000';
-                    bar.style.boxShadow = val > 210 ? '0 0 15px #ffff00' : '0 0 10px #ff0000';
-                });
-            }
-
-            // Случайные глифы телеметрии
-            if(Math.random() > 0.95) {
-                const len = 5 + Math.floor(Math.random() * 4);
-                telemetry.innerText = Array.from({length: len}, () => yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)]).join(' ');
-            }
-        }
-
-        function drawCentralCrosshair() {
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-            const time = Date.now() * 0.002;
-
-            ctx.save();
-            
-            // Три красные точки (Скриншот 2)
-            ctx.fillStyle = "#ff0000";
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = "red";
-            const r = 20; // Радиус расположения точек
-            const dotRad = 4;
-            [[0, -r], [-r * 0.86, r * 0.5], [r * 0.86, r * 0.5]].forEach(offset => {
-                ctx.beginPath();
-                ctx.arc(cx + offset[0], cy + offset[1], dotRad, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Анимированные статические скобки вокруг центра
-            ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
-            ctx.lineWidth = 2;
-            ctx.shadowBlur = 5;
-            const bracketSize = 40 + Math.sin(time) * 3; // Легкая пульсация
-            const gap = 10;
-
-            // Левая скобка
-            ctx.beginPath();
-            ctx.moveTo(cx - bracketSize, cy - bracketSize/2);
-            ctx.lineTo(cx - bracketSize - gap, cy - bracketSize/2);
-            ctx.lineTo(cx - bracketSize - gap, cy + bracketSize/2);
-            ctx.lineTo(cx - bracketSize, cy + bracketSize/2);
-            ctx.stroke();
-
-            // Правая скобка
-            ctx.beginPath();
-            ctx.moveTo(cx + bracketSize, cy - bracketSize/2);
-            ctx.lineTo(cx + bracketSize + gap, cy - bracketSize/2);
-            ctx.lineTo(cx + bracketSize + gap, cy + bracketSize/2);
-            ctx.lineTo(cx + bracketSize, cy + bracketSize/2);
-            ctx.stroke();
-
-            ctx.restore();
-        }
-
-        async function renderDetections() {
-            if (!model) return;
-            const predictions = await model.detect(video);
-            
-            const time = Date.now() * 0.005; // Для анимации вращения
-
-            predictions.forEach(p => {
-                // Детектируем только людей ('person') с высокой уверенностью
-                if (p.class !== 'person' || p.score < 0.65) return;
-
-                const [x, y, w, h] = p.bbox;
-                // Масштабирование координат под размер холста
-                const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
-                const xS = x * scale;
-                const yS = y * scale;
-                const wS = w * scale;
-                const hS = h * scale;
-                const cx = xS + wS/2;
-                const cy = yS + hS/2;
-
-                // --- ПРИЦЕЛ САМОНАВЕДЕНИЯ (Вращающиеся 3 полоски) ---
-                ctx.save();
-                ctx.translate(cx, cy); // Переносим центр координат на объект
-                ctx.rotate(time); // Вращение
-
-                ctx.strokeStyle = "#ff0000";
-                ctx.lineWidth = 3;
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = "red";
-                
-                // Пульсация размера прицела
-                const targetAnimRad = (Math.max(wS, hS) / 2) * (1 + Math.sin(time * 2) * 0.05) + 10;
-                
-                // Рисуем 3 полоски по кругу (угол 120 градусов)
-                for(let i=0; i<3; i++) {
-                    ctx.rotate((Math.PI * 2) / 3);
-                    ctx.beginPath();
-                    // Дуга (полоска)
-                    ctx.arc(0, 0, targetAnimRad, -0.2, 0.2); 
-                    ctx.stroke();
-                    
-                    // Маленький перпендикулярный штрих на конце полоски
-                    ctx.beginPath();
-                    ctx.moveTo(targetAnimRad - 5, 0);
-                    ctx.lineTo(targetAnimRad + 5, 0);
-                    ctx.stroke();
-                }
-                ctx.restore();
-
-                // --- ТЕКСТОВАЯ ИНФОРМАЦИЯ О ЦЕЛИ ---
-                ctx.fillStyle = "#ff0000";
-                ctx.font = "bold 16px monospace";
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = "red";
-                
-                // Глифы + Процент уверенности
-                const glyph = yautjaSymbols[Math.floor(Math.random()*yautjaSymbols.length)];
-                const conf = Math.round(p.score * 100);
-                ctx.fillText(`${glyph} TARGET: ${conf}%`, xS, yS - 15);
-                
-                // Рамка объекта (пунктир, как на скриншоте 2)
-                ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
-                ctx.lineWidth = 1;
-                ctx.setLineDash([8, 4]);
-                ctx.strokeRect(xS, yS, wS, hS);
-                ctx.setLineDash([]); // Сброс пунктира
-            });
-        }
-
         document.getElementById('ignite').onclick = init;
-        
-        // Обработка изменения размера окна
-        window.addEventListener('resize', () => {
-            if(analyser) {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-            }
-        });
     </script>
 </body>
 </html>
