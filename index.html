@@ -3,108 +3,186 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BERSERK_VISION_V7</title>
+    <title>T-800_OPERATING_OS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        body { background: #000; margin: 0; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; }
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500&display=swap');
+        body { background: #000; margin: 0; overflow: hidden; font-family: 'Fira Code', monospace; color: #ff0000; text-transform: uppercase; }
+        
         video { display: none; }
-        canvas { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; }
-        #ui-layer { position: absolute; inset: 0; z-index: 100; pointer-events: none; border: 20px solid rgba(255,0,0,0.1); }
-        .cr-text { position: absolute; color: #ff0000; font-size: 8px; text-transform: uppercase; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; }
+        
+        /* Визуальный шум Терминатора */
+        #noise-overlay {
+            position: absolute; inset: 0; z-index: 5; opacity: 0.1;
+            background: url('https://media.giphy.com/media/oEI9uWUPr9WUM/giphy.gif');
+            pointer-events: none;
+        }
+
+        .sys-text { position: absolute; color: #ff0000; font-size: 9px; text-shadow: 0 0 5px #ff0000; z-index: 20; pointer-events: none; }
+        #log-top-left { top: 10px; left: 10px; }
+        #log-top-right { top: 10px; right: 10px; text-align: right; }
+        #log-bottom { bottom: 10px; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap; }
     </style>
 </head>
 <body>
 
     <video id="v" autoplay playsinline muted></video>
     <canvas id="c"></canvas>
-    <div id="ui-layer"></div>
+    <div id="noise-overlay"></div>
 
-    <button id="ignite" class="absolute inset-0 z-[200] bg-red-900/20 backdrop-blur-md text-red-500 font-black text-4xl italic tracking-tighter flex items-center justify-center">
-        FEED_THE_NEURONS
+    <div id="log-top-left" class="sys-text">
+        [CYBERDYNE SYSTEM 1.0]<br>
+        [A17_PRO_PROCESSOR: OK]<br>
+        [BATTERY: 98%]
+    </div>
+    <div id="log-top-right" class="sys-text">
+        SERIAL: T-800 // T-800-CS1<br>
+        MISSION: [AWAITING_INPUT]<br>
+        SYSTEM_INTEGRITY: [100%]
+    </div>
+    <div id="log-bottom" class="sys-text">
+        <span class="animate-pulse">>>> SCANNING_FOR_TARGETS... >>></span>
+    </div>
+
+    <button id="ignite" class="absolute inset-0 z-[200] bg-black text-red-500 font-bold text-xs tracking-[1.5em] flex flex-col items-center justify-center">
+        <span class="mb-4 animate-pulse">TERMINAL_BOOT_V8.2</span>
+        <div class="text-[8px] opacity-40">GPU_ACCEL: YES // NEURAL_NET: READY // AUDIO: ARMED</div>
     </button>
 
     <script>
         const video = document.getElementById('v');
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
+        const logBottom = document.getElementById('log-bottom');
+        
         let model;
+        let audioCtx, globalGain, initSound, lockSound;
+        let lastLogged = 0;
+        let targets = new Set(); // Краткосрочная память ID целей
 
-        async function init() {
+        // Загрузка звуковых буферов
+        async function loadSound(url) {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            return await audioCtx.decodeAudioData(arrayBuffer);
+        }
+
+        async function initAudio() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            globalGain = audioCtx.createGain();
+            globalGain.gain.value = 0.5;
+            globalGain.connect(audioCtx.destination);
+            
+            // Загрузка звуков (заглушки - нужны реальные ссылки на звуки терминатора)
+            initSound = await loadSound('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptrackid=20815'); // Гидравлика
+            lockSound = await loadSound('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptrackid=12952'); // Бип наводки
+        }
+
+        function playSound(buffer) {
+            if (!audioCtx || !buffer) return;
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(globalGain);
+            source.start(0);
+        }
+
+        async function activate() {
             document.getElementById('ignite').remove();
+            
+            // Инициализация звука
+            try { await initAudio(); playSound(initSound); } catch(err) { console.warn("Audio not loaded"); }
+
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: "environment", width: 1280 }
             });
             video.srcObject = stream;
             model = await cocoSsd.load();
-            process();
+            run();
         }
 
-        function process() {
+        function run() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // GPU EFFECT: DIFFERENCE FEEDBACK
-            ctx.filter = "contrast(300%) brightness(150%) grayscale(100%)";
-            ctx.globalCompositeOperation = "difference";
-            ctx.drawImage(video, 2, 2, canvas.width, canvas.height);
+            // GPU EFFECT: Monochrome Deep Red (Зрение Терминатора)
+            // Мы убираем все цвета и красим всё в красный с высоким контрастом.
+            ctx.filter = "contrast(2.5) brightness(0.6) grayscale(1) invert(1) hue-rotate(-90deg)";
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            renderNeuralMess();
-            requestAnimationFrame(process);
+            ctx.filter = "none"; // Отключаем фильтр для рисования HUD
+
+            processPredictions();
+            requestAnimationFrame(run);
         }
 
-        async function renderNeuralMess() {
+        async function processPredictions() {
             const preds = await model.detect(video);
             const sx = canvas.width / video.videoWidth;
             const sy = canvas.height / video.videoHeight;
 
-            // ФОНОВЫЙ ШУМ (ASCII-STREAMS)
-            ctx.globalCompositeOperation = "source-over";
-            ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
-            ctx.font = "10px monospace";
-            for(let i=0; i<10; i++) {
-                ctx.fillText(Math.random().toString(2).substr(2, 20), Math.random()*canvas.width, Math.random()*canvas.height);
-            }
-
             preds.forEach(p => {
+                if (p.score < 0.6) return;
                 const [x, y, w, h] = p.bbox.map(v => v * (sx > sy ? sx : sy));
-                
-                // КРОВАВЫЙ ТАРГЕТИНГ
+                const cx = x + w/2;
+                const cy = y + h/2;
+
+                // Звук захвата цели
+                if (!targets.has(p.class)) {
+                    playSound(lockSound);
+                    targets.add(p.class);
+                }
+
+                // 1. Анимированные уголки наведения (Glint effect)
                 ctx.strokeStyle = "#ff0000";
-                ctx.lineWidth = 0.5;
+                ctx.lineWidth = 1;
+                const cornerLen = 15;
+                const offset = Math.sin(Date.now()/100) * 3;
                 
-                // Хаотичные линии наведения
+                // Top-Left
+                ctx.beginPath(); ctx.moveTo(x+offset, y+offset+cornerLen); ctx.lineTo(x+offset, y+offset); ctx.lineTo(x+offset+cornerLen, y+offset); ctx.stroke();
+                // Bottom-Right
+                ctx.beginPath(); ctx.moveTo(x+w-offset, y+h-offset-cornerLen); ctx.lineTo(x+w-offset, y+h-offset); ctx.lineTo(x+w-offset-cornerLen, y+h-offset); ctx.stroke();
+
+                // 2. Перекрестие на объекте
                 ctx.beginPath();
-                ctx.moveTo(0, y); ctx.lineTo(canvas.width, y+h);
-                ctx.moveTo(x, 0); ctx.lineTo(x+w, canvas.height);
+                ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
+                ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
                 ctx.stroke();
 
-                // ОБЪЕКТНЫЙ ГЛИТЧ
-                ctx.fillStyle = "rgba(255, 0, 0, 0.1)";
-                ctx.fillRect(x, y, w, h);
-                
-                // ТЕКСТОВАЯ ПЕРЕГРУЗКА
+                // 3. Блок ASCII-анализа (Текст рядом с объектом)
                 ctx.fillStyle = "#ff0000";
-                ctx.font = "bold 14px monospace";
-                ctx.fillText(`! ALERT: ${p.class.toUpperCase()} !`, x, y - 10);
-                ctx.font = "8px monospace";
-                ctx.fillText(`HEX_ADDR: 0x${Math.floor(Math.random()*16777215).toString(16)}`, x, y + h + 10);
-                ctx.fillText(`PROB_VAL: ${p.score.toFixed(10)}`, x, y + h + 20);
+                ctx.font = "8px 'Fira Code'";
+                
+                // Дескриптор цели
+                const priority = p.class === "person" ? "HIGH" : "MED";
+                ctx.fillText(`ID: ${p.class.toUpperCase()} // PRIORITY: ${priority}`, x, y - 10);
+                ctx.fillText(`PROB: ${(p.score*100).toFixed(0)}%`, x, y - 2);
+
+                // Имитация ASCII кода
+                const ascii = Math.random().toString(36).substring(2, 6).toUpperCase();
+                for(let i=0; i<3; i++) {
+                    ctx.fillText(ascii, x + w + 5, y + (i*8) + 8);
+                }
+
+                // 4. Логирование в командную строку (HUD)
+                if (Date.now() - lastLogged > 2000) {
+                    const time = (performance.now()/1000).toFixed(1);
+                    logBottom.innerHTML = `[${time}] NEW TARGET: ${p.class.toUpperCase()} | P: ${priority}`;
+                    logBottom.classList.remove('animate-pulse');
+                    lastLogged = Date.now();
+                }
             });
 
-            // ВЕКТОРНЫЙ ХАОС
-            for(let i=0; i<5; i++) {
-                ctx.beginPath();
-                ctx.strokeStyle = `rgba(255, 0, 0, ${Math.random() * 0.5})`;
-                ctx.moveTo(Math.random()*canvas.width, Math.random()*canvas.height);
-                ctx.lineTo(Math.random()*canvas.width, Math.random()*canvas.height);
-                ctx.stroke();
+            // Восстановление пульсации, если целей нет
+            if (preds.length === 0 && !logBottom.classList.contains('animate-pulse')) {
+                 logBottom.classList.add('animate-pulse');
+                 logBottom.innerText = ">>> SCANNING_FOR_TARGETS... >>>";
             }
         }
 
-        document.getElementById('ignite').onclick = init;
+        document.getElementById('ignite').onclick = activate;
     </script>
 </body>
 </html>
