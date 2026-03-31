@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Neural Face Scanner v6.0 - Fixed</title>
+  <title>Neural Face Scanner v5.0</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -11,46 +11,82 @@
 
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
+    
     #overlay-start {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 100; display: flex;
       flex-direction: column; justify-content: center; align-items: center; cursor: pointer;
     }
-    #container { position: relative; width: 100vw; height: 100vh; }
+    #overlay-start h1 { border: 1px solid #fff; padding: 20px; text-transform: uppercase; letter-spacing: 5px; }
+
+    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
     .input_video { display: none; }
-    .output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
     
-    .controls { position: absolute; top: 20px; right: 20px; z-index: 110; display: flex; gap: 10px; }
-    button { background: rgba(0,0,0,0.7); border: 1px solid #0f0; color: #0f0; padding: 8px 12px; cursor: pointer; font-size: 10px; text-transform: uppercase; }
-    button.active { background: #0f0; color: #000; }
+    .output_canvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      object-fit: cover; transform: scaleX(-1); z-index: 1;
+    }
+
+    #switch-camera {
+      position: absolute; top: 20px; right: 20px; z-index: 110;
+      background: rgba(0,0,0,0.5); border: 1px solid #fff; color: #fff;
+      padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
+    }
+
+    .interface-overlay {
+      position: absolute; top: 20px; left: 20px; z-index: 10;
+      font-size: 11px; text-shadow: 0 0 5px #fff; pointer-events: none;
+    }
 
     .bottom-peripherals {
-      position: absolute; bottom: 0; left: 0; width: 100%; z-index: 10;
-      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 20px 0;
+      position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
+      z-index: 10; background: linear-gradient(to top, #000 85%, transparent);
+      padding-bottom: 20px;
     }
-    #live-speech-box { font-size: 20px; font-weight: bold; color: #0f0; margin-bottom: 10px; height: 24px; text-shadow: 0 0 10px #0f0; }
-    #audio_visualizer { width: 90%; height: 80px; border-bottom: 1px solid rgba(0,255,0,0.3); }
+
+    #live-speech-box {
+      width: 90%; min-height: 35px; margin-bottom: 5px;
+      text-align: center; font-size: 18px; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 2px; color: #fff;
+    }
+
+    #audio_visualizer { width: 90%; height: 60px; margin-bottom: 10px; }
+
+    #terminal-box {
+      width: 90%; height: 100px; background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255,255,255,0.2); padding: 10px; box-sizing: border-box;
+      overflow-y: auto; font-size: 10px; scrollbar-width: none;
+    }
+    #terminal-box::-webkit-scrollbar { display: none; }
+
+    .log-entry { margin: 2px 0; color: rgba(255,255,255,0.5); border-left: 1px solid #fff; padding-left: 8px; }
   </style>
 </head>
+
 <body>
 
   <div id="overlay-start" onclick="initSystem()">
-    <h1 style="border: 1px solid #0f0; padding: 20px;">INITIALIZE SYSTEM</h1>
+    <h1>ACCESS GRANTED</h1>
+    <p>[ CLICK TO INITIALIZE SCANNER ]</p>
   </div>
 
-  <div class="controls">
-    <button id="btn-face">Texture: OFF</button>
-    <button id="switch-camera">Switch Cam</button>
-  </div>
+  <button id="switch-camera">Toggle Cam</button>
 
   <div id="container">
     <video class="input_video" playsinline></video>
     <canvas class="output_canvas"></canvas>
     
+    <div class="interface-overlay">
+      <div>> NEURAL_LINK: ESTABLISHED</div>
+      <div>> SCAN_MODE: 3D_MESH_RECONSTRUCTION</div>
+      <div id="target-status">> TARGET: SEARCHING...</div>
+    </div>
+
     <div class="bottom-peripherals">
-      <div id="live-speech-box">WAITING_FOR_VOICE...</div>
+      <div id="live-speech-box">READY_FOR_VOICE</div>
       <canvas id="audio_visualizer"></canvas>
+      <div id="terminal-box"><div id="log-content"></div></div>
     </div>
   </div>
 
@@ -58,19 +94,17 @@
     const videoElement = document.querySelector('.input_video');
     const canvasElement = document.querySelector('.output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
+    const liveSpeechBox = document.getElementById('live-speech-box');
+    const terminalBox = document.getElementById('terminal-box');
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
-    const liveSpeechBox = document.getElementById('live-speech-box');
-    const btnFace = document.getElementById('btn-face');
+    const targetStatus = document.getElementById('target-status');
 
-    let isFaceMode = false;
-    let textureCanvas = document.createElement('canvas');
-    let textureCtx = textureCanvas.getContext('2d');
-    let textureLandmarks = null;
     let currentFacingMode = 'user';
-
-    // --- ЗВУКОВОЙ ЭКВАЛАЙЗЕР ---
+    let cameraInstance = null;
     let audioCtx, analyser, dataArray;
+    let scanLineY = 0; 
+
     async function initAudio() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -78,141 +112,171 @@
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(analyser);
-        analyser.fftSize = 256; 
+        analyser.fftSize = 2048;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
-        drawVisualizer();
-      } catch(e) { console.error("Audio init failed", e); }
+        drawWave();
+      } catch(e) { console.log("Audio Error"); }
     }
 
-    function drawVisualizer() {
-      requestAnimationFrame(drawVisualizer);
-      analyser.getByteFrequencyData(dataArray);
-      
+    function drawWave() {
+      requestAnimationFrame(drawWave);
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
+      analyser.getByteTimeDomainData(dataArray);
+
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-      
-      const barWidth = (audioCanvas.width / dataArray.length) * 2.5;
+      aCtx.lineWidth = 1.5;
+      aCtx.strokeStyle = '#ffffff';
+      aCtx.beginPath();
+
+      let sliceWidth = audioCanvas.width / dataArray.length;
       let x = 0;
-      for(let i = 0; i < dataArray.length; i++) {
-        const barHeight = (dataArray[i] / 255) * audioCanvas.height;
-        aCtx.fillStyle = `rgb(0, ${dataArray[i] + 100}, 0)`;
-        aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth, barHeight);
-        x += barWidth + 1;
+      for (let i = 0; i < dataArray.length; i++) {
+        let v = dataArray[i] / 128.0;
+        let y = v * audioCanvas.height / 2;
+        if (i === 0) aCtx.moveTo(x, y); else aCtx.lineTo(x, y);
+        x += sliceWidth;
       }
+      aCtx.stroke();
     }
 
-    // --- РАСПОЗНАВАНИЕ РЕЧИ ---
-    function initSpeech() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'ru-RU';
-        recognition.interimResults = true;
-        recognition.continuous = true;
-
-        recognition.onresult = (event) => {
-          const result = event.results[event.results.length - 1];
-          liveSpeechBox.innerText = result[0].transcript.toUpperCase();
-        };
-
-        recognition.onend = () => recognition.start(); // Автоперезапуск
-        recognition.start();
-      }
+    function addLog(text) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerText = `[${new Date().toLocaleTimeString()}] ${text.toUpperCase()}`;
+      document.getElementById('log-content').appendChild(entry);
+      terminalBox.scrollTop = terminalBox.scrollHeight;
     }
 
-    // --- ТЕКСТУРЫ (TRIANGLE MAPPING) ---
-    function drawTriangle(ctx, img, s1, s2, s3, d1, d2, d3) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(d1.x, d1.y);
-      ctx.lineTo(d2.x, d2.y);
-      ctx.lineTo(d3.x, d3.y);
-      ctx.closePath();
-      ctx.clip();
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'ru-RU';
 
-      const det = (s1.x * (s2.y - s3.y) + s2.x * (s3.y - s1.y) + s3.x * (s1.y - s2.y));
-      if (Math.abs(det) < 0.1) { ctx.restore(); return; }
+      recognition.onresult = (event) => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) addLog(event.results[i][0].transcript);
+          else interim += event.results[i][0].transcript;
+        }
+        liveSpeechBox.innerText = interim || "LISTENING...";
+      };
+      recognition.onend = () => recognition.start();
+      window.runSpeech = () => recognition.start();
+    }
 
-      ctx.transform(
-        (d1.x * (s2.y - s3.y) + d2.x * (s3.y - s1.y) + d3.x * (s1.y - s2.y)) / det,
-        (d1.y * (s2.y - s3.y) + d2.y * (s3.y - s1.y) + d3.y * (s1.y - s2.y)) / det,
-        (s1.x * (d2.x - d3.x) + s2.x * (d3.x - d1.x) + s3.x * (d1.x - d2.x)) / det,
-        (s1.x * (d2.y - d3.y) + s2.x * (d3.y - d1.y) + s3.x * (d1.y - d2.y)) / det,
-        (s1.x * (s2.y * d3.x - s3.y * d2.x) + s2.x * (s3.y * d1.x - s1.y * d3.x) + s3.x * (s1.y * d2.x - s2.y * d1.x)) / det,
-        (s1.x * (s2.y * d3.y - s3.y * d2.y) + s2.x * (s3.y * d1.y - s1.y * d3.y) + s3.x * (s1.y * d2.y - s2.y * d1.y)) / det
-      );
-      ctx.drawImage(img, 0, 0);
-      ctx.restore();
+    function drawTargetingFrame(ctx, x, y, width, height, isLocked) {
+      const size = 40;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isLocked ? '#fff' : '#ff0000';
+      
+      const corners = [
+        [x, y, x + size, y, x, y + size], 
+        [x + width, y, x + width - size, y, x + width, y + size], 
+        [x, y + height, x + size, y + height, x, y + height - size], 
+        [x + width, y + height, x + width - size, y + height, x + width, y + height - size] 
+      ];
+
+      corners.forEach(c => {
+        ctx.beginPath();
+        ctx.moveTo(c[0], c[1]); ctx.lineTo(c[2], c[3]);
+        ctx.moveTo(c[0], c[1]); ctx.lineTo(c[4], c[5]);
+        ctx.stroke();
+      });
+
+      if (!isLocked) {
+        ctx.font = "10px monospace";
+        ctx.fillStyle = "#ff0000";
+        ctx.fillText("SEARCHING_FOR_SUBJECT", x, y - 10);
+      } else {
+        ctx.fillStyle = "#fff";
+        ctx.fillText("TARGET_LOCKED", x, y - 10);
+      }
     }
 
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.save();
+      canvasCtx.fillStyle = '#000';
+      canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+
+      canvasCtx.globalAlpha = 0.05;
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.globalAlpha = 1.0;
+
+      scanLineY = (scanLineY + 0.01) % 1.0;
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
-        
-        // Определяем цвет сетки
-        const eyeDist = Math.abs(landmarks[159].y - landmarks[145].y);
-        const lipDist = Math.abs(landmarks[13].y - landmarks[14].y);
-        let color = '#fff';
-        if (eyeDist < 0.01) color = '#f00';
-        else if (lipDist > 0.02) color = '#0f0';
+        targetStatus.innerText = "> TARGET: LOCKED";
+        targetStatus.style.color = "#fff";
 
-        if (isFaceMode && textureLandmarks) {
-          for (const triangle of FACEMESH_TESSELATION) {
-            const s = triangle.map(i => ({x: textureLandmarks[i].x * canvasElement.width, y: textureLandmarks[i].y * canvasElement.height}));
-            const d = triangle.map(i => ({x: landmarks[i].x * canvasElement.width, y: landmarks[i].y * canvasElement.height}));
-            drawTriangle(canvasCtx, textureCanvas, s[0], s[1], s[2], d[0], d[1], d[2]);
+        for (const landmarks of results.multiFaceLandmarks) {
+          for (const connector of FACEMESH_TESSELATION) {
+            const start = landmarks[connector[0]];
+            const end = landmarks[connector[1]];
+            
+            const dist = Math.abs(start.y - scanLineY);
+            // ОБНОВЛЕНО: базовая яркость 0.3 вместо 0.1 для лучшей видимости
+            canvasCtx.strokeStyle = dist < 0.05 ? '#fff' : 'rgba(255,255,255,0.3)';
+            canvasCtx.lineWidth = dist < 0.05 ? 1.2 : 0.6;
+
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
+            canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
+            canvasCtx.stroke();
           }
-        }
 
-        // Отрисовка сетки
-        canvasCtx.strokeStyle = color;
-        canvasCtx.lineWidth = 0.5;
-        for (const [a, b] of FACEMESH_TESSELATION) {
-          canvasCtx.beginPath();
-          canvasCtx.moveTo(landmarks[a].x * canvasElement.width, landmarks[a].y * canvasElement.height);
-          canvasCtx.lineTo(landmarks[b].x * canvasElement.width, landmarks[b].y * canvasElement.height);
-          canvasCtx.stroke();
+          const highlightStyle = {color: '#fff', lineWidth: 2};
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, highlightStyle);
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, highlightStyle);
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, highlightStyle);
+
+          const xCoords = landmarks.map(l => l.x * canvasElement.width);
+          const yCoords = landmarks.map(l => l.y * canvasElement.height);
+          const minX = Math.min(...xCoords) - 30;
+          const maxX = Math.max(...xCoords) + 30;
+          const minY = Math.min(...yCoords) - 50;
+          const maxY = Math.max(...yCoords) + 30;
+          drawTargetingFrame(canvasCtx, minX, minY, maxX - minX, maxY - minY, true);
         }
-        window.lastLandmarks = landmarks;
+      } else {
+        targetStatus.innerText = "> TARGET: SEARCHING...";
+        targetStatus.style.color = "#ff0000";
+        drawTargetingFrame(canvasCtx, canvasElement.width/4, canvasElement.height/4, canvasElement.width/2, canvasElement.height/2, false);
       }
+      canvasCtx.restore();
     }
 
-    // --- ИНИЦИАЛИЗАЦИЯ ---
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
     faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
 
-    window.initSystem = async () => {
-      document.getElementById('overlay-start').remove();
-      await initAudio();
-      initSpeech();
-      const camera = new Camera(videoElement, {
+    async function startCamera() {
+      if(cameraInstance) await cameraInstance.stop();
+      cameraInstance = new Camera(videoElement, {
         onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        width: 1280, height: 720
+        facingMode: currentFacingMode, width: 1280, height: 720
       });
-      camera.start();
-    };
+      cameraInstance.start();
+      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
+    }
 
-    btnFace.onclick = () => {
-      if (!isFaceMode && window.lastLandmarks) {
-        textureCanvas.width = videoElement.videoWidth;
-        textureCanvas.height = videoElement.videoHeight;
-        textureCtx.drawImage(videoElement, 0, 0);
-        textureLandmarks = JSON.parse(JSON.stringify(window.lastLandmarks));
-        isFaceMode = true;
-        btnFace.innerText = "Texture: ON";
-        btnFace.classList.add('active');
-      } else {
-        isFaceMode = false;
-        btnFace.innerText = "Texture: OFF";
-        btnFace.classList.remove('active');
-      }
-    };
+    document.getElementById('switch-camera').addEventListener('click', () => {
+      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+      startCamera();
+    });
+
+    window.initSystem = function() {
+      document.getElementById('overlay-start').style.display = 'none';
+      initAudio();
+      if (window.runSpeech) window.runSpeech();
+      startCamera();
+      addLog("NEURAL_ENGINE_ONLINE");
+    }
   </script>
 </body>
 </html>
+
