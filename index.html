@@ -3,42 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NEURAL FACE SCAN v6.2 - MS-DOS MODE</title>
+  <title>Neural Face Scanner v6.2.1 - FUTURE-TECH</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
-    /* MSDOS 80x25 Style Aesthetics */
-    body { 
-      margin: 0; 
-      background: #0000aa; /* Classic BIOS/DOS Blue */
-      overflow: hidden; 
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace; 
-      color: #aaaaaa; 
-    }
+    /* Футуристическая неоновая эстетика */
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
     
     #preloader {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 200; display: flex;
       flex-direction: column; justify-content: center; align-items: center;
-      border: 4px double #fff; box-sizing: border-box;
+      transition: opacity 0.5s ease;
+      border: 1px solid rgba(0, 255, 255, 0.3); box-sizing: border-box;
     }
 
     .loader-ring {
-      display: none; width: 40px; height: 40px; border: 4px solid #555;
-      border-top-color: #fff;
-      animation: spin 1s steps(8) infinite; margin-bottom: 20px;
+      display: none; width: 60px; height: 60px; border: 2px solid rgba(0, 255, 255, 0.1);
+      border-radius: 50%; border-top-color: rgb(0, 255, 255);
+      animation: spin 1s linear infinite; margin-bottom: 20px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     
     #access-btn {
-      background: #aaaaaa; border: 2px solid #fff; color: #000;
-      padding: 10px 20px; cursor: pointer; text-transform: uppercase;
-      font-weight: bold; font-family: inherit; box-shadow: 4px 4px 0 #555555;
+      background: none; border: 1px solid rgb(0, 255, 255); color: rgb(0, 255, 255);
+      padding: 15px 30px; cursor: pointer; text-transform: uppercase;
+      letter-spacing: 3px; font-family: inherit; transition: 0.3s;
+      box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
     }
-    #access-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #555555; }
+    #access-btn:hover { background: rgb(0, 255, 255); color: #000; box-shadow: 0 0 20px rgb(0, 255, 255); }
 
     #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
     .input_video { display: none; }
@@ -46,55 +42,55 @@
     .output_canvas {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       object-fit: cover; transform: scaleX(-1); z-index: 1;
-      filter: contrast(1.2) brightness(0.8) sepia(0.2);
     }
 
     #switch-camera {
-      position: absolute; top: 10px; right: 10px; z-index: 110;
-      background: #aaaaaa; border: 1px solid #fff; color: #000;
-      padding: 4px 8px; cursor: pointer; font-size: 12px; font-weight: bold;
+      position: absolute; top: 20px; right: 20px; z-index: 110;
+      background: rgba(0,0,0,0.5); border: 1px solid rgb(0, 255, 255); color: rgb(0, 255, 255);
+      padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
+      letter-spacing: 1px;
     }
 
     .interface-overlay {
-      position: absolute; top: 10px; left: 10px; z-index: 10;
-      font-size: 14px; color: #ffff55; pointer-events: none;
-      background: #0000aa; border: 1px solid #fff; padding: 5px;
+      position: absolute; top: 20px; left: 20px; z-index: 10;
+      font-size: 11px; text-shadow: 0 0 5px rgb(0, 255, 255); pointer-events: none;
+      color: rgb(0, 255, 255);
     }
 
     .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: #000; border-top: 2px solid #aaaaaa;
-      padding-bottom: 10px;
+      z-index: 10; background: linear-gradient(to top, #000 85%, transparent);
+      padding-bottom: 20px;
     }
 
     #live-speech-box {
-      width: 100%; background: #aaaaaa; color: #000;
-      text-align: center; font-size: 16px; font-weight: bold;
-      padding: 4px 0; border-bottom: 1px solid #000;
+      width: 90%; min-height: 35px; margin-bottom: 5px;
+      text-align: center; font-size: 18px; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 2px; color: #fff;
     }
 
-    #audio_visualizer { width: 90%; height: 40px; margin: 5px 0; background: #0000aa; border: 1px solid #fff; }
+    #audio_visualizer { width: 90%; height: 60px; margin-bottom: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(0, 255, 255, 0.3); }
 
     #terminal-box {
-      width: 98%; height: 120px; background: #000;
-      border: 1px solid #aaaaaa; padding: 5px; box-sizing: border-box;
-      overflow-y: auto; font-size: 12px; line-height: 1.2;
+      width: 90%; height: 200px; /* Увеличен размер буфера */
+      background: rgba(0, 255, 255, 0.03);
+      border: 1px solid rgba(0, 255, 255, 0.2); padding: 10px; box-sizing: border-box;
+      overflow-y: auto; font-size: 10px; scrollbar-width: thin;
+      scrollbar-color: rgba(0, 255, 255, 0.3) transparent;
     }
 
     .log-entry { 
-      margin: 1px 0; 
-      color: #aaaaaa; 
+      margin: 2px 0; 
+      color: rgba(0, 255, 255, 0.5); 
+      border-left: 1px solid rgba(0, 255, 255, 0.3); 
+      padding-left: 8px; 
+      white-space: pre-wrap;
     }
+    /* Последняя запись всегда ярко-голубая */
     .log-entry:last-child { 
-      color: #ffffff; 
-    }
-    
-    /* CRT Scanline Effect */
-    body::after {
-      content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
-      z-index: 150; background-size: 100% 3px, 3px 100%; pointer-events: none;
+      color: rgb(0, 255, 255); 
+      border-left: 1px solid rgb(0, 255, 255);
     }
   </style>
 </head>
@@ -102,26 +98,26 @@
 <body>
 
   <div id="preloader">
-    <div style="color:#fff; margin-bottom:10px;">MS-DOS(R) Neural Loader v6.20</div>
+    <div style="color:rgb(0, 255, 255); margin-bottom:10px;">NEURAL CORE LOADER v6.2.1</div>
     <div class="loader-ring" id="ring"></div>
-    <button id="access-btn" onclick="startSequence()">A:\> RUN SCANNER.EXE</button>
-    <p id="status-text" style="margin-top: 20px; font-size: 12px; color: #ffff55;">WAITING FOR USER INTERRUPT 21h...</p>
+    <button id="access-btn" onclick="startSequence()">INITIALIZE NEURAL LINK</button>
+    <p id="status-text" style="margin-top: 20px; font-size: 10px; color: rgba(0, 255, 255, 0.7);">AWAITING BIOMETRIC AUTHORIZATION...</p>
   </div>
 
-  <button id="switch-camera">F10: SWITCH</button>
+  <button id="switch-camera">Toggle Cam</button>
 
   <div id="container">
     <video class="input_video" playsinline></video>
     <canvas class="output_canvas"></canvas>
     
     <div class="interface-overlay">
-      C:\SCANNER\> SYS_STATE: RUNNING<br>
-      C:\SCANNER\> MODE: MESH_80x25<br>
-      <span id="target-status" style="color:#fff">C:\SCANNER\> SEEKING...</span>
+      <div>> LINK_STATUS: ACTIVE</div>
+      <div>> SCAN_MODE: FULL_MESH_RECONSTRUCTION</div>
+      <div id="target-status">> TARGET: SEEKING...</div>
     </div>
 
     <div class="bottom-peripherals">
-      <div id="live-speech-box">VOICE_BUFFER: EMPTY</div>
+      <div id="live-speech-box">AWAITING_VOICE_STREAM</div>
       <canvas id="audio_visualizer"></canvas>
       <div id="terminal-box"><div id="log-content"></div></div>
     </div>
@@ -143,21 +139,39 @@
     let audioCtx, analyser, dataArray, frequencyArray;
     let scanLineY = 0; 
     let lastSoundTick = 0;
+    
+    // Переменные для динамического цвета сетки
+    let gridColor = 'rgba(0, 255, 255, 0.2)'; // По умолчанию: голубой
+    let activeColorTime = 0; // Время последнего изменения цвета
 
-    // --- АНИМИРОВАННЫЙ ТЕРМИНАЛ ---
-    async function addLog(text) {
+    // --- АНИМИРОВАННЫЙ ТЕРМИНАЛ С ОЧЕРЕДЬЮ ПЕЧАТИ ---
+    const logQueue = [];
+    let isTyping = false;
+
+    async function processLogQueue() {
+      if (isTyping || logQueue.length === 0) return;
+      isTyping = true;
+      const { text, timestamp } = logQueue.shift();
+      
       const entry = document.createElement('div');
       entry.className = 'log-entry';
-      const timestamp = `[${new Date().toLocaleTimeString()}] `;
-      entry.innerText = timestamp;
+      entry.innerText = `[${timestamp}] `;
       logContent.appendChild(entry);
       
       const message = text.toUpperCase();
       for (let i = 0; i < message.length; i++) {
         entry.innerText += message[i];
         terminalBox.scrollTop = terminalBox.scrollHeight;
-        await new Promise(r => setTimeout(r, 15)); 
+        await new Promise(r => setTimeout(r, 15)); // Скорость печати
       }
+      isTyping = false;
+      terminalBox.scrollTop = terminalBox.scrollHeight; // На всякий случай скролл после печати
+      processLogQueue(); // Рекурсивный вызов для следующего сообщения
+    }
+
+    function addLog(text) {
+      logQueue.push({ text, timestamp: new Date().toLocaleTimeString() });
+      if (!isTyping) processLogQueue();
     }
 
     // --- ЕДИНАЯ ИНИЦИАЛИЗАЦИЯ ПРИ ЗАПУСКЕ ---
@@ -168,18 +182,18 @@
 
       try {
         btn.style.display = 'none';
-        status.innerText = "LOADING DRIVERS (CAM+MIC)...";
+        status.innerText = "REQUESTING ACCESS (CAM+MIC)...";
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         
         ring.style.display = 'block';
-        status.innerText = "ALLOCATING CONVENTIONAL MEMORY...";
+        status.innerText = "ESTABLISHING NEURAL LINK...";
 
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(analyser);
-        analyser.fftSize = 512;
+        analyser.fftSize = 2048;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
         frequencyArray = new Uint8Array(analyser.frequencyBinCount);
         drawWave();
@@ -192,25 +206,52 @@
           document.getElementById('preloader').style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
           if (window.runSpeech) window.runSpeech();
-          addLog("HIMEM.SYS loaded successfully");
-          addLog("Neural Kernel v6.2 executing...");
+          addLog("Neural link established");
+          addLog("Kernel v6.2.1 initialized successfully");
         }, 600);
 
       } catch (err) {
-        status.innerText = "RUNTIME ERROR 200: ACCESS DENIED";
+        status.innerText = "ERROR: INTERRUPT 21h ACCESS DENIED";
         btn.style.display = 'block';
         ring.style.display = 'none';
+        console.error(err);
       }
     };
+
+    function detectAcousticEvents() {
+      if(!analyser) return;
+      analyser.getByteFrequencyData(frequencyArray);
+      let average = frequencyArray.reduce((a, b) => a + b) / frequencyArray.length;
+      let now = Date.now();
+
+      // Логика динамического цвета сетки
+      if (average > 80 && (now - lastSoundTick > 3000)) { // Громкий звук -> Красный
+        gridColor = 'rgba(255, 0, 0, 0.6)';
+        addLog("EVENT: Impulse peak detected (RED)");
+        lastSoundTick = now;
+        activeColorTime = now;
+      } else if (average > 35 && frequencyArray[5] > 100 && (now - lastSoundTick > 3000)) { // Вокал -> Зеленый
+        gridColor = 'rgba(0, 255, 0, 0.6)';
+        addLog("EVENT: Vocal groan detected (GREEN)");
+        lastSoundTick = now;
+        activeColorTime = now;
+      } else if (now - activeColorTime > 3000 && gridColor !== 'rgba(255, 255, 255, 0.6)') { 
+        // Если ничего не происходит 3 сек -> Белый (или возвращаемся к голубому, если уже белый)
+        gridColor = 'rgba(255, 255, 255, 0.6)';
+        addLog("SYSTEM: Mesh color normalized (WHITE)");
+        activeColorTime = now + 10000; // Чтобы не частить с белым логом
+      }
+    }
 
     function drawWave() {
       requestAnimationFrame(drawWave);
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
       analyser.getByteTimeDomainData(dataArray);
+      detectAcousticEvents();
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-      aCtx.lineWidth = 2;
-      aCtx.strokeStyle = '#ffff55';
+      aCtx.lineWidth = 1.5;
+      aCtx.strokeStyle = 'rgb(0, 255, 255)'; // Неоновый голубой для визуала
       aCtx.beginPath();
       let sliceWidth = audioCanvas.width / dataArray.length;
       let x = 0;
@@ -232,31 +273,51 @@
       recognition.onresult = (event) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) addLog("MSG: " + event.results[i][0].transcript);
+          // ИСПРАВЛЕНИЕ: Добавлен пробел перед новой фразой
+          if (event.results[i].isFinal) addLog("VOICE: " + event.results[i][0].transcript.trim() + " "); 
           else interim += event.results[i][0].transcript;
         }
-        liveSpeechBox.innerText = interim ? ">> " + interim.toUpperCase() : "VOICE_BUFFER: IDLE";
+        liveSpeechBox.innerText = interim.trim() ? ">> " + interim.toUpperCase().trim() : "BUFFERING_VOICE_STREAM...";
       };
       recognition.onend = () => recognition.start();
       window.runSpeech = () => recognition.start();
+    }
+
+    function drawTargetingFrame(ctx, x, y, width, height, isLocked, params = "") {
+      if (!isLocked) return;
+      const size = 40;
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgb(0, 255, 255)';
+      const corners = [
+        [x, y, x + size, y, x, y + size], [x + width, y, x + width - size, y, x + width, y + size], 
+        [x, y + height, x + size, y + height, x, y + height - size], [x + width, y + height, x + width - size, y + height, x + width, y + height - size] 
+      ];
+      corners.forEach(c => {
+        ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(c[2], c[3]);
+        ctx.moveTo(c[0], c[1]); ctx.lineTo(c[4], c[5]); ctx.stroke();
+      });
+      ctx.save(); ctx.scale(-1, 1); ctx.font = "10px monospace"; ctx.fillStyle = "rgb(0, 255, 255)";
+      ctx.fillText(`TARGET_LOCKED | ${params}`, -(x + width), y - 10);
+      ctx.restore();
     }
 
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
-      canvasCtx.fillStyle = '#0000aa'; // DOS Blue backdrop
+      canvasCtx.fillStyle = '#000';
       canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
       
-      canvasCtx.globalAlpha = 0.15;
+      canvasCtx.globalAlpha = 0.05; // Минимальная видимость камеры
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        targetStatus.innerText = "C:\\SCANNER\\> TARGET: OK";
+        targetStatus.innerText = "> TARGET: ACQUIRED";
+        targetStatus.style.color = "rgb(0, 255, 255)";
+        
         for (const landmarks of results.multiFaceLandmarks) {
-          // ТЕССЕЛЯЦИЯ (СЕТКА) - Classic monochrome white/yellow
-          canvasCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+          // ТЕССЕЛЯЦИЯ (СЕТКА) С ДИНАМИЧЕСКИМ ЦВЕТОМ
+          canvasCtx.strokeStyle = gridColor;
           canvasCtx.lineWidth = 0.5;
           for (const connector of FACEMESH_TESSELATION) {
             const start = landmarks[connector[0]];
@@ -267,26 +328,34 @@
             canvasCtx.stroke();
           }
           
-          // ОТВЕРСТИЕ РТА (Внутренний контур)
-          // Используем FACEMESH_LIPS, но рисуем только "внутреннюю" часть
-          const innerLipsIndices = [13, 14, 78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 14];
-          canvasCtx.strokeStyle = '#ffffff';
-          canvasCtx.lineWidth = 2;
+          // КОНТУР РТА (Оставлено только отверстие, полоска убрана)
+          const mouthOuterIndices = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291];
+          canvasCtx.strokeStyle = '#ffffff'; // Контуры рта/глаз всегда белые
+          canvasCtx.lineWidth = 1.5;
           canvasCtx.beginPath();
-          innerLipsIndices.forEach((idx, i) => {
+          mouthOuterIndices.forEach((idx, i) => {
             const pt = landmarks[idx];
             if (i === 0) canvasCtx.moveTo(pt.x * canvasElement.width, pt.y * canvasElement.height);
             else canvasCtx.lineTo(pt.x * canvasElement.width, pt.y * canvasElement.height);
           });
-          canvasCtx.closePath();
           canvasCtx.stroke();
 
-          // ГЛАЗА (Для полноты DOS-фейс-трекера)
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#ffff55', lineWidth: 1});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#ffff55', lineWidth: 1});
+          // ГЛАЗА (Контур)
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#ffffff', lineWidth: 1});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#ffffff', lineWidth: 1});
+          
+          // Рамка захвата
+          const xCoords = landmarks.map(l => l.x * canvasElement.width);
+          const yCoords = landmarks.map(l => l.y * canvasElement.height);
+          const minX = Math.min(...xCoords) - 30;
+          const maxX = Math.max(...xCoords) + 30;
+          const minY = Math.min(...yCoords) - 50;
+          const maxY = Math.max(...yCoords) + 30;
+          drawTargetingFrame(canvasCtx, minX, minY, maxX - minX, maxY - minY, true, `X:${Math.round(landmarks[0].x*100)} SCAN_V6.2.1`);
         }
       } else {
-        targetStatus.innerText = "C:\\SCANNER\\> SEEKING...";
+        targetStatus.innerText = "> TARGET: SEEKING...";
+        targetStatus.style.color = "rgba(0, 255, 255, 0.3)";
       }
       canvasCtx.restore();
     }
@@ -299,7 +368,7 @@
       if(cameraInstance) await cameraInstance.stop();
       cameraInstance = new Camera(videoElement, {
         onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        facingMode: currentFacingMode, width: 640, height: 480
+        facingMode: currentFacingMode, width: 1280, height: 720
       });
       await cameraInstance.start();
       canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
