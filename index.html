@@ -70,11 +70,32 @@
     #terminal-box {
       width: 90%; height: 100px; background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(255,255,255,0.2); padding: 10px; box-sizing: border-box;
-      overflow-y: auto; font-size: 10px; scrollbar-width: none;
+      overflow-y: auto; font-size: 10px; scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.3) transparent;
     }
-    #terminal-box::-webkit-scrollbar { display: none; }
 
-    .log-entry { margin: 2px 0; color: rgba(255,255,255,0.5); border-left: 1px solid #fff; padding-left: 8px; }
+    .log-entry { 
+      margin: 2px 0; 
+      color: rgba(255,255,255,0.4); 
+      border-left: 1px solid rgba(255,255,255,0.3); 
+      padding-left: 8px; 
+      white-space: pre-wrap;
+    }
+    /* Последняя запись всегда белая */
+    .log-entry:last-child { 
+      color: #fff; 
+      border-left: 1px solid #fff;
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 5px;
+      height: 10px;
+      background: #fff;
+      margin-left: 2px;
+      animation: blink 0.8s infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
   </style>
 </head>
 
@@ -111,6 +132,7 @@
     const canvasCtx = canvasElement.getContext('2d');
     const liveSpeechBox = document.getElementById('live-speech-box');
     const terminalBox = document.getElementById('terminal-box');
+    const logContent = document.getElementById('log-content');
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
     const targetStatus = document.getElementById('target-status');
@@ -120,6 +142,22 @@
     let audioCtx, analyser, dataArray, frequencyArray;
     let scanLineY = 0; 
     let lastSoundTick = 0;
+
+    // --- АНИМИРОВАННЫЙ ТЕРМИНАЛ ---
+    async function addLog(text) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      const timestamp = `[${new Date().toLocaleTimeString()}] `;
+      entry.innerText = timestamp;
+      logContent.appendChild(entry);
+      
+      const message = text.toUpperCase();
+      for (let i = 0; i < message.length; i++) {
+        entry.innerText += message[i];
+        terminalBox.scrollTop = terminalBox.scrollHeight;
+        await new Promise(r => setTimeout(r, 20)); // Скорость печати
+      }
+    }
 
     // --- ЕДИНАЯ ИНИЦИАЛИЗАЦИЯ ПРИ ЗАПУСКЕ ---
     window.startSequence = async function() {
@@ -131,10 +169,9 @@
         btn.style.display = 'none';
         status.innerText = "ЗАПРОС ПРАВ (CAM + MIC)...";
 
-        // Запрос сразу на всё
+        // Запрос сразу на камеру и микрофон (одно окно)
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         
-        // Как только получили доступ, запускаем лоадер
         ring.style.display = 'block';
         status.innerText = "ИНИЦИАЛИЗАЦИЯ ЯДРА...";
 
@@ -148,10 +185,10 @@
         frequencyArray = new Uint8Array(analyser.frequencyBinCount);
         drawWave();
 
-        // Настройка Камеры (используем уже полученный поток или настройки)
+        // Запуск камеры (передаем уже открытый поток)
+        videoElement.srcObject = stream;
         await startCamera();
         
-        // Плавный переход
         document.getElementById('preloader').style.opacity = '0';
         setTimeout(() => {
           document.getElementById('preloader').style.display = 'none';
@@ -175,12 +212,12 @@
       let average = frequencyArray.reduce((a, b) => a + b) / frequencyArray.length;
       let now = Date.now();
 
-      if (now - lastSoundTick > 1500) {
+      if (now - lastSoundTick > 2500) {
         if (average > 75) {
-          addLog("EVENT: Impulse detected (Cough/Sneeze/Laughter)");
+          addLog("EVENT: Impulse detected (Peak)");
           lastSoundTick = now;
-        } else if (average > 30 && frequencyArray[5] > 100) {
-          addLog("EVENT: Vocal groan/Heavy breath detected");
+        } else if (average > 35 && frequencyArray[5] > 100) {
+          addLog("EVENT: Vocal activity detected");
           lastSoundTick = now;
         }
       }
@@ -205,14 +242,6 @@
         x += sliceWidth;
       }
       aCtx.stroke();
-    }
-
-    function addLog(text) {
-      const entry = document.createElement('div');
-      entry.className = 'log-entry';
-      entry.innerText = `[${new Date().toLocaleTimeString()}] ${text.toUpperCase()}`;
-      document.getElementById('log-content').appendChild(entry);
-      terminalBox.scrollTop = terminalBox.scrollHeight;
     }
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -266,6 +295,7 @@
         targetStatus.innerText = "> TARGET: LOCKED";
         targetStatus.style.color = "#fff";
         for (const landmarks of results.multiFaceLandmarks) {
+          // ТЕССЕЛЯЦИЯ (СЕТКА)
           for (const connector of FACEMESH_TESSELATION) {
             const start = landmarks[connector[0]];
             const end = landmarks[connector[1]];
@@ -277,8 +307,9 @@
             canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
             canvasCtx.stroke();
           }
-          // ТОЛЬКО РОТ (ВНЕШНИЙ КОНТУР)
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#fff', lineWidth: 1});
+          
+          // КОНТУР РТА (LIPS включает только очертание)
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#fff', lineWidth: 1.5});
           drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#fff', lineWidth: 1});
           drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#fff', lineWidth: 1});
           
@@ -313,7 +344,7 @@
 
     document.getElementById('switch-camera').addEventListener('click', () => {
       currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-      startCamera(); // Камера переключится без запроса прав, так как доступ уже получен
+      startCamera();
     });
   </script>
 </body>
