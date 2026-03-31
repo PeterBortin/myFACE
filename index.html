@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Neural Face Scanner v5.0</title>
+  <title>Neural Face Scanner v6.0 - Fixed</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -11,91 +11,46 @@
 
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
-    
     #overlay-start {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 100; display: flex;
       flex-direction: column; justify-content: center; align-items: center; cursor: pointer;
     }
-    #overlay-start h1 { border: 1px solid #fff; padding: 20px; text-transform: uppercase; letter-spacing: 5px; }
-
-    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+    #container { position: relative; width: 100vw; height: 100vh; }
     .input_video { display: none; }
+    .output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
     
-    .output_canvas {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      object-fit: cover; transform: scaleX(-1); z-index: 1;
-    }
-
-    .controls {
-      position: absolute; top: 20px; right: 20px; z-index: 110;
-      display: flex; gap: 10px;
-    }
-
-    button {
-      background: rgba(0,0,0,0.5); border: 1px solid #fff; color: #fff;
-      padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
-    }
-
-    button.active { background: #fff; color: #000; }
-
-    .interface-overlay {
-      position: absolute; top: 20px; left: 20px; z-index: 10;
-      font-size: 11px; text-shadow: 0 0 5px #fff; pointer-events: none;
-    }
+    .controls { position: absolute; top: 20px; right: 20px; z-index: 110; display: flex; gap: 10px; }
+    button { background: rgba(0,0,0,0.7); border: 1px solid #0f0; color: #0f0; padding: 8px 12px; cursor: pointer; font-size: 10px; text-transform: uppercase; }
+    button.active { background: #0f0; color: #000; }
 
     .bottom-peripherals {
-      position: absolute; bottom: 0; left: 0; width: 100%;
+      position: absolute; bottom: 0; left: 0; width: 100%; z-index: 10;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 20px 0;
       display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: linear-gradient(to top, #000 85%, transparent);
-      padding-bottom: 20px;
     }
-
-    #live-speech-box {
-      width: 90%; min-height: 35px; margin-bottom: 5px;
-      text-align: center; font-size: 18px; font-weight: bold;
-      text-transform: uppercase; letter-spacing: 2px; color: #fff;
-    }
-
-    #audio_visualizer { width: 100%; height: 60px; margin-bottom: 10px; }
-
-    #terminal-box {
-      width: 90%; height: 100px; background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255,255,255,0.2); padding: 10px; box-sizing: border-box;
-      overflow-y: auto; font-size: 10px; scrollbar-width: none;
-    }
-    #terminal-box::-webkit-scrollbar { display: none; }
-
-    .log-entry { margin: 2px 0; color: rgba(255,255,255,0.5); border-left: 1px solid #fff; padding-left: 8px; }
+    #live-speech-box { font-size: 20px; font-weight: bold; color: #0f0; margin-bottom: 10px; height: 24px; text-shadow: 0 0 10px #0f0; }
+    #audio_visualizer { width: 90%; height: 80px; border-bottom: 1px solid rgba(0,255,0,0.3); }
   </style>
 </head>
-
 <body>
 
   <div id="overlay-start" onclick="initSystem()">
-    <h1>ACCESS GRANTED</h1>
-    <p>[ CLICK TO INITIALIZE SCANNER ]</p>
+    <h1 style="border: 1px solid #0f0; padding: 20px;">INITIALIZE SYSTEM</h1>
   </div>
 
   <div class="controls">
-    <button id="btn-face">Face Mode: OFF</button>
-    <button id="switch-camera">Toggle Cam</button>
+    <button id="btn-face">Texture: OFF</button>
+    <button id="switch-camera">Switch Cam</button>
   </div>
 
   <div id="container">
     <video class="input_video" playsinline></video>
     <canvas class="output_canvas"></canvas>
     
-    <div class="interface-overlay">
-      <div>> NEURAL_LINK: ESTABLISHED</div>
-      <div id="mode-status">> MODE: WIREFRAME</div>
-      <div id="target-status">> TARGET: SEARCHING...</div>
-    </div>
-
     <div class="bottom-peripherals">
-      <div id="live-speech-box">READY_FOR_VOICE</div>
+      <div id="live-speech-box">WAITING_FOR_VOICE...</div>
       <canvas id="audio_visualizer"></canvas>
-      <div id="terminal-box"><div id="log-content"></div></div>
     </div>
   </div>
 
@@ -103,25 +58,19 @@
     const videoElement = document.querySelector('.input_video');
     const canvasElement = document.querySelector('.output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const liveSpeechBox = document.getElementById('live-speech-box');
-    const terminalBox = document.getElementById('terminal-box');
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
-    const targetStatus = document.getElementById('target-status');
+    const liveSpeechBox = document.getElementById('live-speech-box');
     const btnFace = document.getElementById('btn-face');
 
-    let currentFacingMode = 'user';
-    let cameraInstance = null;
-    let audioCtx, analyser, dataArray;
-    let scanLineY = 0;
-    
-    // Переменные для режима текстуры
     let isFaceMode = false;
     let textureCanvas = document.createElement('canvas');
     let textureCtx = textureCanvas.getContext('2d');
     let textureLandmarks = null;
+    let currentFacingMode = 'user';
 
-    // --- АУДИО ---
+    // --- ЗВУКОВОЙ ЭКВАЛАЙЗЕР ---
+    let audioCtx, analyser, dataArray;
     async function initAudio() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -129,42 +78,51 @@
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(analyser);
-        analyser.fftSize = 2048;
+        analyser.fftSize = 256; 
         dataArray = new Uint8Array(analyser.frequencyBinCount);
-        drawWave();
-      } catch(e) { console.log("Audio Error"); }
+        drawVisualizer();
+      } catch(e) { console.error("Audio init failed", e); }
     }
 
-    function drawWave() {
-      requestAnimationFrame(drawWave);
+    function drawVisualizer() {
+      requestAnimationFrame(drawVisualizer);
+      analyser.getByteFrequencyData(dataArray);
+      
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
-      analyser.getByteTimeDomainData(dataArray);
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-      aCtx.lineWidth = 1.5;
-      aCtx.strokeStyle = '#ffffff';
-      aCtx.beginPath();
-      let sliceWidth = audioCanvas.width / dataArray.length;
+      
+      const barWidth = (audioCanvas.width / dataArray.length) * 2.5;
       let x = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        let v = dataArray[i] / 128.0;
-        let y = v * audioCanvas.height / 2;
-        if (i === 0) aCtx.moveTo(x, y); else aCtx.lineTo(x, y);
-        x += sliceWidth;
+      for(let i = 0; i < dataArray.length; i++) {
+        const barHeight = (dataArray[i] / 255) * audioCanvas.height;
+        aCtx.fillStyle = `rgb(0, ${dataArray[i] + 100}, 0)`;
+        aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth, barHeight);
+        x += barWidth + 1;
       }
-      aCtx.stroke();
     }
 
-    function addLog(text) {
-      const entry = document.createElement('div');
-      entry.className = 'log-entry';
-      entry.innerText = `[${new Date().toLocaleTimeString()}] ${text.toUpperCase()}`;
-      document.getElementById('log-content').appendChild(entry);
-      terminalBox.scrollTop = terminalBox.scrollHeight;
+    // --- РАСПОЗНАВАНИЕ РЕЧИ ---
+    function initSpeech() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'ru-RU';
+        recognition.interimResults = true;
+        recognition.continuous = true;
+
+        recognition.onresult = (event) => {
+          const result = event.results[event.results.length - 1];
+          liveSpeechBox.innerText = result[0].transcript.toUpperCase();
+        };
+
+        recognition.onend = () => recognition.start(); // Автоперезапуск
+        recognition.start();
+      }
     }
 
-    // --- TEXTURE MAPPING (TRIANGLE CLIPPING) ---
-    function drawTexturedTriangle(ctx, img, s1, s2, s3, d1, d2, d3) {
+    // --- ТЕКСТУРЫ (TRIANGLE MAPPING) ---
+    function drawTriangle(ctx, img, s1, s2, s3, d1, d2, d3) {
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(d1.x, d1.y);
@@ -173,144 +131,88 @@
       ctx.closePath();
       ctx.clip();
 
-      const delta = (s1.x * (s2.y - s3.y) + s2.x * (s3.y - s1.y) + s3.x * (s1.y - s2.y));
-      const deltaA = (d1.x * (s2.y - s3.y) + d2.x * (s3.y - s1.y) + d3.x * (s1.y - s2.y));
-      const deltaB = (s1.x * (d2.x - d3.x) + s2.x * (d3.x - d1.x) + s3.x * (d1.x - d2.x));
-      const deltaC = (s1.x * (s2.y * d3.x - s3.y * d2.x) + s2.x * (s3.y * d1.x - s1.y * d3.x) + s3.x * (s1.y * d2.x - s2.y * d1.x));
-      const deltaD = (d1.y * (s2.y - s3.y) + d2.y * (s3.y - s1.y) + d3.y * (s1.y - s2.y));
-      const deltaE = (s1.x * (d2.y - d3.y) + s2.x * (d3.y - d1.y) + s3.x * (d1.y - d2.y));
-      const deltaF = (s1.x * (s2.y * d3.y - s3.y * d2.y) + s2.x * (s3.y * d1.y - s1.y * d3.y) + s3.x * (s1.y * d2.y - s2.y * d1.y));
+      const det = (s1.x * (s2.y - s3.y) + s2.x * (s3.y - s1.y) + s3.x * (s1.y - s2.y));
+      if (Math.abs(det) < 0.1) { ctx.restore(); return; }
 
-      ctx.setTransform(deltaA / delta, deltaD / delta, deltaB / delta, deltaE / delta, deltaC / delta, deltaF / delta);
+      ctx.transform(
+        (d1.x * (s2.y - s3.y) + d2.x * (s3.y - s1.y) + d3.x * (s1.y - s2.y)) / det,
+        (d1.y * (s2.y - s3.y) + d2.y * (s3.y - s1.y) + d3.y * (s1.y - s2.y)) / det,
+        (s1.x * (d2.x - d3.x) + s2.x * (d3.x - d1.x) + s3.x * (d1.x - d2.x)) / det,
+        (s1.x * (d2.y - d3.y) + s2.x * (d3.y - d1.y) + s3.x * (d1.y - d2.y)) / det,
+        (s1.x * (s2.y * d3.x - s3.y * d2.x) + s2.x * (s3.y * d1.x - s1.y * d3.x) + s3.x * (s1.y * d2.x - s2.y * d1.x)) / det,
+        (s1.x * (s2.y * d3.y - s3.y * d2.y) + s2.x * (s3.y * d1.y - s1.y * d3.y) + s3.x * (s1.y * d2.y - s2.y * d1.y)) / det
+      );
       ctx.drawImage(img, 0, 0);
       ctx.restore();
     }
 
-    // --- FACE MESH & EFFECTS ---
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
-      canvasCtx.save();
-      
-      // Mirroring fix
-      if (currentFacingMode === 'user') {
-        canvasCtx.translate(canvasElement.width, 0);
-        canvasCtx.scale(-1, 1);
-      }
-
-      canvasCtx.fillStyle = '#000';
-      canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        targetStatus.innerText = "> TARGET: LOCKED";
-        targetStatus.style.color = "#fff";
         const landmarks = results.multiFaceLandmarks[0];
+        
+        // Определяем цвет сетки
+        const eyeDist = Math.abs(landmarks[159].y - landmarks[145].y);
+        const lipDist = Math.abs(landmarks[13].y - landmarks[14].y);
+        let color = '#fff';
+        if (eyeDist < 0.01) color = '#f00';
+        else if (lipDist > 0.02) color = '#0f0';
 
-        // 1. Определение состояний для цвета
-        // Глаза: дистанция между точками 159 и 145
-        const eyeDist = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
-        // Речь: дистанция между губами 13 и 14
-        const lipDist = Math.hypot(landmarks[13].x - landmarks[14].x, landmarks[13].y - landmarks[14].y);
-
-        let meshColor = 'rgba(255,255,255,0.2)'; // По умолчанию белый
-        if (eyeDist < 0.015) meshColor = 'rgba(255,0,0,0.5)'; // Закрыты - красный
-        else if (lipDist > 0.025) meshColor = 'rgba(0,255,0,0.5)'; // Речь - зеленый
-
-        // 2. Режим ТЕКСТУРЫ
         if (isFaceMode && textureLandmarks) {
           for (const triangle of FACEMESH_TESSELATION) {
-            const s1 = {x: textureLandmarks[triangle[0]].x * canvasElement.width, y: textureLandmarks[triangle[0]].y * canvasElement.height};
-            const s2 = {x: textureLandmarks[triangle[1]].x * canvasElement.width, y: textureLandmarks[triangle[1]].y * canvasElement.height};
-            const s3 = {x: textureLandmarks[triangle[2]].x * canvasElement.width, y: textureLandmarks[triangle[2]].y * canvasElement.height};
-            
-            const d1 = {x: landmarks[triangle[0]].x * canvasElement.width, y: landmarks[triangle[0]].y * canvasElement.height};
-            const d2 = {x: landmarks[triangle[1]].x * canvasElement.width, y: landmarks[triangle[1]].y * canvasElement.height};
-            const d3 = {x: landmarks[triangle[2]].x * canvasElement.width, y: landmarks[triangle[2]].y * canvasElement.height};
-            
-            drawTexturedTriangle(canvasCtx, textureCanvas, s1, s2, s3, d1, d2, d3);
+            const s = triangle.map(i => ({x: textureLandmarks[i].x * canvasElement.width, y: textureLandmarks[i].y * canvasElement.height}));
+            const d = triangle.map(i => ({x: landmarks[i].x * canvasElement.width, y: landmarks[i].y * canvasElement.height}));
+            drawTriangle(canvasCtx, textureCanvas, s[0], s[1], s[2], d[0], d[1], d[2]);
           }
-        } else {
-          // Обычное видео на фоне если не в режиме маски
-          canvasCtx.globalAlpha = 0.1;
-          canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-          canvasCtx.globalAlpha = 1.0;
         }
 
-        // 3. Отрисовка сетки поверх
-        canvasCtx.strokeStyle = meshColor;
+        // Отрисовка сетки
+        canvasCtx.strokeStyle = color;
         canvasCtx.lineWidth = 0.5;
-        for (const connector of FACEMESH_TESSELATION) {
-          const start = landmarks[connector[0]];
-          const end = landmarks[connector[1]];
+        for (const [a, b] of FACEMESH_TESSELATION) {
           canvasCtx.beginPath();
-          canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
-          canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
+          canvasCtx.moveTo(landmarks[a].x * canvasElement.width, landmarks[a].y * canvasElement.height);
+          canvasCtx.lineTo(landmarks[b].x * canvasElement.width, landmarks[b].y * canvasElement.height);
           canvasCtx.stroke();
         }
-
-        // Подсветка глаз и рта
-        canvasCtx.strokeStyle = meshColor.replace('0.5', '1').replace('0.2', '1');
-        canvasCtx.lineWidth = 1.5;
-        drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: meshColor});
-        drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: meshColor});
-        drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: meshColor});
-
-      } else {
-        targetStatus.innerText = "> TARGET: SEARCHING...";
-        targetStatus.style.color = "#ff0000";
+        window.lastLandmarks = landmarks;
       }
-      canvasCtx.restore();
-      
-      // Сохраняем текущие данные для захвата лица, если нужно
-      window.lastResults = results;
     }
 
-    // --- УПРАВЛЕНИЕ ---
-    btnFace.addEventListener('click', () => {
-      if (!isFaceMode) {
-        if (window.lastResults && window.lastResults.multiFaceLandmarks.length > 0) {
-          // Делаем снимок
-          textureCanvas.width = videoElement.videoWidth;
-          textureCanvas.height = videoElement.videoHeight;
-          textureCtx.drawImage(videoElement, 0, 0);
-          textureLandmarks = JSON.parse(JSON.stringify(window.lastResults.multiFaceLandmarks[0]));
-          isFaceMode = true;
-          btnFace.innerText = "Face Mode: ON";
-          btnFace.classList.add('active');
-          addLog("FACE_TEXTURE_CAPTURED");
-        }
-      } else {
-        isFaceMode = false;
-        btnFace.innerText = "Face Mode: OFF";
-        btnFace.classList.remove('active');
-        addLog("RETURN_TO_WIREFRAME");
-      }
-    });
-
+    // --- ИНИЦИАЛИЗАЦИЯ ---
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
     faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
 
-    async function startCamera() {
-      if(cameraInstance) await cameraInstance.stop();
-      cameraInstance = new Camera(videoElement, {
+    window.initSystem = async () => {
+      document.getElementById('overlay-start').remove();
+      await initAudio();
+      initSpeech();
+      const camera = new Camera(videoElement, {
         onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        facingMode: currentFacingMode, width: 1280, height: 720
+        width: 1280, height: 720
       });
-      cameraInstance.start();
-    }
+      camera.start();
+    };
 
-    document.getElementById('switch-camera').addEventListener('click', () => {
-      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-      startCamera();
-    });
-
-    window.initSystem = function() {
-      document.getElementById('overlay-start').style.display = 'none';
-      initAudio();
-      startCamera();
-      addLog("NEURAL_ENGINE_ONLINE");
-    }
+    btnFace.onclick = () => {
+      if (!isFaceMode && window.lastLandmarks) {
+        textureCanvas.width = videoElement.videoWidth;
+        textureCanvas.height = videoElement.videoHeight;
+        textureCtx.drawImage(videoElement, 0, 0);
+        textureLandmarks = JSON.parse(JSON.stringify(window.lastLandmarks));
+        isFaceMode = true;
+        btnFace.innerText = "Texture: ON";
+        btnFace.classList.add('active');
+      } else {
+        isFaceMode = false;
+        btnFace.innerText = "Texture: OFF";
+        btnFace.classList.remove('active');
+      }
+    };
   </script>
 </body>
 </html>
