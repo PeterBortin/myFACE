@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cyber Mesh Terminal v4.1</title>
+  <title>Neural Face Scanner v5.0</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -30,61 +30,63 @@
     #switch-camera {
       position: absolute; top: 20px; right: 20px; z-index: 110;
       background: rgba(0,0,0,0.5); border: 1px solid #fff; color: #fff;
-      padding: 10px 15px; cursor: pointer; text-transform: uppercase; font-size: 12px;
+      padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
     }
 
     .interface-overlay {
       position: absolute; top: 20px; left: 20px; z-index: 10;
-      font-size: 12px; text-shadow: 0 0 5px #000; pointer-events: none;
+      font-size: 11px; text-shadow: 0 0 5px #fff; pointer-events: none;
     }
 
     .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: linear-gradient(to top, rgba(0,0,0,0.9) 60%, transparent);
+      z-index: 10; background: linear-gradient(to top, #000 85%, transparent);
       padding-bottom: 20px;
     }
 
     #live-speech-box {
-      width: 90%; min-height: 40px; margin-bottom: 10px;
-      text-align: center; font-size: 20px; font-weight: bold;
-      text-transform: uppercase; letter-spacing: 2px;
-      color: #fff; text-shadow: 0 0 10px #000;
+      width: 90%; min-height: 35px; margin-bottom: 5px;
+      text-align: center; font-size: 18px; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 2px; color: #fff;
     }
 
-    #audio_visualizer { width: 90%; height: 40px; margin-bottom: 10px; }
+    #audio_visualizer { width: 100%; height: 60px; margin-bottom: 10px; }
 
     #terminal-box {
-      width: 90%; height: 120px; background: rgba(0, 0, 0, 0.4);
-      border: 1px solid rgba(255,255,255,0.3); padding: 10px; box-sizing: border-box;
-      overflow-y: auto; scrollbar-width: none;
+      width: 90%; height: 100px; background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255,255,255,0.2); padding: 10px; box-sizing: border-box;
+      overflow-y: auto; font-size: 10px; scrollbar-width: none;
     }
+    #terminal-box::-webkit-scrollbar { display: none; }
+
+    .log-entry { margin: 2px 0; color: rgba(255,255,255,0.5); border-left: 1px solid #fff; padding-left: 8px; }
   </style>
 </head>
 
 <body>
 
   <div id="overlay-start" onclick="initSystem()">
-    <h1>INITIALIZE SYSTEM</h1>
+    <h1>ACCESS GRANTED</h1>
+    <p>[ CLICK TO INITIALIZE SCANNER ]</p>
   </div>
 
-  <button id="switch-camera">Camera</button>
+  <button id="switch-camera">Toggle Cam</button>
 
   <div id="container">
     <video class="input_video" playsinline></video>
     <canvas class="output_canvas"></canvas>
     
     <div class="interface-overlay">
-      <div>> CORE: ACTIVE</div>
-      <div id="vox-status">> VOX: STANDBY</div>
+      <div>> NEURAL_LINK: ESTABLISHED</div>
+      <div>> SCAN_MODE: 3D_MESH_RECONSTRUCTION</div>
+      <div id="target-status">> TARGET: SEARCHING...</div>
     </div>
 
     <div class="bottom-peripherals">
-      <div id="live-speech-box">...</div>
+      <div id="live-speech-box">READY_FOR_VOICE</div>
       <canvas id="audio_visualizer"></canvas>
-      <div id="terminal-box">
-        <div id="log-content"></div>
-      </div>
+      <div id="terminal-box"><div id="log-content"></div></div>
     </div>
   </div>
 
@@ -92,16 +94,18 @@
     const videoElement = document.querySelector('.input_video');
     const canvasElement = document.querySelector('.output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const logContent = document.getElementById('log-content');
     const liveSpeechBox = document.getElementById('live-speech-box');
     const terminalBox = document.getElementById('terminal-box');
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
+    const targetStatus = document.getElementById('target-status');
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
     let audioCtx, analyser, dataArray;
+    let scanLineY = 0; // Для 3D сканирования
 
+    // --- ОСЦИЛЛОГРАФ (ТОЧНЫЙ ЗВУК) ---
     async function initAudio() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -109,75 +113,151 @@
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(analyser);
-        analyser.fftSize = 64;
+        analyser.fftSize = 2048;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
-        drawBars();
-      } catch(e) { console.log("Mic access denied"); }
+        drawWave();
+      } catch(e) { console.log("Audio Error"); }
     }
 
-    function drawBars() {
-      requestAnimationFrame(drawBars);
+    function drawWave() {
+      requestAnimationFrame(drawWave);
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
-      analyser.getByteFrequencyData(dataArray);
+      analyser.getByteTimeDomainData(dataArray);
+
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-      const barWidth = (audioCanvas.width / dataArray.length) * 2;
+      aCtx.lineWidth = 1.5;
+      aCtx.strokeStyle = '#ffffff';
+      aCtx.beginPath();
+
+      let sliceWidth = audioCanvas.width / dataArray.length;
       let x = 0;
       for (let i = 0; i < dataArray.length; i++) {
-        const barHeight = (dataArray[i] / 255) * audioCanvas.height;
-        aCtx.fillStyle = `rgba(255, 255, 255, ${dataArray[i]/255 + 0.3})`;
-        aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 2, barHeight);
-        x += barWidth;
+        let v = dataArray[i] / 128.0;
+        let y = v * audioCanvas.height / 2;
+        if (i === 0) aCtx.moveTo(x, y); else aCtx.lineTo(x, y);
+        x += sliceWidth;
       }
+      aCtx.stroke();
     }
 
+    // --- ЛОГИ ---
     function addLog(text) {
       const entry = document.createElement('div');
       entry.className = 'log-entry';
-      const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
-      entry.innerText = `[LOG_${time}] ${text}`;
-      logContent.appendChild(entry);
+      entry.innerText = `[${new Date().toLocaleTimeString()}] ${text.toUpperCase()}`;
+      document.getElementById('log-content').appendChild(entry);
       terminalBox.scrollTop = terminalBox.scrollHeight;
     }
 
+    // --- РАСПОЗНАВАНИЕ ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'ru-RU';
+
       recognition.onresult = (event) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) { addLog(transcript); } else { interim += transcript; }
+          if (event.results[i].isFinal) addLog(event.results[i][0].transcript);
+          else interim += event.results[i][0].transcript;
         }
-        liveSpeechBox.innerText = interim || "...";
+        liveSpeechBox.innerText = interim || "LISTENING...";
       };
-      recognition.onstart = () => document.getElementById('vox-status').innerText = "> VOX: LISTENING";
       recognition.onend = () => recognition.start();
       window.runSpeech = () => recognition.start();
     }
 
+    // --- Вспомогательная функция для отрисовки рамки ---
+    function drawTargetingFrame(ctx, x, y, width, height, isLocked) {
+      const size = 40;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isLocked ? '#fff' : '#ff0000';
+      
+      // Рисуем углы
+      const corners = [
+        [x, y, x + size, y, x, y + size], // Top-left
+        [x + width, y, x + width - size, y, x + width, y + size], // Top-right
+        [x, y + height, x + size, y + height, x, y + height - size], // Bottom-left
+        [x + width, y + height, x + width - size, y + height, x + width, y + height - size] // Bottom-right
+      ];
+
+      corners.forEach(c => {
+        ctx.beginPath();
+        ctx.moveTo(c[0], c[1]); ctx.lineTo(c[2], c[3]);
+        ctx.moveTo(c[0], c[1]); ctx.lineTo(c[4], c[5]);
+        ctx.stroke();
+      });
+
+      if (!isLocked) {
+        ctx.font = "10px monospace";
+        ctx.fillStyle = "#ff0000";
+        ctx.fillText("SEARCHING_FOR_SUBJECT", x, y - 10);
+      } else {
+        ctx.fillStyle = "#fff";
+        ctx.fillText("TARGET_LOCKED", x, y - 10);
+      }
+    }
+
+    // --- FACE MESH & EFFECTS ---
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
-      
-      // 1. Отрисовка чистого видео (без фильтров)
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.fillStyle = '#000';
+      canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
-      if (results.multiFaceLandmarks) {
+      // Фоновое видео (едва заметно)
+      canvasCtx.globalAlpha = 0.05;
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.globalAlpha = 1.0;
+
+      // Анимация линии сканирования
+      scanLineY = (scanLineY + 0.01) % 1.0;
+
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        targetStatus.innerText = "> TARGET: LOCKED";
+        targetStatus.style.color = "#fff";
+
         for (const landmarks of results.multiFaceLandmarks) {
-          // 2. Светлая сетка лица (повышена яркость)
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(255,255,255,0.35)', lineWidth: 0.5});
-          
-          // 3. Контур рта (внешний) и глаз
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: 'rgba(255,255,255,0.8)', lineWidth: 1.5});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#fff', lineWidth: 2});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#fff', lineWidth: 2});
+          // 1. Отрисовка основной сетки с 3D эффектом сканирования
+          for (const connector of FACEMESH_TESSELATION) {
+            const start = landmarks[connector[0]];
+            const end = landmarks[connector[1]];
+            
+            // Если точка рядом с линией сканирования — она ярче
+            const dist = Math.abs(start.y - scanLineY);
+            canvasCtx.strokeStyle = dist < 0.05 ? '#fff' : 'rgba(255,255,255,0.1)';
+            canvasCtx.lineWidth = dist < 0.05 ? 1 : 0.5;
+
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
+            canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
+            canvasCtx.stroke();
+          }
+
+          // 2. Жирные контуры глаз и губ
+          const highlightStyle = {color: '#fff', lineWidth: 2};
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, highlightStyle);
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, highlightStyle);
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, highlightStyle);
+
+          // 3. Рамка наведения
+          const xCoords = landmarks.map(l => l.x * canvasElement.width);
+          const yCoords = landmarks.map(l => l.y * canvasElement.height);
+          const minX = Math.min(...xCoords) - 30;
+          const maxX = Math.max(...xCoords) + 30;
+          const minY = Math.min(...yCoords) - 50;
+          const maxY = Math.max(...yCoords) + 30;
+          drawTargetingFrame(canvasCtx, minX, minY, maxX - minX, maxY - minY, true);
         }
+      } else {
+        targetStatus.innerText = "> TARGET: SEARCHING...";
+        targetStatus.style.color = "#ff0000";
+        // Поисковая рамка в центре, если лицо не найдено
+        drawTargetingFrame(canvasCtx, canvasElement.width/4, canvasElement.height/4, canvasElement.width/2, canvasElement.height/2, false);
       }
       canvasCtx.restore();
     }
@@ -190,8 +270,7 @@
       if(cameraInstance) await cameraInstance.stop();
       cameraInstance = new Camera(videoElement, {
         onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        facingMode: currentFacingMode,
-        width: 1280, height: 720
+        facingMode: currentFacingMode, width: 1280, height: 720
       });
       cameraInstance.start();
       canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
@@ -207,7 +286,7 @@
       initAudio();
       if (window.runSpeech) window.runSpeech();
       startCamera();
-      addLog("SYSTEM STARTUP SUCCESS");
+      addLog("NEURAL_ENGINE_ONLINE");
     }
   </script>
 </body>
