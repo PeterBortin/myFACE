@@ -11,84 +11,54 @@
 
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #888; }
-    
     #preloader {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 200; display: flex;
       flex-direction: column; justify-content: center; align-items: center;
-      transition: opacity 0.5s ease;
-      border: 1px solid #333; box-sizing: border-box;
+      transition: opacity 0.5s ease; border: 1px solid #333; box-sizing: border-box;
     }
-
     .loader-ring {
       display: none; width: 60px; height: 60px; border: 2px solid #222;
       border-radius: 50%; border-top-color: #fff;
       animation: spin 1s linear infinite; margin-bottom: 20px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    
     #access-btn {
       background: none; border: 1px solid #fff; color: #fff;
       padding: 15px 30px; cursor: pointer; text-transform: uppercase;
       letter-spacing: 3px; font-family: inherit; transition: 0.3s;
     }
     #access-btn:hover { background: #fff; color: #000; }
-
     #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
     .input_video { display: none; }
-    
     .output_canvas {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       object-fit: cover; transform: scaleX(-1); z-index: 1;
     }
-
     #switch-camera {
       position: absolute; top: 20px; right: 20px; z-index: 110;
       background: rgba(0,0,0,0.7); border: 1px solid #fff; color: #fff;
       padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
     }
-
-    .interface-overlay {
-      position: absolute; top: 20px; left: 20px; z-index: 10;
-      font-size: 11px; pointer-events: none; color: #666;
-    }
-
+    .interface-overlay { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 11px; pointer-events: none; color: #666; }
     .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: linear-gradient(to top, #000 90%, transparent);
-      padding-bottom: 20px;
+      z-index: 10; background: linear-gradient(to top, #000 90%, transparent); padding-bottom: 20px;
     }
-
-    #live-speech-box {
-      width: 90%; min-height: 35px; margin-bottom: 5px;
-      text-align: center; font-size: 18px; font-weight: bold;
-      text-transform: uppercase; letter-spacing: 2px; color: #fff;
-    }
-
-    #audio_visualizer { 
-      width: 90%; height: 80px; margin-bottom: 10px; 
-      background: rgba(255,255,255,0.02); border: 1px solid #222; 
-    }
-
+    #live-speech-box { width: 90%; min-height: 35px; margin-bottom: 5px; text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #fff; }
+    #audio_visualizer { width: 90%; height: 80px; margin-bottom: 10px; background: rgba(255,255,255,0.02); border: 1px solid #222; }
     #terminal-box {
       width: 90%; height: 150px; background: rgba(255, 255, 255, 0.01);
       border: 1px solid #222; padding: 10px; box-sizing: border-box;
-      overflow-y: auto; font-size: 10px; scrollbar-width: thin;
-      scrollbar-color: #333 transparent;
+      overflow-y: auto; font-size: 10px; scrollbar-width: thin; scrollbar-color: #333 transparent;
     }
-
-    .log-entry { 
-      margin: 2px 0; color: #555; 
-      border-left: 1px solid #222; 
-      padding-left: 8px; white-space: pre-wrap;
-    }
+    .log-entry { margin: 2px 0; color: #555; border-left: 1px solid #222; padding-left: 8px; white-space: pre-wrap; }
     .log-entry:last-child { color: #fff; border-left: 1px solid #fff; }
   </style>
 </head>
 
 <body>
-
   <div id="preloader">
     <div style="color:#fff; margin-bottom:10px;">NEURAL CORE LOADER v6.2.3</div>
     <div class="loader-ring" id="ring"></div>
@@ -101,12 +71,10 @@
   <div id="container">
     <video class="input_video" playsinline muted></video>
     <canvas class="output_canvas"></canvas>
-    
     <div class="interface-overlay">
       <div>> LINK_STATUS: ACTIVE</div>
       <div id="target-status">> TARGET: SEEKING...</div>
     </div>
-
     <div class="bottom-peripherals">
       <div id="live-speech-box">IDLE</div>
       <canvas id="audio_visualizer"></canvas>
@@ -127,15 +95,12 @@
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
-    let audioCtx, analyser, frequencyArray;
-    let globalStream = null;
+    let audioCtx, analyser, freqData, globalStream;
     let isSpeaking = false;
-    let speechTimeout;
-
-    // --- УСКОРЕННЫЙ ТЕРМИНАЛ ---
-    const logQueue = [];
+    let logQueue = [];
     let isTyping = false;
 
+    // --- ЛОГИКА ТЕРМИНАЛА ---
     async function processLogQueue() {
       if (isTyping || logQueue.length === 0) return;
       isTyping = true;
@@ -159,7 +124,7 @@
       if (!isTyping) processLogQueue();
     }
 
-    // --- ИНИЦИАЛИЗАЦИЯ (ФИКС ДОСТУПОВ) ---
+    // --- ИНИЦИАЛИЗАЦИЯ (ЕДИНЫЙ ЗАПРОС) ---
     window.startSequence = async function() {
       const btn = document.getElementById('access-btn');
       const ring = document.getElementById('ring');
@@ -169,30 +134,24 @@
         btn.style.display = 'none';
         status.innerText = "ACCESSING CORE SENSORS...";
 
-        // Запрашиваем всё один раз
-        globalStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { echoCancellation: true, noiseSuppression: true }, 
-            video: { facingMode: currentFacingMode } 
-        });
+        // Запрашиваем всё разом, чтобы потом не дергать разрешения
+        globalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         
         ring.style.display = 'block';
         status.innerText = "CALIBRATING...";
 
-        // Инициализация Аудио (фиксим эквалайзер)
+        // Аудио Контекст и Анализатор
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(globalStream);
         source.connect(analyser);
-        analyser.fftSize = 64; // Меньше размер - больше чувствительность для барабанов
-        frequencyArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.fftSize = 128;
+        freqData = new Uint8Array(analyser.frequencyBinCount);
         
         drawBars();
 
         videoElement.srcObject = globalStream;
-        videoElement.onloadedmetadata = () => {
-            videoElement.play();
-            startCameraTask();
-        };
+        await startCamera();
         
         document.getElementById('preloader').style.opacity = '0';
         setTimeout(() => {
@@ -203,7 +162,6 @@
         }, 500);
 
       } catch (err) {
-        console.error(err);
         status.innerText = "FATAL ERROR: ACCESS DENIED";
         btn.style.display = 'block';
         ring.style.display = 'none';
@@ -213,61 +171,39 @@
     function drawBars() {
       requestAnimationFrame(drawBars);
       if(!analyser) return;
-      
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
-      analyser.getByteFrequencyData(frequencyArray);
+      analyser.getByteFrequencyData(freqData);
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-
-      const barCount = frequencyArray.length;
-      const gutter = 4;
-      const barWidth = (audioCanvas.width / barCount) - gutter;
-      
-      for (let i = 0; i < barCount; i++) {
-        const val = frequencyArray[i];
-        const percent = val / 255;
-        const height = audioCanvas.height * percent;
-        const x = i * (barWidth + gutter);
-        
-        aCtx.fillStyle = `rgb(${150 + percent * 105}, ${150 + percent * 105}, ${150 + percent * 105})`;
-        aCtx.fillRect(x, audioCanvas.height - height, barWidth, height);
+      const barWidth = (audioCanvas.width / freqData.length) * 2;
+      let x = 0;
+      for (let i = 0; i < freqData.length; i++) {
+        const barHeight = (freqData[i] / 255) * audioCanvas.height;
+        aCtx.fillStyle = `rgb(${freqData[i]+100},${freqData[i]+100},${freqData[i]+100})`;
+        aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
+        x += barWidth;
       }
     }
 
-    // --- РАСПОЗНАВАНИЕ РЕЧИ (ЦВЕТОВОЙ ТРИГГЕР) ---
+    // --- ГЛАЗА И РЕЧЬ (ЦВЕТА) ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'ru-RU';
-      
-      recognition.onresult = (event) => {
+      recognition.onresult = (e) => {
         isSpeaking = true;
-        clearTimeout(speechTimeout);
-        
         let interim = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            addLog("VOICE_IN: " + transcript.trim()); 
-          } else {
-            interim += transcript;
-          }
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) addLog("VOICE_IN: " + e.results[i][0].transcript);
+          else interim += e.results[i][0].transcript;
         }
-        liveSpeechBox.innerText = interim.trim() ? interim.toUpperCase() : "LISTENING...";
-        
-        // Сбрасываем статус через 1.5 секунды тишины
-        speechTimeout = setTimeout(() => { isSpeaking = false; }, 1500);
+        liveSpeechBox.innerText = interim || "LISTENING...";
+        setTimeout(() => { isSpeaking = false; }, 1000);
       };
-      
-      recognition.onerror = () => recognition.stop();
-      recognition.onend = () => recognition.start();
-      window.runSpeech = () => recognition.start();
-    }
-
-    function getEyeDist(landmarks, p1, p2) {
-        return Math.sqrt(Math.pow(landmarks[p1].x - landmarks[p2].x, 2) + Math.pow(landmarks[p1].y - landmarks[p2].y, 2));
+      recognition.start();
+      window.runSpeech = () => {}; 
     }
 
     function onResults(results) {
@@ -275,50 +211,28 @@
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      
-      // Фон
       canvasCtx.globalAlpha = 0.1;
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         targetStatus.innerText = "> TARGET: ACQUIRED";
-        
         for (const landmarks of results.multiFaceLandmarks) {
-          // Логика цвета
-          const leftEyeDist = getEyeDist(landmarks, 159, 145);
-          const rightEyeDist = getEyeDist(landmarks, 386, 374);
-          const eyesClosed = (leftEyeDist < 0.015 && rightEyeDist < 0.015);
+          // Проверка глаз
+          const leftD = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
+          const rightD = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
+          const closed = leftD < 0.015 && rightD < 0.015;
 
-          let dynamicColor = "rgba(255, 255, 255, 0.25)"; // Дефолт белая
-          let activeColor = "#ffffff";
+          let color = "#ffffff";
+          if (isSpeaking) color = "#00ff00";
+          else if (closed) color = "#ff0000";
 
-          if (isSpeaking) {
-            dynamicColor = "rgba(0, 255, 100, 0.25)"; // Зеленая при речи
-            activeColor = "#00ff64";
-          } else if (eyesClosed) {
-            dynamicColor = "rgba(255, 0, 0, 0.3)"; // Красная при закрытых глазах
-            activeColor = "#ff0000";
-          }
-
-          // Сетка
-          canvasCtx.strokeStyle = dynamicColor;
+          canvasCtx.strokeStyle = color;
           canvasCtx.lineWidth = 0.5;
-          for (const connector of FACEMESH_TESSELATION) {
-            const start = landmarks[connector[0]];
-            const end = landmarks[connector[1]];
-            canvasCtx.beginPath();
-            canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
-            canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
-            canvasCtx.stroke();
-          }
-          
-          // Контуры (Глаза/Рот)
-          canvasCtx.strokeStyle = activeColor;
-          canvasCtx.lineWidth = 1.5;
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: activeColor});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: activeColor});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: activeColor});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: color + "44", lineWidth: 0.5});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: color});
         }
       } else {
         targetStatus.innerText = "> TARGET: SEEKING...";
@@ -330,25 +244,19 @@
     faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
 
-    async function startCameraTask() {
+    async function startCamera() {
       if(cameraInstance) await cameraInstance.stop();
       cameraInstance = new Camera(videoElement, {
         onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        width: 1280, height: 720
+        facingMode: currentFacingMode, width: 1280, height: 720
       });
-      cameraInstance.start();
+      await cameraInstance.start();
+      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
     }
 
-    document.getElementById('switch-camera').addEventListener('click', async () => {
+    document.getElementById('switch-camera').addEventListener('click', () => {
       currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-      
-      // Переключаем трек в существующем стриме без нового запроса разрешений
-      const videoTrack = globalStream.getVideoTracks()[0];
-      const constraints = { facingMode: currentFacingMode };
-      await videoTrack.applyConstraints(constraints);
-      
-      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
-      addLog("Camera Switched: " + currentFacingMode);
+      startCamera();
     });
   </script>
 </body>
