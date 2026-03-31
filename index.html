@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Neural Face Scanner v5.0</title>
+  <title>myFACE</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -67,24 +67,24 @@
 <body>
 
   <div id="overlay-start" onclick="initSystem()">
-    <h1>ACCESS GRANTED</h1>
-    <p>[ CLICK TO INITIALIZE SCANNER ]</p>
+    <h1>дать доступ</h1>
+    <p>предоставьте доступ к камере и микрофону</p>
   </div>
 
-  <button id="switch-camera">Toggle Cam</button>
+  <button id="switch-camera">камера</button>
 
   <div id="container">
     <video class="input_video" playsinline></video>
     <canvas class="output_canvas"></canvas>
     
     <div class="interface-overlay">
-      <div>> NEURAL_LINK: ESTABLISHED</div>
-      <div>> SCAN_MODE: 3D_MESH_RECONSTRUCTION</div>
-      <div id="target-status">> TARGET: SEARCHING...</div>
+      <div>> связь: стабильна</div>
+      <div>> режим: 3d</div>
+      <div id="target-status">> поиск...</div>
     </div>
 
     <div class="bottom-peripherals">
-      <div id="live-speech-box">READY_FOR_VOICE</div>
+      <div id="live-speech-box">говорите...</div>
       <canvas id="audio_visualizer"></canvas>
       <div id="terminal-box"><div id="log-content"></div></div>
     </div>
@@ -102,9 +102,11 @@
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
-    let audioCtx, analyser, dataArray;
+    let audioCtx, analyser, dataArray, frequencyArray;
     let scanLineY = 0; 
+    let lastSoundTick = 0;
 
+    // --- АУДИО АНАЛИЗАТОР (ОСЦИЛЛОГРАФ + ДЕТЕКТОР) ---
     async function initAudio() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -114,8 +116,31 @@
         source.connect(analyser);
         analyser.fftSize = 2048;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
+        frequencyArray = new Uint8Array(analyser.frequencyBinCount);
         drawWave();
       } catch(e) { console.log("Audio Error"); }
+    }
+
+    function detectAcousticEvents() {
+      analyser.getByteFrequencyData(frequencyArray);
+      let average = frequencyArray.reduce((a, b) => a + b) / frequencyArray.length;
+      let now = Date.now();
+
+      if (now - lastSoundTick > 800) { // Ограничение частоты логов
+        if (average > 60 && average < 90) {
+          addLog("ACOUSTIC: Possible Laughter / Crying detected");
+          lastSoundTick = now;
+        } else if (average >= 90) {
+          addLog("ACOUSTIC: Sudden Peak (Cough / Sneeze / Shout)");
+          lastSoundTick = now;
+        } else if (average > 30 && average < 50) {
+          // Эвристика для стонов/дыхания (низкие частоты)
+          if(frequencyArray[5] > 100) {
+            addLog("ACOUSTIC: Low frequency vocalization (Moan / Groan)");
+            lastSoundTick = now;
+          }
+        }
+      }
     }
 
     function drawWave() {
@@ -123,6 +148,7 @@
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
       analyser.getByteTimeDomainData(dataArray);
+      detectAcousticEvents();
 
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
       aCtx.lineWidth = 1.5;
@@ -154,11 +180,10 @@
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'ru-RU';
-
       recognition.onresult = (event) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) addLog(event.results[i][0].transcript);
+          if (event.results[i].isFinal) addLog("SPEECH: " + event.results[i][0].transcript);
           else interim += event.results[i][0].transcript;
         }
         liveSpeechBox.innerText = interim || "LISTENING...";
@@ -167,7 +192,8 @@
       window.runSpeech = () => recognition.start();
     }
 
-    function drawTargetingFrame(ctx, x, y, width, height, isLocked) {
+    // --- ОТЗЕРКАЛЕННАЯ РАМКА С ПАРАМЕТРАМИ ---
+    function drawTargetingFrame(ctx, x, y, width, height, isLocked, params = "") {
       const size = 40;
       ctx.lineWidth = 2;
       ctx.strokeStyle = isLocked ? '#fff' : '#ff0000';
@@ -186,14 +212,15 @@
         ctx.stroke();
       });
 
-      if (!isLocked) {
-        ctx.font = "10px monospace";
-        ctx.fillStyle = "#ff0000";
-        ctx.fillText("SEARCHING_FOR_SUBJECT", x, y - 10);
-      } else {
-        ctx.fillStyle = "#fff";
-        ctx.fillText("TARGET_LOCKED", x, y - 10);
-      }
+      // Зеркальный текст (чтобы на инвертированном канвасе он читался прямо)
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.font = "10px monospace";
+      ctx.fillStyle = isLocked ? "#fff" : "#ff0000";
+      const label = isLocked ? `TARGET_LOCKED | ${params}` : "SEARCHING_FOR_SUBJECT";
+      // Т.к. мы отзеркалили контекст, координата X становится отрицательной
+      ctx.fillText(label, -(x + width), y - 10);
+      ctx.restore();
     }
 
     function onResults(results) {
@@ -207,7 +234,7 @@
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
-      scanLineY = (scanLineY + 0.01) % 1.0;
+      scanLineY = (scanLineY + 0.008) % 1.0;
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         targetStatus.innerText = "> TARGET: LOCKED";
@@ -219,9 +246,9 @@
             const end = landmarks[connector[1]];
             
             const dist = Math.abs(start.y - scanLineY);
-            // ОБНОВЛЕНО: базовая яркость 0.3 вместо 0.1 для лучшей видимости
-            canvasCtx.strokeStyle = dist < 0.05 ? '#fff' : 'rgba(255,255,255,0.3)';
-            canvasCtx.lineWidth = dist < 0.05 ? 1.2 : 0.6;
+            // 1) ПОДСВЕТКА СДЕЛАНА ТУСКЛЕЕ (0.5 вместо 1.0 на пике)
+            canvasCtx.strokeStyle = dist < 0.04 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)';
+            canvasCtx.lineWidth = dist < 0.04 ? 0.8 : 0.5;
 
             canvasCtx.beginPath();
             canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
@@ -229,8 +256,7 @@
             canvasCtx.stroke();
           }
 
-          const highlightStyle = {color: '#fff', lineWidth: 2};
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, highlightStyle);
+          const highlightStyle = {color: '#fff', lineWidth: 1.5};
           drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, highlightStyle);
           drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, highlightStyle);
 
@@ -240,7 +266,9 @@
           const maxX = Math.max(...xCoords) + 30;
           const minY = Math.min(...yCoords) - 50;
           const maxY = Math.max(...yCoords) + 30;
-          drawTargetingFrame(canvasCtx, minX, minY, maxX - minX, maxY - minY, true);
+          
+          const faceParams = `X:${Math.round(landmarks[0].x*100)} Y:${Math.round(landmarks[0].y*100)} Z:${Math.round(landmarks[0].z*100)}`;
+          drawTargetingFrame(canvasCtx, minX, minY, maxX - minX, maxY - minY, true, faceParams);
         }
       } else {
         targetStatus.innerText = "> TARGET: SEARCHING...";
@@ -279,4 +307,3 @@
   </script>
 </body>
 </html>
-
