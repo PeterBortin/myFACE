@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cyber Mesh Terminal v4.0</title>
+  <title>Cyber Mesh Terminal v4.1</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -35,43 +35,30 @@
 
     .interface-overlay {
       position: absolute; top: 20px; left: 20px; z-index: 10;
-      font-size: 12px; text-shadow: 0 0 5px #fff; pointer-events: none;
+      font-size: 12px; text-shadow: 0 0 5px #000; pointer-events: none;
     }
 
-    /* Нижний интерфейс */
     .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: linear-gradient(to top, #000 80%, transparent);
+      z-index: 10; background: linear-gradient(to top, rgba(0,0,0,0.9) 60%, transparent);
       padding-bottom: 20px;
     }
 
-    /* Блок распознавания (Текущая речь) */
     #live-speech-box {
       width: 90%; min-height: 40px; margin-bottom: 10px;
       text-align: center; font-size: 20px; font-weight: bold;
       text-transform: uppercase; letter-spacing: 2px;
-      color: #fff; text-shadow: 0 0 10px #fff;
+      color: #fff; text-shadow: 0 0 10px #000;
     }
 
-    /* Эквалайзер */
     #audio_visualizer { width: 90%; height: 40px; margin-bottom: 10px; }
 
-    /* Лог событий */
     #terminal-box {
-      width: 90%; height: 120px; background: rgba(255, 255, 255, 0.05);
+      width: 90%; height: 120px; background: rgba(0, 0, 0, 0.4);
       border: 1px solid rgba(255,255,255,0.3); padding: 10px; box-sizing: border-box;
       overflow-y: auto; scrollbar-width: none;
     }
-    #terminal-box::-webkit-scrollbar { display: none; }
-
-    .log-entry {
-      margin: 3px 0; font-size: 12px; color: rgba(255,255,255,0.6);
-      border-left: 2px solid #fff; padding-left: 10px; text-transform: uppercase;
-    }
-
-    .cursor { animation: blink 1s infinite; }
-    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   </style>
 </head>
 
@@ -93,13 +80,8 @@
     </div>
 
     <div class="bottom-peripherals">
-      <!-- Блок текущей речи -->
       <div id="live-speech-box">...</div>
-
-      <!-- Эквалайзер (dB bars) -->
       <canvas id="audio_visualizer"></canvas>
-
-      <!-- Лог терминала -->
       <div id="terminal-box">
         <div id="log-content"></div>
       </div>
@@ -120,7 +102,6 @@
     let cameraInstance = null;
     let audioCtx, analyser, dataArray;
 
-    // --- ЭКВАЛАЙЗЕР (BARS) ---
     async function initAudio() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -128,7 +109,7 @@
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(analyser);
-        analyser.fftSize = 64; // Меньше размер — шире столбики
+        analyser.fftSize = 64;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
         drawBars();
       } catch(e) { console.log("Mic access denied"); }
@@ -139,20 +120,17 @@
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
       analyser.getByteFrequencyData(dataArray);
-
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
       const barWidth = (audioCanvas.width / dataArray.length) * 2;
       let x = 0;
-
       for (let i = 0; i < dataArray.length; i++) {
         const barHeight = (dataArray[i] / 255) * audioCanvas.height;
-        aCtx.fillStyle = `rgba(255, 255, 255, ${dataArray[i]/255 + 0.1})`;
+        aCtx.fillStyle = `rgba(255, 255, 255, ${dataArray[i]/255 + 0.3})`;
         aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 2, barHeight);
         x += barWidth;
       }
     }
 
-    // --- ЛОГИРОВАНИЕ ---
     function addLog(text) {
       const entry = document.createElement('div');
       entry.className = 'log-entry';
@@ -162,23 +140,17 @@
       terminalBox.scrollTop = terminalBox.scrollHeight;
     }
 
-    // --- РАСПОЗНАВАНИЕ ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'ru-RU';
-
       recognition.onresult = (event) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            addLog(transcript);
-          } else {
-            interim += transcript;
-          }
+          if (event.results[i].isFinal) { addLog(transcript); } else { interim += transcript; }
         }
         liveSpeechBox.innerText = interim || "...";
       };
@@ -187,21 +159,22 @@
       window.runSpeech = () => recognition.start();
     }
 
-    // --- FACE MESH ---
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
-      canvasCtx.fillStyle = '#000';
-      canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.globalAlpha = 0.06;
+      
+      // 1. Отрисовка чистого видео (без фильтров)
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.globalAlpha = 1.0;
 
       if (results.multiFaceLandmarks) {
         for (const landmarks of results.multiFaceLandmarks) {
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(255,255,255,0.15)', lineWidth: 0.5});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#fff', lineWidth: 2});
+          // 2. Светлая сетка лица (повышена яркость)
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(255,255,255,0.35)', lineWidth: 0.5});
+          
+          // 3. Контур рта (внешний) и глаз
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: 'rgba(255,255,255,0.8)', lineWidth: 1.5});
           drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#fff', lineWidth: 2});
           drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#fff', lineWidth: 2});
         }
