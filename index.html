@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myFACE</title>
+  <title>Neural Face Scanner v6.0</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -12,14 +12,28 @@
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
     
-    #overlay-start {
+    /* Красивый прелоадер */
+    #preloader {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: #000; z-index: 100; display: flex;
-      flex-direction: column; justify-content: center; align-items: center; cursor: pointer;
+      background: #000; z-index: 200; display: flex;
+      flex-direction: column; justify-content: center; align-items: center;
+      transition: opacity 0.5s ease;
     }
-    #overlay-start h1 { border: 1px solid #fff; padding: 20px; text-transform: uppercase; letter-spacing: 5px; }
+    .loader-ring {
+      width: 80px; height: 80px; border: 2px solid rgba(255,255,255,0.1);
+      border-radius: 50%; border-top-color: #fff;
+      animation: spin 1s linear infinite; margin-bottom: 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    #access-btn {
+      background: none; border: 1px solid #fff; color: #fff;
+      padding: 15px 30px; cursor: pointer; text-transform: uppercase;
+      letter-spacing: 3px; font-family: inherit; transition: 0.3s;
+    }
+    #access-btn:hover { background: #fff; color: #000; }
 
-    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
     .input_video { display: none; }
     
     .output_canvas {
@@ -66,25 +80,26 @@
 
 <body>
 
-  <div id="overlay-start" onclick="initSystem()">
-    <h1>дать доступ</h1>
-    <p>предоставьте доступ к камере и микрофону</p>
+  <div id="preloader">
+    <div class="loader-ring"></div>
+    <button id="access-btn" onclick="initSystem()">Initialize Neural Link</button>
+    <p id="status-text" style="margin-top: 20px; font-size: 10px; opacity: 0.5;">WAITING FOR PERMISSIONS...</p>
   </div>
 
-  <button id="switch-camera">камера</button>
+  <button id="switch-camera">Toggle Cam</button>
 
   <div id="container">
     <video class="input_video" playsinline></video>
     <canvas class="output_canvas"></canvas>
     
     <div class="interface-overlay">
-      <div>> связь: стабильна</div>
-      <div>> режим: 3d</div>
-      <div id="target-status">> поиск...</div>
+      <div>> NEURAL_LINK: ESTABLISHED</div>
+      <div>> SCAN_MODE: 3D_MESH_RECONSTRUCTION</div>
+      <div id="target-status">> TARGET: SEARCHING...</div>
     </div>
 
     <div class="bottom-peripherals">
-      <div id="live-speech-box">говорите...</div>
+      <div id="live-speech-box">READY_FOR_VOICE</div>
       <canvas id="audio_visualizer"></canvas>
       <div id="terminal-box"><div id="log-content"></div></div>
     </div>
@@ -106,7 +121,6 @@
     let scanLineY = 0; 
     let lastSoundTick = 0;
 
-    // --- АУДИО АНАЛИЗАТОР (ОСЦИЛЛОГРАФ + ДЕТЕКТОР) ---
     async function initAudio() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -118,27 +132,22 @@
         dataArray = new Uint8Array(analyser.frequencyBinCount);
         frequencyArray = new Uint8Array(analyser.frequencyBinCount);
         drawWave();
-      } catch(e) { console.log("Audio Error"); }
+      } catch(e) { addLog("SYSTEM: Audio Access Denied"); }
     }
 
     function detectAcousticEvents() {
+      if(!analyser) return;
       analyser.getByteFrequencyData(frequencyArray);
       let average = frequencyArray.reduce((a, b) => a + b) / frequencyArray.length;
       let now = Date.now();
 
-      if (now - lastSoundTick > 800) { // Ограничение частоты логов
-        if (average > 60 && average < 90) {
-          addLog("ACOUSTIC: Possible Laughter / Crying detected");
+      if (now - lastSoundTick > 1000) {
+        if (average > 70) {
+          addLog("ACOUSTIC: Sudden Peak (Cough/Sneeze/Laughter)");
           lastSoundTick = now;
-        } else if (average >= 90) {
-          addLog("ACOUSTIC: Sudden Peak (Cough / Sneeze / Shout)");
+        } else if (average > 35 && frequencyArray[10] > 120) {
+          addLog("ACOUSTIC: Vocal vibration detected (Groan/Moan)");
           lastSoundTick = now;
-        } else if (average > 30 && average < 50) {
-          // Эвристика для стонов/дыхания (низкие частоты)
-          if(frequencyArray[5] > 100) {
-            addLog("ACOUSTIC: Low frequency vocalization (Moan / Groan)");
-            lastSoundTick = now;
-          }
         }
       }
     }
@@ -183,7 +192,7 @@
       recognition.onresult = (event) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) addLog("SPEECH: " + event.results[i][0].transcript);
+          if (event.results[i].isFinal) addLog("VOICE: " + event.results[i][0].transcript);
           else interim += event.results[i][0].transcript;
         }
         liveSpeechBox.innerText = interim || "LISTENING...";
@@ -192,11 +201,12 @@
       window.runSpeech = () => recognition.start();
     }
 
-    // --- ОТЗЕРКАЛЕННАЯ РАМКА С ПАРАМЕТРАМИ ---
     function drawTargetingFrame(ctx, x, y, width, height, isLocked, params = "") {
+      if (!isLocked) return; // 2) Если не залочено (нет людей) — не рисуем рамку вообще
+
       const size = 40;
       ctx.lineWidth = 2;
-      ctx.strokeStyle = isLocked ? '#fff' : '#ff0000';
+      ctx.strokeStyle = '#fff';
       
       const corners = [
         [x, y, x + size, y, x, y + size], 
@@ -212,13 +222,11 @@
         ctx.stroke();
       });
 
-      // Зеркальный текст (чтобы на инвертированном канвасе он читался прямо)
       ctx.save();
       ctx.scale(-1, 1);
       ctx.font = "10px monospace";
-      ctx.fillStyle = isLocked ? "#fff" : "#ff0000";
-      const label = isLocked ? `TARGET_LOCKED | ${params}` : "SEARCHING_FOR_SUBJECT";
-      // Т.к. мы отзеркалили контекст, координата X становится отрицательной
+      ctx.fillStyle = "#fff";
+      const label = `TARGET_LOCKED | ${params}`;
       ctx.fillText(label, -(x + width), y - 10);
       ctx.restore();
     }
@@ -244,21 +252,19 @@
           for (const connector of FACEMESH_TESSELATION) {
             const start = landmarks[connector[0]];
             const end = landmarks[connector[1]];
-            
             const dist = Math.abs(start.y - scanLineY);
-            // 1) ПОДСВЕТКА СДЕЛАНА ТУСКЛЕЕ (0.5 вместо 1.0 на пике)
-            canvasCtx.strokeStyle = dist < 0.04 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)';
+            canvasCtx.strokeStyle = dist < 0.04 ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)';
             canvasCtx.lineWidth = dist < 0.04 ? 0.8 : 0.5;
-
             canvasCtx.beginPath();
             canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
             canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
             canvasCtx.stroke();
           }
 
-          const highlightStyle = {color: '#fff', lineWidth: 1.5};
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, highlightStyle);
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, highlightStyle);
+          // 1) Возвращаем контур рта (без детализации губ)
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#fff', lineWidth: 1});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#fff', lineWidth: 1.5});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#fff', lineWidth: 1.5});
 
           const xCoords = landmarks.map(l => l.x * canvasElement.width);
           const yCoords = landmarks.map(l => l.y * canvasElement.height);
@@ -267,13 +273,12 @@
           const minY = Math.min(...yCoords) - 50;
           const maxY = Math.max(...yCoords) + 30;
           
-          const faceParams = `X:${Math.round(landmarks[0].x*100)} Y:${Math.round(landmarks[0].y*100)} Z:${Math.round(landmarks[0].z*100)}`;
+          const faceParams = `X:${Math.round(landmarks[0].x*100)} Y:${Math.round(landmarks[0].y*100)} SCAN_ACTIVE`;
           drawTargetingFrame(canvasCtx, minX, minY, maxX - minX, maxY - minY, true, faceParams);
         }
       } else {
         targetStatus.innerText = "> TARGET: SEARCHING...";
-        targetStatus.style.color = "#ff0000";
-        drawTargetingFrame(canvasCtx, canvasElement.width/4, canvasElement.height/4, canvasElement.width/2, canvasElement.height/2, false);
+        targetStatus.style.color = "rgba(255,255,255,0.5)";
       }
       canvasCtx.restore();
     }
@@ -297,12 +302,26 @@
       startCamera();
     });
 
-    window.initSystem = function() {
-      document.getElementById('overlay-start').style.display = 'none';
-      initAudio();
-      if (window.runSpeech) window.runSpeech();
-      startCamera();
-      addLog("NEURAL_ENGINE_ONLINE");
+    window.initSystem = async function() {
+      const btn = document.getElementById('access-btn');
+      const status = document.getElementById('status-text');
+      btn.style.display = 'none';
+      status.innerText = "INITIALIZING CORE...";
+      
+      try {
+        await initAudio();
+        await startCamera();
+        document.getElementById('preloader').style.opacity = '0';
+        setTimeout(() => {
+          document.getElementById('preloader').style.display = 'none';
+          document.getElementById('container').style.visibility = 'visible';
+          if (window.runSpeech) window.runSpeech();
+          addLog("NEURAL_ENGINE_ONLINE");
+        }, 500);
+      } catch (err) {
+        status.innerText = "ERROR: ACCESS DENIED";
+        btn.style.display = 'block';
+      }
     }
   </script>
 </body>
