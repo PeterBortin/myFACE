@@ -27,11 +27,17 @@
       object-fit: cover; transform: scaleX(-1); z-index: 1;
     }
 
-    #switch-camera {
+    .controls {
       position: absolute; top: 20px; right: 20px; z-index: 110;
+      display: flex; gap: 10px;
+    }
+
+    button {
       background: rgba(0,0,0,0.5); border: 1px solid #fff; color: #fff;
       padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
     }
+
+    button.active { background: #fff; color: #000; }
 
     .interface-overlay {
       position: absolute; top: 20px; left: 20px; z-index: 10;
@@ -71,7 +77,10 @@
     <p>[ CLICK TO INITIALIZE SCANNER ]</p>
   </div>
 
-  <button id="switch-camera">Toggle Cam</button>
+  <div class="controls">
+    <button id="btn-face">Face Mode: OFF</button>
+    <button id="switch-camera">Toggle Cam</button>
+  </div>
 
   <div id="container">
     <video class="input_video" playsinline></video>
@@ -79,7 +88,7 @@
     
     <div class="interface-overlay">
       <div>> NEURAL_LINK: ESTABLISHED</div>
-      <div>> SCAN_MODE: 3D_MESH_RECONSTRUCTION</div>
+      <div id="mode-status">> MODE: WIREFRAME</div>
       <div id="target-status">> TARGET: SEARCHING...</div>
     </div>
 
@@ -99,13 +108,20 @@
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
     const targetStatus = document.getElementById('target-status');
+    const btnFace = document.getElementById('btn-face');
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
     let audioCtx, analyser, dataArray;
-    let scanLineY = 0; // Для 3D сканирования
+    let scanLineY = 0;
+    
+    // Переменные для режима текстуры
+    let isFaceMode = false;
+    let textureCanvas = document.createElement('canvas');
+    let textureCtx = textureCanvas.getContext('2d');
+    let textureLandmarks = null;
 
-    // --- ОСЦИЛЛОГРАФ (ТОЧНЫЙ ЗВУК) ---
+    // --- АУДИО ---
     async function initAudio() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -124,12 +140,10 @@
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
       analyser.getByteTimeDomainData(dataArray);
-
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
       aCtx.lineWidth = 1.5;
       aCtx.strokeStyle = '#ffffff';
       aCtx.beginPath();
-
       let sliceWidth = audioCanvas.width / dataArray.length;
       let x = 0;
       for (let i = 0; i < dataArray.length; i++) {
@@ -141,7 +155,6 @@
       aCtx.stroke();
     }
 
-    // --- ЛОГИ ---
     function addLog(text) {
       const entry = document.createElement('div');
       entry.className = 'log-entry';
@@ -150,55 +163,27 @@
       terminalBox.scrollTop = terminalBox.scrollHeight;
     }
 
-    // --- РАСПОЗНАВАНИЕ ---
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'ru-RU';
+    // --- TEXTURE MAPPING (TRIANGLE CLIPPING) ---
+    function drawTexturedTriangle(ctx, img, s1, s2, s3, d1, d2, d3) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(d1.x, d1.y);
+      ctx.lineTo(d2.x, d2.y);
+      ctx.lineTo(d3.x, d3.y);
+      ctx.closePath();
+      ctx.clip();
 
-      recognition.onresult = (event) => {
-        let interim = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) addLog(event.results[i][0].transcript);
-          else interim += event.results[i][0].transcript;
-        }
-        liveSpeechBox.innerText = interim || "LISTENING...";
-      };
-      recognition.onend = () => recognition.start();
-      window.runSpeech = () => recognition.start();
-    }
+      const delta = (s1.x * (s2.y - s3.y) + s2.x * (s3.y - s1.y) + s3.x * (s1.y - s2.y));
+      const deltaA = (d1.x * (s2.y - s3.y) + d2.x * (s3.y - s1.y) + d3.x * (s1.y - s2.y));
+      const deltaB = (s1.x * (d2.x - d3.x) + s2.x * (d3.x - d1.x) + s3.x * (d1.x - d2.x));
+      const deltaC = (s1.x * (s2.y * d3.x - s3.y * d2.x) + s2.x * (s3.y * d1.x - s1.y * d3.x) + s3.x * (s1.y * d2.x - s2.y * d1.x));
+      const deltaD = (d1.y * (s2.y - s3.y) + d2.y * (s3.y - s1.y) + d3.y * (s1.y - s2.y));
+      const deltaE = (s1.x * (d2.y - d3.y) + s2.x * (d3.y - d1.y) + s3.x * (d1.y - d2.y));
+      const deltaF = (s1.x * (s2.y * d3.y - s3.y * d2.y) + s2.x * (s3.y * d1.y - s1.y * d3.y) + s3.x * (s1.y * d2.y - s2.y * d1.y));
 
-    // --- Вспомогательная функция для отрисовки рамки ---
-    function drawTargetingFrame(ctx, x, y, width, height, isLocked) {
-      const size = 40;
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = isLocked ? '#fff' : '#ff0000';
-      
-      // Рисуем углы
-      const corners = [
-        [x, y, x + size, y, x, y + size], // Top-left
-        [x + width, y, x + width - size, y, x + width, y + size], // Top-right
-        [x, y + height, x + size, y + height, x, y + height - size], // Bottom-left
-        [x + width, y + height, x + width - size, y + height, x + width, y + height - size] // Bottom-right
-      ];
-
-      corners.forEach(c => {
-        ctx.beginPath();
-        ctx.moveTo(c[0], c[1]); ctx.lineTo(c[2], c[3]);
-        ctx.moveTo(c[0], c[1]); ctx.lineTo(c[4], c[5]);
-        ctx.stroke();
-      });
-
-      if (!isLocked) {
-        ctx.font = "10px monospace";
-        ctx.fillStyle = "#ff0000";
-        ctx.fillText("SEARCHING_FOR_SUBJECT", x, y - 10);
-      } else {
-        ctx.fillStyle = "#fff";
-        ctx.fillText("TARGET_LOCKED", x, y - 10);
-      }
+      ctx.setTransform(deltaA / delta, deltaD / delta, deltaB / delta, deltaE / delta, deltaC / delta, deltaF / delta);
+      ctx.drawImage(img, 0, 0);
+      ctx.restore();
     }
 
     // --- FACE MESH & EFFECTS ---
@@ -206,61 +191,101 @@
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
+      
+      // Mirroring fix
+      if (currentFacingMode === 'user') {
+        canvasCtx.translate(canvasElement.width, 0);
+        canvasCtx.scale(-1, 1);
+      }
+
       canvasCtx.fillStyle = '#000';
       canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-
-      // Фоновое видео (едва заметно)
-      canvasCtx.globalAlpha = 0.05;
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.globalAlpha = 1.0;
-
-      // Анимация линии сканирования
-      scanLineY = (scanLineY + 0.01) % 1.0;
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         targetStatus.innerText = "> TARGET: LOCKED";
         targetStatus.style.color = "#fff";
+        const landmarks = results.multiFaceLandmarks[0];
 
-        for (const landmarks of results.multiFaceLandmarks) {
-          // 1. Отрисовка основной сетки с 3D эффектом сканирования
-          for (const connector of FACEMESH_TESSELATION) {
-            const start = landmarks[connector[0]];
-            const end = landmarks[connector[1]];
+        // 1. Определение состояний для цвета
+        // Глаза: дистанция между точками 159 и 145
+        const eyeDist = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
+        // Речь: дистанция между губами 13 и 14
+        const lipDist = Math.hypot(landmarks[13].x - landmarks[14].x, landmarks[13].y - landmarks[14].y);
+
+        let meshColor = 'rgba(255,255,255,0.2)'; // По умолчанию белый
+        if (eyeDist < 0.015) meshColor = 'rgba(255,0,0,0.5)'; // Закрыты - красный
+        else if (lipDist > 0.025) meshColor = 'rgba(0,255,0,0.5)'; // Речь - зеленый
+
+        // 2. Режим ТЕКСТУРЫ
+        if (isFaceMode && textureLandmarks) {
+          for (const triangle of FACEMESH_TESSELATION) {
+            const s1 = {x: textureLandmarks[triangle[0]].x * canvasElement.width, y: textureLandmarks[triangle[0]].y * canvasElement.height};
+            const s2 = {x: textureLandmarks[triangle[1]].x * canvasElement.width, y: textureLandmarks[triangle[1]].y * canvasElement.height};
+            const s3 = {x: textureLandmarks[triangle[2]].x * canvasElement.width, y: textureLandmarks[triangle[2]].y * canvasElement.height};
             
-            // Если точка рядом с линией сканирования — она ярче
-            const dist = Math.abs(start.y - scanLineY);
-            canvasCtx.strokeStyle = dist < 0.05 ? '#fff' : 'rgba(255,255,255,0.1)';
-            canvasCtx.lineWidth = dist < 0.05 ? 1 : 0.5;
-
-            canvasCtx.beginPath();
-            canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
-            canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
-            canvasCtx.stroke();
+            const d1 = {x: landmarks[triangle[0]].x * canvasElement.width, y: landmarks[triangle[0]].y * canvasElement.height};
+            const d2 = {x: landmarks[triangle[1]].x * canvasElement.width, y: landmarks[triangle[1]].y * canvasElement.height};
+            const d3 = {x: landmarks[triangle[2]].x * canvasElement.width, y: landmarks[triangle[2]].y * canvasElement.height};
+            
+            drawTexturedTriangle(canvasCtx, textureCanvas, s1, s2, s3, d1, d2, d3);
           }
-
-          // 2. Жирные контуры глаз и губ
-          const highlightStyle = {color: '#fff', lineWidth: 2};
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, highlightStyle);
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, highlightStyle);
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, highlightStyle);
-
-          // 3. Рамка наведения
-          const xCoords = landmarks.map(l => l.x * canvasElement.width);
-          const yCoords = landmarks.map(l => l.y * canvasElement.height);
-          const minX = Math.min(...xCoords) - 30;
-          const maxX = Math.max(...xCoords) + 30;
-          const minY = Math.min(...yCoords) - 50;
-          const maxY = Math.max(...yCoords) + 30;
-          drawTargetingFrame(canvasCtx, minX, minY, maxX - minX, maxY - minY, true);
+        } else {
+          // Обычное видео на фоне если не в режиме маски
+          canvasCtx.globalAlpha = 0.1;
+          canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+          canvasCtx.globalAlpha = 1.0;
         }
+
+        // 3. Отрисовка сетки поверх
+        canvasCtx.strokeStyle = meshColor;
+        canvasCtx.lineWidth = 0.5;
+        for (const connector of FACEMESH_TESSELATION) {
+          const start = landmarks[connector[0]];
+          const end = landmarks[connector[1]];
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
+          canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
+          canvasCtx.stroke();
+        }
+
+        // Подсветка глаз и рта
+        canvasCtx.strokeStyle = meshColor.replace('0.5', '1').replace('0.2', '1');
+        canvasCtx.lineWidth = 1.5;
+        drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: meshColor});
+        drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: meshColor});
+        drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: meshColor});
+
       } else {
         targetStatus.innerText = "> TARGET: SEARCHING...";
         targetStatus.style.color = "#ff0000";
-        // Поисковая рамка в центре, если лицо не найдено
-        drawTargetingFrame(canvasCtx, canvasElement.width/4, canvasElement.height/4, canvasElement.width/2, canvasElement.height/2, false);
       }
       canvasCtx.restore();
+      
+      // Сохраняем текущие данные для захвата лица, если нужно
+      window.lastResults = results;
     }
+
+    // --- УПРАВЛЕНИЕ ---
+    btnFace.addEventListener('click', () => {
+      if (!isFaceMode) {
+        if (window.lastResults && window.lastResults.multiFaceLandmarks.length > 0) {
+          // Делаем снимок
+          textureCanvas.width = videoElement.videoWidth;
+          textureCanvas.height = videoElement.videoHeight;
+          textureCtx.drawImage(videoElement, 0, 0);
+          textureLandmarks = JSON.parse(JSON.stringify(window.lastResults.multiFaceLandmarks[0]));
+          isFaceMode = true;
+          btnFace.innerText = "Face Mode: ON";
+          btnFace.classList.add('active');
+          addLog("FACE_TEXTURE_CAPTURED");
+        }
+      } else {
+        isFaceMode = false;
+        btnFace.innerText = "Face Mode: OFF";
+        btnFace.classList.remove('active');
+        addLog("RETURN_TO_WIREFRAME");
+      }
+    });
 
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
     faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
@@ -273,7 +298,6 @@
         facingMode: currentFacingMode, width: 1280, height: 720
       });
       cameraInstance.start();
-      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
     }
 
     document.getElementById('switch-camera').addEventListener('click', () => {
@@ -284,7 +308,6 @@
     window.initSystem = function() {
       document.getElementById('overlay-start').style.display = 'none';
       initAudio();
-      if (window.runSpeech) window.runSpeech();
       startCamera();
       addLog("NEURAL_ENGINE_ONLINE");
     }
