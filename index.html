@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Neural Face Scanner v6.2.4 - MONOCHROME</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neural Face Scanner v6.2.3 - MONOCHROME</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -11,88 +11,80 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
-    :root { --main-color: #888; --accent-color: #fff; --bg-color: #000; }
-    * { touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
-    body { margin: 0; background: var(--bg-color); overflow: hidden; font-family: 'Courier New', monospace; color: var(--main-color); }
-    
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Helvetica', Arial, sans-serif; color: #888; }
     #preloader {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 200; display: flex;
       flex-direction: column; justify-content: center; align-items: center;
-      transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #222; box-sizing: border-box;
+      transition: opacity 0.5s ease; border: 1px solid #333; box-sizing: border-box;
     }
-    #logo-container {
-      font-size: clamp(32px, 8vw, 54px); font-weight: bold; color: #fff; letter-spacing: 12px;
-      margin-bottom: 20px; animation: pulse 2s infinite; text-transform: uppercase;
+    .loader-ring {
+      display: none; width: 60px; height: 60px; border: 2px solid #222;
+      border-radius: 50%; border-top-color: #fff;
+      animation: spin 1s linear infinite; margin-bottom: 20px;
     }
-    @keyframes pulse { 0%, 100% { opacity: 1; filter: blur(0px); } 50% { opacity: 0.4; filter: blur(2px); } }
-
-    #boot-log { width: 80%; max-width: 400px; height: 120px; font-size: 10px; color: #444; overflow: hidden; margin-bottom: 20px; }
-    .loader-ring { display: none; width: 40px; height: 40px; border: 2px solid #111; border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; margin-bottom: 20px; }
     @keyframes spin { to { transform: rotate(360deg); } }
-
     #access-btn {
-      background: #fff; border: none; color: #000; padding: 18px 45px; cursor: pointer; 
-      text-transform: uppercase; letter-spacing: 2px; font-family: inherit; font-weight: bold; 
-      transition: all 0.3s; box-shadow: 0 0 15px rgba(255,255,255,0.2);
+      background: none; border: 1px solid #fff; color: #fff;
+      padding: 15px 30px; cursor: pointer; text-transform: uppercase;
+      letter-spacing: 3px; font-family: inherit; transition: 0.3s;
     }
-    #access-btn:hover { background: #888; color: #fff; transform: scale(1.05); }
-
+    #access-btn:hover { background: #fff; color: #000; }
     #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
-    .output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
-
-    /* UI Controls */
-    .ui-layer { position: absolute; top: env(safe-area-inset-top, 20px); right: 20px; z-index: 110; display: flex; gap: 10px; }
-    .ui-btn {
-      background: rgba(0,0,0,0.8); border: 1px solid #444; color: #fff;
-      padding: 10px 15px; cursor: pointer; text-transform: uppercase; font-size: 10px;
-      backdrop-filter: blur(5px); transition: 0.2s; border-radius: 2px;
+    .input_video { display: none; }
+    .output_canvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      object-fit: cover; transform: scaleX(-1); z-index: 1;
     }
-    .ui-btn:active { background: #fff; color: #000; border-color: #fff; }
-
-    .interface-overlay { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 11px; pointer-events: none; color: #555; text-shadow: 1px 1px 1px #000; }
-    
+    .controls {
+      position: absolute; top: 20px; right: 20px; z-index: 110;
+      display: flex; gap: 10px;
+    }
+    .ui-btn {
+      background: rgba(0,0,0,0.7); border: 1px solid #fff; color: #fff;
+      padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
+      font-family: 'Helvetica', sans-serif;
+    }
+    .interface-overlay { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 11px; pointer-events: none; color: #666; }
     .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: linear-gradient(to top, #000 85%, transparent); padding-bottom: max(20px, env(safe-area-inset-bottom));
+      z-index: 10; background: linear-gradient(to top, #000 90%, transparent); padding-bottom: 20px;
     }
-    #live-speech-box { width: 90%; min-height: 40px; margin-bottom: 10px; text-align: center; font-size: clamp(14px, 4vw, 18px); font-weight: bold; color: #fff; letter-spacing: 1px; }
-    #audio_visualizer { width: 92%; height: 60px; margin-bottom: 15px; background: rgba(255,255,255,0.01); border: 1px solid #1a1a1a; }
+    #live-speech-box { width: 90%; min-height: 35px; margin-bottom: 5px; text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #fff; }
+    #audio_visualizer { width: 90%; height: 80px; margin-bottom: 10px; background: rgba(255,255,255,0.02); border: 1px solid #222; }
     #terminal-box {
-      width: 92%; height: 130px; background: rgba(0,0,0,0.5);
-      border: 1px solid #222; padding: 12px; box-sizing: border-box;
-      overflow-y: auto; font-size: 10px; scrollbar-width: none;
+      width: 90%; height: 150px; background: rgba(255, 255, 255, 0.01);
+      border: 1px solid #222; padding: 10px; box-sizing: border-box;
+      overflow-y: auto; font-size: 10px; scrollbar-width: thin; scrollbar-color: #333 transparent;
     }
-    #terminal-box::-webkit-scrollbar { display: none; }
-    .log-entry { margin: 3px 0; color: #666; border-left: 1px solid #333; padding-left: 10px; line-height: 1.4; word-break: break-all; }
-    .log-entry.active { color: #fff; border-left-color: #fff; }
+    .log-entry { margin: 2px 0; color: #555; border-left: 1px solid #222; padding-left: 8px; white-space: pre-wrap; }
+    .log-entry:last-child { color: #fff; border-left: 1px solid #fff; }
   </style>
 </head>
 
 <body>
   <div id="preloader">
-    <div id="logo-container">myFACE</div>
-    <div id="boot-log"></div>
+    <div style="color:#fff; margin-bottom:10px;">NEURAL CORE LOADER v6.2.3</div>
     <div class="loader-ring" id="ring"></div>
-    <button id="access-btn" onclick="startSequence()">▶ INITIALIZE LINK</button>
-    <p id="status-text" style="margin-top: 25px; font-size: 9px; color: #555; letter-spacing: 1px;">SYSTEM READY. AWAITING INPUT...</p>
+    <button id="access-btn" onclick="startSequence()">INITIALIZE NEURAL LINK</button>
+    <p id="status-text" style="margin-top: 20px; font-size: 10px; color: #444;">AWAITING BIOMETRIC AUTHORIZATION...</p>
   </div>
 
-  <div class="ui-layer">
-    <button id="switch-camera" class="ui-btn">⟳ CAM</button>
-    <button id="export-pdf" class="ui-btn" style="color: #aaa;">PDF LOG</button>
+  <div class="controls">
+    <button id="export-pdf" class="ui-btn">Export Log</button>
+    <button id="switch-camera" class="ui-btn">Switch Cam</button>
   </div>
 
   <div id="container">
-    <video class="input_video" playsinline muted style="display:none"></video>
+    <video class="input_video" playsinline muted></video>
     <canvas class="output_canvas"></canvas>
     <div class="interface-overlay">
-      <div id="sys-clock">> LOADING TIME...</div>
-      <div id="target-status">> TARGET: SCANNING...</div>
+      <div>> LINK_STATUS: ACTIVE</div>
+      <div id="target-status">> TARGET: SEEKING...</div>
     </div>
     <div class="bottom-peripherals">
-      <div id="live-speech-box">MICROPHONE: STANDBY</div>
+      <div id="live-speech-box">IDLE</div>
       <canvas id="audio_visualizer"></canvas>
       <div id="terminal-box"><div id="log-content"></div></div>
     </div>
@@ -103,236 +95,210 @@
     const canvasElement = document.querySelector('.output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
     const liveSpeechBox = document.getElementById('live-speech-box');
-    const logContent = document.getElementById('log-content');
     const terminalBox = document.getElementById('terminal-box');
+    const logContent = document.getElementById('log-content');
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
+    const targetStatus = document.getElementById('target-status');
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
-    let audioCtx = null, analyser = null, freqData = null, globalStream = null;
-    let isSpeaking = false, logQueue = [], fullLogHistory = [], isTyping = false;
-    let faceMesh = null, recognition = null, mediaAccessGranted = false;
+    let audioCtx, analyser, freqData, globalStream;
+    let isSpeaking = false;
+    let logQueue = [];
+    let fullLogHistory = []; // Для PDF
+    let isTyping = false;
 
-    // --- CLOCK ---
-    setInterval(() => {
-        document.getElementById('sys-clock').innerText = `> LINK_TIME: ${new Date().toLocaleTimeString()}`;
-    }, 1000);
-
-    // --- TERMINAL ---
+    // --- ЛОГИКА ТЕРМИНАЛА ---
     async function processLogQueue() {
       if (isTyping || logQueue.length === 0) return;
       isTyping = true;
       const { text, timestamp } = logQueue.shift();
+      fullLogHistory.push(`[${timestamp}] ${text}`);
       
       const entry = document.createElement('div');
-      entry.className = 'log-entry active';
+      entry.className = 'log-entry';
       entry.innerText = `[${timestamp}] `;
-      
-      const prev = logContent.querySelector('.active');
-      if (prev) prev.classList.remove('active');
-      
       logContent.appendChild(entry);
-      fullLogHistory.push(`[${timestamp}] ${text}`);
-
+      
       const message = text.toUpperCase();
       for (let i = 0; i < message.length; i++) {
         entry.innerText += message[i];
         terminalBox.scrollTop = terminalBox.scrollHeight;
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise(r => setTimeout(r, 5));
       }
       isTyping = false;
       processLogQueue();
     }
 
     function addLog(text) {
-      logQueue.push({ text: text, timestamp: new Date().toLocaleTimeString() });
+      logQueue.push({ text, timestamp: new Date().toLocaleTimeString() });
       if (!isTyping) processLogQueue();
     }
 
-    // --- PDF EXPORT (CORRECTED FOR CYRILLIC) ---
+    // --- PDF EXPORT ---
     window.exportToPDF = function() {
-      if (fullLogHistory.length === 0) return addLog("⚠️ LOG EMPTY");
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
-      
-      // Используем стандартный Courier для моноширинности,
-      // но для гарантированной кириллицы в jsPDF без кастомных шрифтов 
-      // используем встроенный Helvetica и авто-кодирование.
       doc.setFont("helvetica", "bold");
-      doc.text("NEURAL FACE SCANNER v6.2.4 REPORT", 10, 15);
+      doc.text("NEURAL SCANNER LOG REPORT", 10, 10);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
+      doc.setFontSize(10);
       
-      let y = 25;
+      let y = 20;
       fullLogHistory.forEach(line => {
-        if (y > 280) { doc.addPage(); y = 15; }
-        // jsPDF поддерживает Unicode из коробки в новых версиях
-        const splitText = doc.splitTextToSize(line, 180);
-        doc.text(splitText, 10, y);
-        y += 5 * splitText.length;
+        if (y > 280) { doc.addPage(); y = 10; }
+        doc.text(line, 10, y);
+        y += 6;
       });
-      
-      doc.save(`neural_scan_${Date.now()}.pdf`);
-      addLog("📄 EXPORT SUCCESSFUL");
+      doc.save(`neural_log_${Date.now()}.pdf`);
     };
+
     document.getElementById('export-pdf').addEventListener('click', exportToPDF);
 
-    // --- AUDIO VISUALIZER ---
-    function drawBars() {
-      if (!analyser) return;
-      requestAnimationFrame(drawBars);
-      audioCanvas.width = audioCanvas.clientWidth;
-      audioCanvas.height = audioCanvas.clientHeight;
-      analyser.getByteFrequencyData(freqData);
-      aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-      
-      let total = 0;
-      const barCount = 40;
-      const barWidth = audioCanvas.width / barCount;
-      for (let i = 0; i < barCount; i++) {
-        const val = freqData[i * 2];
-        const barHeight = (val / 255) * audioCanvas.height;
-        total += val;
-        aCtx.fillStyle = `rgba(255,255,255,${(val/255) + 0.1})`;
-        aCtx.fillRect(i * barWidth, audioCanvas.height - barHeight, barWidth - 2, barHeight);
-      }
-      isSpeaking = (total / barCount) > 25;
-    }
-
-    // --- SPEECH ENGINE ---
-    function initSpeechRecognition() {
-      const SpeechAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechAPI) return addLog("⚠️ SR NOT SUPPORTED");
-
-      recognition = new SpeechAPI();
-      recognition.lang = 'uk-UA, ru-RU, en-US';
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      
-      recognition.onstart = () => {
-          liveSpeechBox.innerText = "🎤 LISTENING...";
-          addLog("🎙️ SPEECH MODULE: ONLINE");
-      };
-      
-      recognition.onresult = (event) => {
-        let interim = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            addLog(`🗣️: ${event.results[i][0].transcript}`);
-          } else {
-            interim += event.results[i][0].transcript;
-          }
-        }
-        if (interim) liveSpeechBox.innerText = interim.toUpperCase();
-      };
-
-      recognition.onend = () => { if(mediaAccessGranted) recognition.start(); };
-      recognition.start();
-    }
-
-    // --- CAMERA ENGINE ---
-    async function setupCamera() {
-      if (cameraInstance) { await cameraInstance.stop(); }
-      
-      // Чистый перезапуск потока для избежания конфликтов разрешений
-      const constraints = {
-        video: { 
-          facingMode: currentFacingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: true
-      };
+    // --- ИНИЦИАЛИЗАЦИЯ ---
+    window.startSequence = async function() {
+      const btn = document.getElementById('access-btn');
+      const ring = document.getElementById('ring');
+      const status = document.getElementById('status-text');
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        globalStream = stream;
-        videoElement.srcObject = stream;
+        btn.style.display = 'none';
+        status.innerText = "ACCESSING CORE SENSORS...";
+
+        globalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioCtx.createAnalyser();
-            const source = audioCtx.createMediaStreamSource(stream);
-            source.connect(analyser);
-            freqData = new Uint8Array(analyser.frequencyBinCount);
-            drawBars();
-        }
+        ring.style.display = 'block';
+        status.innerText = "CALIBRATING...";
 
-        cameraInstance = new Camera(videoElement, {
-          onFrame: async () => { if(faceMesh) await faceMesh.send({image: videoElement}); },
-          width: 1280, height: 720
-        });
-        await cameraInstance.start();
-        canvasElement.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
-        return true;
-      } catch (e) {
-        addLog(`❌ CAM ERROR: ${e.message}`);
-        return false;
-      }
-    }
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        const source = audioCtx.createMediaStreamSource(globalStream);
+        source.connect(analyser);
+        analyser.fftSize = 128;
+        freqData = new Uint8Array(analyser.frequencyBinCount);
+        
+        drawBars();
 
-    window.startSequence = async function() {
-      document.getElementById('access-btn').style.display = 'none';
-      document.getElementById('ring').style.display = 'block';
-      
-      const success = await setupCamera();
-      if (success) {
-        mediaAccessGranted = true;
-        initSpeechRecognition();
+        videoElement.srcObject = globalStream;
+        await startCamera();
+        
         document.getElementById('preloader').style.opacity = '0';
         setTimeout(() => {
           document.getElementById('preloader').style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
-          addLog("🚀 SYSTEM v6.2.4 DEPLOYED");
-        }, 600);
+          if (window.runSpeech) window.runSpeech();
+          addLog("System Online");
+          addLog("Language Engine: Helvetica Standard");
+        }, 500);
+
+      } catch (err) {
+        status.innerText = "FATAL ERROR: ACCESS DENIED";
+        btn.style.display = 'block';
+        ring.style.display = 'none';
       }
     };
 
-    document.getElementById('switch-camera').addEventListener('click', async () => {
-      currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-      addLog(`🔄 SWITCHING TO ${currentFacingMode.toUpperCase()}...`);
-      await setupCamera();
-    });
+    function drawBars() {
+      requestAnimationFrame(drawBars);
+      if(!analyser) return;
+      audioCanvas.width = audioCanvas.clientWidth;
+      audioCanvas.height = audioCanvas.clientHeight;
+      analyser.getByteFrequencyData(freqData);
+      aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
+      const barWidth = (audioCanvas.width / freqData.length) * 2;
+      let x = 0;
+      for (let i = 0; i < freqData.length; i++) {
+        const barHeight = (freqData[i] / 255) * audioCanvas.height;
+        aCtx.fillStyle = `rgb(${freqData[i]+100},${freqData[i]+100},${freqData[i]+100})`;
+        aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
+        x += barWidth;
+      }
+    }
 
-    // --- FACE MESH (CORE) ---
-    faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-    faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-    faceMesh.onResults((results) => {
-      if (!results.image) return;
+    // --- РЕЧЬ ---
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'ru-RU';
+      recognition.onresult = (e) => {
+        isSpeaking = true;
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) addLog("VOICE_IN: " + e.results[i][0].transcript);
+          else interim += e.results[i][0].transcript;
+        }
+        liveSpeechBox.innerText = interim || "LISTENING...";
+        setTimeout(() => { isSpeaking = false; }, 1000);
+      };
+      recognition.start();
+      window.runSpeech = () => {}; 
+    }
+
+    function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      
-      canvasCtx.globalAlpha = 0.3;
+      canvasCtx.globalAlpha = 0.1;
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        document.getElementById('target-status').innerText = "> TARGET: LOCKED";
+        targetStatus.innerText = "> TARGET: ACQUIRED";
         for (const landmarks of results.multiFaceLandmarks) {
-          const color = isSpeaking ? "#fff" : "#666";
+          const leftD = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
+          const rightD = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
+          const closed = leftD < 0.015 && rightD < 0.015;
+
+          let color = "#ffffff";
+          if (isSpeaking) color = "#00ff00";
+          else if (closed) color = "#ff0000";
+
           canvasCtx.strokeStyle = color;
           canvasCtx.lineWidth = 0.5;
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: color + '33', lineWidth: 0.5});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: color});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_EYES, {color: '#fff'});
+          
+          // Тесселяция
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: color + "44", lineWidth: 0.5});
+          // Глаза
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
+          
+          // Контур рта (исключая внутренние губы для чистоты)
+          // Используем FACEMESH_LIPS, но ограничиваемся внешним обводом
+          drawConnectors(canvasCtx, landmarks, [
+            [61, 146], [146, 91], [91, 181], [181, 84], [84, 17], [17, 314], [314, 405], [405, 321], [321, 375], [375, 291],
+            [291, 308], [308, 324], [324, 318], [318, 402], [402, 317], [317, 14], [14, 87], [87, 178], [178, 88], [88, 95],
+            [95, 185], [185, 40], [40, 39], [39, 37], [37, 0], [0, 267], [267, 269], [269, 270], [270, 409], [409, 291],
+            [61, 185], [185, 40], [40, 39], [39, 37], [37, 0], [0, 267], [267, 269], [269, 270], [270, 409]
+          ], {color: color});
         }
       } else {
-        document.getElementById('target-status').innerText = "> TARGET: LOST";
+        targetStatus.innerText = "> TARGET: SEEKING...";
       }
       canvasCtx.restore();
+    }
+
+    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+    faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    faceMesh.onResults(onResults);
+
+    async function startCamera() {
+      if(cameraInstance) await cameraInstance.stop();
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => { await faceMesh.send({image: videoElement}); },
+        facingMode: currentFacingMode, width: 1280, height: 720
+      });
+      await cameraInstance.start();
+      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
+    }
+
+    document.getElementById('switch-camera').addEventListener('click', () => {
+      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+      startCamera();
     });
-
-    // Boot Anim
-    const lines = ["Decrypting protocols...", "Mapping neural nodes...", "Bypassing firewalls...", "Ready for link."];
-    let l = 0;
-    const interval = setInterval(() => {
-        document.getElementById('boot-log').innerHTML += `> ${lines[l]}<br>`;
-        l++; if(l>=lines.length) clearInterval(interval);
-    }, 400);
-
   </script>
 </body>
 </html>
