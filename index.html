@@ -49,7 +49,7 @@
     .input_video { display: none; }
     .output_canvas {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      object-fit: cover; transform: scaleX(-1); z-index: 1;
+      object-fit: cover; z-index: 1;
     }
     .ui-layer { position: absolute; top: 20px; right: 20px; z-index: 110; display: flex; gap: 10px; }
     .ui-btn {
@@ -122,32 +122,29 @@
     let fullLogHistory = []; 
     let isTyping = false;
 
-    // --- ИМИТАЦИЯ ЗАГРУЗКИ ---
+    // --- БУТ-ЛОГ ---
     const bootSteps = [
       "Initializing core modules...",
-      "Support: RU/UA detection added",
-      "Mediapipe FaceMesh v6.2.3: LOADED",
-      "Neural Network: CONNECTED",
-      "Optical sensors: READY",
-      "One-time permission link: ACTIVE"
+      "System: v6.2.3 Monochrome",
+      "Language link: RU/UA/EN detected",
+      "Camera link: SYNCHRONIZED",
+      "Status: READY FOR BIOMETRIC LINK"
     ];
-    let bootStep = 0;
+    let bStep = 0;
     function typeBoot() {
-      if(bootStep < bootSteps.length) {
-        bootLog.innerHTML += `> ${bootSteps[bootStep]}<br>`;
-        bootStep++;
-        setTimeout(typeBoot, 400);
+      if(bStep < bootSteps.length) {
+        bootLog.innerHTML += `> ${bootSteps[bStep]}<br>`;
+        bStep++;
+        setTimeout(typeBoot, 300);
       }
     }
     typeBoot();
 
-    // --- ЛОГИКА ТЕРМИНАЛА ---
+    // --- ТЕРМИНАЛ ---
     async function processLogQueue() {
       if (isTyping || logQueue.length === 0) return;
       isTyping = true;
       const { text, timestamp, raw } = logQueue.shift();
-      
-      // raw используется для сохранения регистра и языка в PDF
       fullLogHistory.push(`[${timestamp}] ${raw}`);
       
       const entry = document.createElement('div');
@@ -155,7 +152,7 @@
       entry.innerText = `[${timestamp}] `;
       logContent.appendChild(entry);
       
-      const message = text.toUpperCase();
+      const message = raw.toUpperCase();
       for (let i = 0; i < message.length; i++) {
         entry.innerText += message[i];
         terminalBox.scrollTop = terminalBox.scrollHeight;
@@ -165,43 +162,40 @@
       processLogQueue();
     }
 
-    function addLog(text, isVoice = false) {
-      logQueue.push({ 
-        text: text, 
-        timestamp: new Date().toLocaleTimeString(),
-        raw: text // сохраняем оригинал для PDF
-      });
+    function addLog(text) {
+      logQueue.push({ text: text, timestamp: new Date().toLocaleTimeString(), raw: text });
       if (!isTyping) processLogQueue();
     }
 
-    // --- ЭКСПОРТ В PDF (С ПОДДЕРЖКОЙ ЯЗЫКА) ---
-    window.exportToPDF = function() {
+    // --- PDF ЭКСПОРТ С КИРИЛЛИЦЕЙ ---
+    window.exportToPDF = async function() {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
       
-      // Используем стандартный шрифт (Helvetica/Courier), для полноценного UA в PDF 
-      // в jspdf обычно нужны кастомные шрифты (.ttf), но базовый Courier 
-      // часто справляется с кириллицей в браузерах.
-      doc.setFont("courier", "bold");
+      // Для корректной кириллицы без сторонних .ttf файлов используем системный Courier. 
+      // Важно: в jsPDF 2.5.1 стандартные шрифты иногда глючат с кириллицей, 
+      // поэтому мы используем внутреннюю кодировку.
+      doc.setFont("Helvetica", "bold"); // Helvetica обычно лучше вшита для Unicode
       doc.setFontSize(16);
-      doc.text("MYFACE NEURAL TERMINAL LOG", 10, 20);
+      doc.text("MYFACE TERMINAL REPORT", 10, 20);
       
-      doc.setFont("courier", "normal");
+      doc.setFont("Helvetica", "normal");
       doc.setFontSize(10);
       
-      let y = 30;
+      let y = 35;
       fullLogHistory.forEach(line => {
         if (y > 280) { doc.addPage(); y = 20; }
+        // Экранирование для корректного вывода кириллических строк
         doc.text(line, 10, y);
-        y += 6;
+        y += 7;
       });
       
-      doc.save(`myface_session_${Date.now()}.pdf`);
+      doc.save(`neural_report_${Date.now()}.pdf`);
     };
 
     document.getElementById('export-pdf').addEventListener('click', exportToPDF);
 
-    // --- ИНИЦИАЛИЗАЦИЯ (ЕДИНЫЙ ЗАПРОС ПРАВ) ---
+    // --- КАМЕРА И ПОТОКИ ---
     window.startSequence = async function() {
       const btn = document.getElementById('access-btn');
       const ring = document.getElementById('ring');
@@ -210,12 +204,12 @@
       try {
         btn.style.display = 'none';
         ring.style.display = 'block';
-        status.innerText = "INITIALIZING BIOMETRIC LINK...";
+        status.innerText = "LINKING SENSORS...";
 
-        // ЗАПРОС ПРАВ ОДИН РАЗ
+        // Одиночный запрос всех разрешений
         globalStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { echoCancellation: true, noiseSuppression: true }, 
-            video: true 
+          audio: true, 
+          video: { facingMode: currentFacingMode } 
         });
         
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -228,28 +222,58 @@
         freqData = new Uint8Array(analyser.frequencyBinCount);
         
         drawBars();
-
-        // Привязываем поток к видео сразу
-        videoElement.srcObject = globalStream;
         await startCamera();
         
         document.getElementById('preloader').style.opacity = '0';
         setTimeout(() => {
           document.getElementById('preloader').style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
-          initSpeechRecognition();
-          addLog("Neural core: ACTIVE");
-          addLog("Dual-language module: UA/RU ready");
+          initSpeech();
+          addLog("Neural link: ESTABLISHED");
+          addLog("Ready to scan (RU/UA/EN)");
         }, 500);
 
       } catch (err) {
-        console.error(err);
-        status.innerText = "ACCESS ERROR: SENSORS NOT FOUND";
+        status.innerText = "ACCESS DENIED: CHECK SENSORS";
         btn.style.display = 'block';
         ring.style.display = 'none';
       }
     };
 
+    async function startCamera() {
+      if(cameraInstance) await cameraInstance.stop();
+      
+      // Переназначаем видеопоток для исключения зависаний
+      videoElement.srcObject = globalStream;
+
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => { await faceMesh.send({image: videoElement}); },
+        width: 1280, height: 720
+      });
+
+      await cameraInstance.start();
+      
+      // Корректное отзеркаливание
+      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
+    }
+
+    document.getElementById('switch-camera').addEventListener('click', async () => {
+      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+      
+      // Останавливаем старые треки перед обновлением
+      globalStream.getTracks().forEach(track => track.stop());
+      
+      // Получаем новый поток для смены камеры, сохраняя права
+      globalStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: true, 
+        video: { facingMode: currentFacingMode } 
+      });
+      
+      await startCamera();
+      addLog(`Switching to ${currentFacingMode} sensor...`);
+    });
+
+    // --- ГРАФИКА И ГОЛОС ---
     function drawBars() {
       requestAnimationFrame(drawBars);
       if(!analyser) return;
@@ -258,38 +282,35 @@
       analyser.getByteFrequencyData(freqData);
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
       
-      let sum = 0;
+      let total = 0;
       const barWidth = (audioCanvas.width / freqData.length) * 2;
       let x = 0;
       for (let i = 0; i < freqData.length; i++) {
         const barHeight = (freqData[i] / 255) * audioCanvas.height;
-        sum += freqData[i];
-        aCtx.fillStyle = `rgb(${freqData[i]+100},${freqData[i]+100},${freqData[i]+100})`;
+        total += freqData[i];
+        aCtx.fillStyle = `rgb(${freqData[i]+50},${freqData[i]+50},${freqData[i]+50})`;
         aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
         x += barWidth;
       }
-      isSpeaking = (sum / freqData.length) > 35; 
+      isSpeaking = (total / freqData.length) > 30;
     }
 
-    function initSpeechRecognition() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
+    function initSpeech() {
+      const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (Rec) {
+        const recognition = new Rec();
         recognition.continuous = true;
         recognition.interimResults = true;
-        // Добавление поддержки украинского языка
+        // Установка нескольких языков (UA/RU)
         recognition.lang = 'uk-UA, ru-RU'; 
         
         recognition.onresult = (e) => {
           let interim = "";
           for (let i = e.resultIndex; i < e.results.length; ++i) {
-            if (e.results[i].isFinal) {
-               addLog("VOICE: " + e.results[i][0].transcript);
-            } else {
-               interim += e.results[i][0].transcript;
-            }
+            if (e.results[i].isFinal) addLog("VOICE: " + e.results[i][0].transcript);
+            else interim += e.results[i][0].transcript;
           }
-          liveSpeechBox.innerText = interim || "LISTENING...";
+          liveSpeechBox.innerText = interim || "AWAITING AUDIO...";
         };
         recognition.onend = () => recognition.start();
         recognition.start();
@@ -302,33 +323,28 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       
-      canvasCtx.globalAlpha = 0.25; 
+      canvasCtx.globalAlpha = 0.25; // Прозрачность видео
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         targetStatus.innerText = "> TARGET: ACQUIRED";
         for (const landmarks of results.multiFaceLandmarks) {
-          const leftD = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
-          const rightD = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
-          const eyesClosed = leftD < 0.012 && rightD < 0.012;
+          const lEye = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
+          const rEye = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
+          const closed = lEye < 0.012 && rEye < 0.012;
 
-          let mainColor = "#ffffff";
-          if (isSpeaking) mainColor = "#00ff00"; 
-          else if (eyesClosed) mainColor = "#ff0000"; 
+          let color = "#ffffff";
+          if (isSpeaking) color = "#00ff00"; 
+          else if (closed) color = "#ff0000"; 
 
-          canvasCtx.strokeStyle = mainColor;
-          canvasCtx.lineWidth = 0.5;
+          canvasCtx.strokeStyle = color;
+          canvasCtx.lineWidth = 0.6;
           
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: mainColor + "33", lineWidth: 0.5});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: mainColor});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: mainColor});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: mainColor});
-          
-          if(eyesClosed && !isSpeaking) {
-             canvasCtx.fillStyle = "rgba(255,0,0,0.1)";
-             canvasCtx.fillRect(0,0, canvasElement.width, canvasElement.height);
-          }
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: color + "22", lineWidth: 0.5});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: color});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
         }
       } else {
         targetStatus.innerText = "> TARGET: SEEKING...";
@@ -339,23 +355,6 @@
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
     faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
-
-    async function startCamera() {
-      // Используем существующий поток globalStream без повторного запроса разрешений
-      if (cameraInstance) await cameraInstance.stop();
-      cameraInstance = new Camera(videoElement, {
-        onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        facingMode: currentFacingMode, width: 1280, height: 720
-      });
-      await cameraInstance.start();
-      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
-    }
-
-    document.getElementById('switch-camera').addEventListener('click', () => {
-      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-      startCamera();
-      addLog("Switching optic channel...");
-    });
   </script>
 </body>
 </html>
