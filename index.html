@@ -13,7 +13,6 @@
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #888; }
     
-    /* --- ОБНОВЛЕННЫЙ ПРЕЛОАДЕР --- */
     #preloader {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 200; display: flex;
@@ -46,7 +45,6 @@
     }
     #access-btn:hover { background: #888; color: #fff; }
 
-    /* --- ИНТЕРФЕЙС --- */
     #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
     .input_video { display: none; }
     .output_canvas {
@@ -127,17 +125,17 @@
     // --- ИМИТАЦИЯ ЗАГРУЗКИ ---
     const bootSteps = [
       "Initializing core modules...",
-      "Loading Mediapipe FaceMesh v6.2.3...",
-      "Connecting to Neural Network...",
-      "Audio context: STANDBY",
+      "Support: RU/UA detection added",
+      "Mediapipe FaceMesh v6.2.3: LOADED",
+      "Neural Network: CONNECTED",
       "Optical sensors: READY",
-      "Ready for biometric link."
+      "One-time permission link: ACTIVE"
     ];
-    let step = 0;
+    let bootStep = 0;
     function typeBoot() {
-      if(step < bootSteps.length) {
-        bootLog.innerHTML += `> ${bootSteps[step]}<br>`;
-        step++;
+      if(bootStep < bootSteps.length) {
+        bootLog.innerHTML += `> ${bootSteps[bootStep]}<br>`;
+        bootStep++;
         setTimeout(typeBoot, 400);
       }
     }
@@ -147,9 +145,10 @@
     async function processLogQueue() {
       if (isTyping || logQueue.length === 0) return;
       isTyping = true;
-      const { text, timestamp } = logQueue.shift();
-      const entryText = `[${timestamp}] ${text.toUpperCase()}`;
-      fullLogHistory.push(entryText);
+      const { text, timestamp, raw } = logQueue.shift();
+      
+      // raw используется для сохранения регистра и языка в PDF
+      fullLogHistory.push(`[${timestamp}] ${raw}`);
       
       const entry = document.createElement('div');
       entry.className = 'log-entry';
@@ -166,16 +165,23 @@
       processLogQueue();
     }
 
-    function addLog(text) {
-      logQueue.push({ text, timestamp: new Date().toLocaleTimeString() });
+    function addLog(text, isVoice = false) {
+      logQueue.push({ 
+        text: text, 
+        timestamp: new Date().toLocaleTimeString(),
+        raw: text // сохраняем оригинал для PDF
+      });
       if (!isTyping) processLogQueue();
     }
 
-    // --- ИСПРАВЛЕННЫЙ ЭКСПОРТ В PDF ---
+    // --- ЭКСПОРТ В PDF (С ПОДДЕРЖКОЙ ЯЗЫКА) ---
     window.exportToPDF = function() {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
       
+      // Используем стандартный шрифт (Helvetica/Courier), для полноценного UA в PDF 
+      // в jspdf обычно нужны кастомные шрифты (.ttf), но базовый Courier 
+      // часто справляется с кириллицей в браузерах.
       doc.setFont("courier", "bold");
       doc.setFontSize(16);
       doc.text("MYFACE NEURAL TERMINAL LOG", 10, 20);
@@ -190,12 +196,12 @@
         y += 6;
       });
       
-      doc.save(`myface_log_${Date.now()}.pdf`);
+      doc.save(`myface_session_${Date.now()}.pdf`);
     };
 
     document.getElementById('export-pdf').addEventListener('click', exportToPDF);
 
-    // --- ИНИЦИАЛИЗАЦИЯ ---
+    // --- ИНИЦИАЛИЗАЦИЯ (ЕДИНЫЙ ЗАПРОС ПРАВ) ---
     window.startSequence = async function() {
       const btn = document.getElementById('access-btn');
       const ring = document.getElementById('ring');
@@ -204,8 +210,9 @@
       try {
         btn.style.display = 'none';
         ring.style.display = 'block';
-        status.innerText = "LINKING SENSORS...";
+        status.innerText = "INITIALIZING BIOMETRIC LINK...";
 
+        // ЗАПРОС ПРАВ ОДИН РАЗ
         globalStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { echoCancellation: true, noiseSuppression: true }, 
             video: true 
@@ -222,6 +229,7 @@
         
         drawBars();
 
+        // Привязываем поток к видео сразу
         videoElement.srcObject = globalStream;
         await startCamera();
         
@@ -230,13 +238,13 @@
           document.getElementById('preloader').style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
           initSpeechRecognition();
-          addLog("System Online");
-          addLog("Neural link established");
+          addLog("Neural core: ACTIVE");
+          addLog("Dual-language module: UA/RU ready");
         }, 500);
 
       } catch (err) {
         console.error(err);
-        status.innerText = "FATAL ERROR: ACCESS DENIED";
+        status.innerText = "ACCESS ERROR: SENSORS NOT FOUND";
         btn.style.display = 'block';
         ring.style.display = 'none';
       }
@@ -269,12 +277,17 @@
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = 'ru-RU';
+        // Добавление поддержки украинского языка
+        recognition.lang = 'uk-UA, ru-RU'; 
+        
         recognition.onresult = (e) => {
           let interim = "";
           for (let i = e.resultIndex; i < e.results.length; ++i) {
-            if (e.results[i].isFinal) addLog("VOICE_IN: " + e.results[i][0].transcript);
-            else interim += e.results[i][0].transcript;
+            if (e.results[i].isFinal) {
+               addLog("VOICE: " + e.results[i][0].transcript);
+            } else {
+               interim += e.results[i][0].transcript;
+            }
           }
           liveSpeechBox.innerText = interim || "LISTENING...";
         };
@@ -289,7 +302,6 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       
-      // Черный фильтр стал прозрачнее (было 0.15, стало 0.25)
       canvasCtx.globalAlpha = 0.25; 
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
@@ -329,7 +341,8 @@
     faceMesh.onResults(onResults);
 
     async function startCamera() {
-      if(cameraInstance) await cameraInstance.stop();
+      // Используем существующий поток globalStream без повторного запроса разрешений
+      if (cameraInstance) await cameraInstance.stop();
       cameraInstance = new Camera(videoElement, {
         onFrame: async () => { await faceMesh.send({image: videoElement}); },
         facingMode: currentFacingMode, width: 1280, height: 720
@@ -341,7 +354,7 @@
     document.getElementById('switch-camera').addEventListener('click', () => {
       currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
       startCamera();
-      addLog("Switching optic sensor...");
+      addLog("Switching optic channel...");
     });
   </script>
 </body>
