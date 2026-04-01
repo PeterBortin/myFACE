@@ -12,24 +12,41 @@
 
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #888; }
+    
+    /* --- ОБНОВЛЕННЫЙ ПРЕЛОАДЕР --- */
     #preloader {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 200; display: flex;
       flex-direction: column; justify-content: center; align-items: center;
       transition: opacity 0.5s ease; border: 1px solid #333; box-sizing: border-box;
     }
+    #logo-container {
+      font-size: 42px; font-weight: bold; color: #fff; letter-spacing: 10px;
+      margin-bottom: 20px; animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; text-shadow: 0 0 5px #fff; }
+      50% { opacity: 0.3; text-shadow: 0 0 20px #fff; }
+      100% { opacity: 1; text-shadow: 0 0 5px #fff; }
+    }
+    #boot-log {
+      width: 300px; height: 100px; font-size: 10px; color: #444;
+      overflow: hidden; margin-bottom: 20px; text-align: left;
+    }
     .loader-ring {
-      display: none; width: 60px; height: 60px; border: 2px solid #222;
+      display: none; width: 40px; height: 40px; border: 2px solid #222;
       border-radius: 50%; border-top-color: #fff;
       animation: spin 1s linear infinite; margin-bottom: 20px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     #access-btn {
-      background: none; border: 1px solid #fff; color: #fff;
-      padding: 15px 30px; cursor: pointer; text-transform: uppercase;
-      letter-spacing: 3px; font-family: inherit; transition: 0.3s;
+      background: #fff; border: none; color: #000;
+      padding: 15px 40px; cursor: pointer; text-transform: uppercase;
+      letter-spacing: 2px; font-family: inherit; font-weight: bold; transition: 0.3s;
     }
-    #access-btn:hover { background: #fff; color: #000; }
+    #access-btn:hover { background: #888; color: #fff; }
+
+    /* --- ИНТЕРФЕЙС --- */
     #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
     .input_video { display: none; }
     .output_canvas {
@@ -61,9 +78,10 @@
 
 <body>
   <div id="preloader">
-    <div style="color:#fff; margin-bottom:10px;">NEURAL CORE LOADER v6.2.3</div>
+    <div id="logo-container">myFACE</div>
+    <div id="boot-log"></div>
     <div class="loader-ring" id="ring"></div>
-    <button id="access-btn" onclick="startSequence()">INITIALIZE NEURAL LINK</button>
+    <button id="access-btn" onclick="startSequence()">Дать доступы</button>
     <p id="status-text" style="margin-top: 20px; font-size: 10px; color: #444;">AWAITING BIOMETRIC AUTHORIZATION...</p>
   </div>
 
@@ -96,14 +114,34 @@
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
     const targetStatus = document.getElementById('target-status');
+    const bootLog = document.getElementById('boot-log');
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
     let audioCtx, analyser, freqData, globalStream;
     let isSpeaking = false;
     let logQueue = [];
-    let fullLogHistory = []; // Для PDF
+    let fullLogHistory = []; 
     let isTyping = false;
+
+    // --- ИМИТАЦИЯ ЗАГРУЗКИ ---
+    const bootSteps = [
+      "Initializing core modules...",
+      "Loading Mediapipe FaceMesh v6.2.3...",
+      "Connecting to Neural Network...",
+      "Audio context: STANDBY",
+      "Optical sensors: READY",
+      "Ready for biometric link."
+    ];
+    let step = 0;
+    function typeBoot() {
+      if(step < bootSteps.length) {
+        bootLog.innerHTML += `> ${bootSteps[step]}<br>`;
+        step++;
+        setTimeout(typeBoot, 400);
+      }
+    }
+    typeBoot();
 
     // --- ЛОГИКА ТЕРМИНАЛА ---
     async function processLogQueue() {
@@ -133,24 +171,26 @@
       if (!isTyping) processLogQueue();
     }
 
-    // --- ЭКСПОРТ В PDF ---
+    // --- ИСПРАВЛЕННЫЙ ЭКСПОРТ В PDF ---
     window.exportToPDF = function() {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
-      doc.setBackgroundColor(0, 0, 0);
+      
       doc.setFont("courier", "bold");
-      doc.setFontSize(14);
-      doc.text("NEURAL SCANNER TERMINAL LOG", 10, 20);
-      doc.setFontSize(10);
+      doc.setFontSize(16);
+      doc.text("MYFACE NEURAL TERMINAL LOG", 10, 20);
+      
       doc.setFont("courier", "normal");
+      doc.setFontSize(10);
       
       let y = 30;
       fullLogHistory.forEach(line => {
         if (y > 280) { doc.addPage(); y = 20; }
         doc.text(line, 10, y);
-        y += 7;
+        y += 6;
       });
-      doc.save(`neural_log_${Date.now()}.pdf`);
+      
+      doc.save(`myface_log_${Date.now()}.pdf`);
     };
 
     document.getElementById('export-pdf').addEventListener('click', exportToPDF);
@@ -163,17 +203,14 @@
 
       try {
         btn.style.display = 'none';
-        status.innerText = "ACCESSING CORE SENSORS...";
+        ring.style.display = 'block';
+        status.innerText = "LINKING SENSORS...";
 
         globalStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { echoCancellation: true, noiseSuppression: true }, 
             video: true 
         });
         
-        ring.style.display = 'block';
-        status.innerText = "CALIBRATING...";
-
-        // Исправление подгрузки звука: возобновление контекста
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') await audioCtx.resume();
         
@@ -223,8 +260,7 @@
         aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
         x += barWidth;
       }
-      // Детекция активности голоса через громкость
-      isSpeaking = (sum / freqData.length) > 40; 
+      isSpeaking = (sum / freqData.length) > 35; 
     }
 
     function initSpeechRecognition() {
@@ -242,8 +278,7 @@
           }
           liveSpeechBox.innerText = interim || "LISTENING...";
         };
-        recognition.onerror = () => { addLog("Speech sensor timeout"); };
-        recognition.onend = () => recognition.start(); // Рестарт при сбое
+        recognition.onend = () => recognition.start();
         recognition.start();
       }
     }
@@ -253,7 +288,9 @@
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.globalAlpha = 0.15;
+      
+      // Черный фильтр стал прозрачнее (было 0.15, стало 0.25)
+      canvasCtx.globalAlpha = 0.25; 
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
@@ -264,15 +301,13 @@
           const rightD = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
           const eyesClosed = leftD < 0.012 && rightD < 0.012;
 
-          // Цветовые схемы
           let mainColor = "#ffffff";
-          if (isSpeaking) mainColor = "#00ff00"; // Зеленый при речи
-          else if (eyesClosed) mainColor = "#ff0000"; // Красный при закрытых глазах
+          if (isSpeaking) mainColor = "#00ff00"; 
+          else if (eyesClosed) mainColor = "#ff0000"; 
 
           canvasCtx.strokeStyle = mainColor;
           canvasCtx.lineWidth = 0.5;
           
-          // Рисуем сетку
           drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: mainColor + "33", lineWidth: 0.5});
           drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: mainColor});
           drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: mainColor});
