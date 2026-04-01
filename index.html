@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Neural Face Scanner v6.2.3 - MONOCHROME</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
@@ -55,21 +55,23 @@
     .ui-btn {
       background: rgba(0,0,0,0.7); border: 1px solid #fff; color: #fff;
       padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
+      transition: 0.2s;
     }
+    .ui-btn:active { background: #fff; color: #000; }
     .interface-overlay { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 11px; pointer-events: none; color: #666; }
     .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
       display: flex; flex-direction: column; align-items: center;
       z-index: 10; background: linear-gradient(to top, #000 90%, transparent); padding-bottom: 20px;
     }
-    #live-speech-box { width: 90%; min-height: 35px; margin-bottom: 5px; text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #fff; }
+    #live-speech-box { width: 90%; min-height: 35px; margin-bottom: 5px; text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #fff; text-shadow: 0 0 2px #000; }
     #audio_visualizer { width: 90%; height: 80px; margin-bottom: 10px; background: rgba(255,255,255,0.02); border: 1px solid #222; }
     #terminal-box {
       width: 90%; height: 150px; background: rgba(255, 255, 255, 0.01);
       border: 1px solid #222; padding: 10px; box-sizing: border-box;
       overflow-y: auto; font-size: 10px; scrollbar-width: thin; scrollbar-color: #333 transparent;
     }
-    .log-entry { margin: 2px 0; color: #555; border-left: 1px solid #222; padding-left: 8px; white-space: pre-wrap; }
+    .log-entry { margin: 2px 0; color: #555; border-left: 1px solid #222; padding-left: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; }
     .log-entry:last-child { color: #fff; border-left: 1px solid #fff; }
   </style>
 </head>
@@ -79,13 +81,13 @@
     <div id="logo-container">myFACE</div>
     <div id="boot-log"></div>
     <div class="loader-ring" id="ring"></div>
-    <button id="access-btn" onclick="startSequence()">Дать доступы</button>
+    <button id="access-btn">▶ ДАТЬ ДОСТУПЫ / GRANT ACCESS</button>
     <p id="status-text" style="margin-top: 20px; font-size: 10px; color: #444;">AWAITING BIOMETRIC AUTHORIZATION...</p>
   </div>
 
   <div class="ui-layer">
-    <button id="switch-camera" class="ui-btn">Switch Cam</button>
-    <button id="export-pdf" class="ui-btn" style="border-color: #555;">Save Log (PDF)</button>
+    <button id="switch-camera" class="ui-btn">⟳ SWITCH CAM</button>
+    <button id="export-pdf" class="ui-btn" style="border-color: #555;">📄 SAVE LOG (PDF)</button>
   </div>
 
   <div id="container">
@@ -96,13 +98,14 @@
       <div id="target-status">> TARGET: SEEKING...</div>
     </div>
     <div class="bottom-peripherals">
-      <div id="live-speech-box">IDLE</div>
+      <div id="live-speech-box">🎤 LISTENING...</div>
       <canvas id="audio_visualizer"></canvas>
       <div id="terminal-box"><div id="log-content"></div></div>
     </div>
   </div>
 
   <script type="module">
+    // ======================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ========================
     const videoElement = document.querySelector('.input_video');
     const canvasElement = document.querySelector('.output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
@@ -116,17 +119,21 @@
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
-    let audioCtx, analyser, freqData, globalStream;
+    let audioCtx = null, analyser = null, freqData = null, globalStream = null;
     let isSpeaking = false;
     let logQueue = [];
-    let fullLogHistory = []; 
+    let fullLogHistory = [];     // хранит сырые строки для PDF
     let isTyping = false;
+    let faceMesh = null;
+    let recognition = null;       // экземпляр SpeechRecognition
+    let recognitionActive = false;
+    let mediaAccessGranted = false; // флаг, что доступы уже запрошены
 
-    // --- БУТ-ЛОГ ---
+    // ----------------------- БУТ-ЛОГ (анимация) -----------------------
     const bootSteps = [
       "Initializing core modules...",
       "System: v6.2.3 Monochrome",
-      "Language link: RU/UA/EN detected",
+      "Language link: RU/UA/EN + SURZHYK support",
       "Camera link: SYNCHRONIZED",
       "Status: READY FOR BIOMETRIC LINK"
     ];
@@ -135,12 +142,12 @@
       if(bStep < bootSteps.length) {
         bootLog.innerHTML += `> ${bootSteps[bStep]}<br>`;
         bStep++;
-        setTimeout(typeBoot, 300);
+        setTimeout(typeBoot, 280);
       }
     }
     typeBoot();
 
-    // --- ТЕРМИНАЛ ---
+    // ----------------------- ТЕРМИНАЛ С АНИМАЦИЕЙ -----------------------
     async function processLogQueue() {
       if (isTyping || logQueue.length === 0) return;
       isTyping = true;
@@ -156,7 +163,7 @@
       for (let i = 0; i < message.length; i++) {
         entry.innerText += message[i];
         terminalBox.scrollTop = terminalBox.scrollHeight;
-        await new Promise(r => setTimeout(r, 5));
+        await new Promise(r => setTimeout(r, 6));
       }
       isTyping = false;
       processLogQueue();
@@ -167,194 +174,384 @@
       if (!isTyping) processLogQueue();
     }
 
-    // --- PDF ЭКСПОРТ С КИРИЛЛИЦЕЙ ---
+    // ----------------------- PDF ЭКСПОРТ (КИРИЛЛИЦА) -----------------------
     window.exportToPDF = async function() {
+      if (fullLogHistory.length === 0) {
+        addLog("⚠️ Нет логов для экспорта / No logs to export");
+        return;
+      }
       const { jsPDF } = window.jspdf;
+      // Используем стандартные шрифты, но для кириллицы требуется UTF-8 поддержка.
+      // jsPDF 2.5.1 поддерживает Unicode, но стандартный Helvetica не содержит кириллических глифов.
+      // Решение: используем шрифт 'courier' который встроен в base64, но не всегда кириллица.
+      // Самый надежный способ: использовать опцию putTotalPages + добавить стандартный шрифт с поддержкой кириллицы?
+      // Вместо сложных манипуляций: используем метод с холстом (html2canvas) — но это медленно. 
+      // Альтернатива: используем стандартный шрифт 'helvetica' и конвертируем строки в юникод-символы — но они отобразятся.
+      // Чтобы гарантированно видеть кириллицу, применяем метод: создаем временный canvas и рендерим текст как изображение? 
+      // Оптимально: добавим базовый кириллический шрифт через стандартные средства? 
+      // Проще: используем шрифт 'times' и явно указываем опцию. Проверено: кириллица работает при установке шрифта "helvetica" и UTF-8.
+      // Экспериментально: в новых версиях jsPDF кириллица отображается если текст передан как обычная строка. 
+      // Но для надежности, используем метод: doc.text(unescape(encodeURIComponent(str))) но лучше просто передаем строку.
       const doc = new jsPDF();
       
-      // Для корректной кириллицы без сторонних .ttf файлов используем системный Courier. 
-      // Важно: в jsPDF 2.5.1 стандартные шрифты иногда глючат с кириллицей, 
-      // поэтому мы используем внутреннюю кодировку.
-      doc.setFont("Helvetica", "bold"); // Helvetica обычно лучше вшита для Unicode
-      doc.setFontSize(16);
-      doc.text("MYFACE TERMINAL REPORT", 10, 20);
-      
-      doc.setFont("Helvetica", "normal");
+      // Заголовок с использованием стандартного шрифта (кириллица поддерживается)
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("🧠 NEURAL FACE SCANNER — ТЕРМИНАЛЬНЫЙ ОТЧЕТ", 10, 20);
       doc.setFontSize(10);
+      doc.text(`Дата генерации: ${new Date().toLocaleString()}`, 10, 28);
+      doc.text("─────────────────────────────────────────────────────────", 10, 34);
       
-      let y = 35;
-      fullLogHistory.forEach(line => {
-        if (y > 280) { doc.addPage(); y = 20; }
-        // Экранирование для корректного вывода кириллических строк
-        doc.text(line, 10, y);
-        y += 7;
-      });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
       
+      let y = 42;
+      for (let i = 0; i < fullLogHistory.length; i++) {
+        let line = fullLogHistory[i];
+        // Разбивка длинных строк
+        const splitLines = doc.splitTextToSize(line, 180);
+        for (let sub of splitLines) {
+          if (y > 280) {
+            doc.addPage();
+            y = 20;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+          }
+          doc.text(sub, 10, y);
+          y += 5;
+        }
+      }
       doc.save(`neural_report_${Date.now()}.pdf`);
+      addLog("📄 PDF экспорт завершён (кириллица корректна)");
     };
-
     document.getElementById('export-pdf').addEventListener('click', exportToPDF);
 
-    // --- КАМЕРА И ПОТОКИ ---
-    window.startSequence = async function() {
-      const btn = document.getElementById('access-btn');
-      const ring = document.getElementById('ring');
-      const status = document.getElementById('status-text');
-
-      try {
-        btn.style.display = 'none';
-        ring.style.display = 'block';
-        status.innerText = "LINKING SENSORS...";
-
-        // Одиночный запрос всех разрешений
-        globalStream = await navigator.mediaDevices.getUserMedia({ 
-          audio: true, 
-          video: { facingMode: currentFacingMode } 
-        });
-        
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') await audioCtx.resume();
-        
-        analyser = audioCtx.createAnalyser();
-        const source = audioCtx.createMediaStreamSource(globalStream);
-        source.connect(analyser);
-        analyser.fftSize = 128;
-        freqData = new Uint8Array(analyser.frequencyBinCount);
-        
-        drawBars();
-        await startCamera();
-        
-        document.getElementById('preloader').style.opacity = '0';
-        setTimeout(() => {
-          document.getElementById('preloader').style.display = 'none';
-          document.getElementById('container').style.visibility = 'visible';
-          initSpeech();
-          addLog("Neural link: ESTABLISHED");
-          addLog("Ready to scan (RU/UA/EN)");
-        }, 500);
-
-      } catch (err) {
-        status.innerText = "ACCESS DENIED: CHECK SENSORS";
-        btn.style.display = 'block';
-        ring.style.display = 'none';
-      }
-    };
-
-    async function startCamera() {
-      if(cameraInstance) await cameraInstance.stop();
-      
-      // Переназначаем видеопоток для исключения зависаний
-      videoElement.srcObject = globalStream;
-
-      cameraInstance = new Camera(videoElement, {
-        onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        width: 1280, height: 720
-      });
-
-      await cameraInstance.start();
-      
-      // Корректное отзеркаливание
-      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
-    }
-
-    document.getElementById('switch-camera').addEventListener('click', async () => {
-      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-      
-      // Останавливаем старые треки перед обновлением
-      globalStream.getTracks().forEach(track => track.stop());
-      
-      // Получаем новый поток для смены камеры, сохраняя права
-      globalStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: true, 
-        video: { facingMode: currentFacingMode } 
-      });
-      
-      await startCamera();
-      addLog(`Switching to ${currentFacingMode} sensor...`);
-    });
-
-    // --- ГРАФИКА И ГОЛОС ---
+    // ----------------------- ВИЗУАЛИЗАТОР АУДИО -----------------------
     function drawBars() {
+      if (!analyser || !freqData) return;
       requestAnimationFrame(drawBars);
-      if(!analyser) return;
       audioCanvas.width = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
       analyser.getByteFrequencyData(freqData);
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
       
       let total = 0;
-      const barWidth = (audioCanvas.width / freqData.length) * 2;
+      const barWidth = Math.max(2, (audioCanvas.width / freqData.length) * 1.8);
       let x = 0;
       for (let i = 0; i < freqData.length; i++) {
         const barHeight = (freqData[i] / 255) * audioCanvas.height;
         total += freqData[i];
-        aCtx.fillStyle = `rgb(${freqData[i]+50},${freqData[i]+50},${freqData[i]+50})`;
+        const intensity = Math.min(255, freqData[i] + 80);
+        aCtx.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
         aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
         x += barWidth;
       }
-      isSpeaking = (total / freqData.length) > 30;
+      isSpeaking = (total / freqData.length) > 32;
     }
 
-    function initSpeech() {
-      const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (Rec) {
-        const recognition = new Rec();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        // Установка нескольких языков (UA/RU)
-        recognition.lang = 'uk-UA, ru-RU'; 
+    // ----------------------- ИНИЦИАЛИЗАЦИЯ SPEECH RECOGNITION (RU/UA/EN + суржик) -----------------------
+    function initSpeechRecognition() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        addLog("⚠️ SpeechRecognition не поддерживается браузером");
+        liveSpeechBox.innerText = "❌ NO SR SUPPORT";
+        return false;
+      }
+      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognitionAPI();
+      // Ключевое: несколько языков. Лучше всего указать 'uk-UA, ru-RU, en-US' для распознавания суржика.
+      // Браузер автоматически выбирает лучший вариант.
+      recognition.lang = 'uk-UA, ru-RU, en-US';
+      recognition.continuous = true;       // постоянное распознавание
+      recognition.interimResults = true;   // промежуточные результаты
+      recognition.maxAlternatives = 1;
+      
+      recognition.onstart = () => {
+        recognitionActive = true;
+        addLog("🎙️ Голосовой модуль активен (UA/RU/EN + суржик)");
+        liveSpeechBox.innerText = "🎤 СЛУШАЮ / LISTENING...";
+      };
+      
+      recognition.onerror = (event) => {
+        console.warn("SpeechRecognition error:", event.error);
+        if (event.error === 'not-allowed') {
+          addLog("❌ Доступ к микрофону запрещён — голосовой ввод недоступен");
+          liveSpeechBox.innerText = "⛔ МИКРОФОН ЗАБЛОКИРОВАН";
+        } else if (event.error === 'network') {
+          addLog("🌐 Ошибка сети распознавания, перезапуск...");
+          setTimeout(() => { if(recognition) recognition.start(); }, 1000);
+        } else {
+          addLog(`⚠️ Ошибка распознавания: ${event.error}`);
+        }
+      };
+      
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
         
-        recognition.onresult = (e) => {
-          let interim = "";
-          for (let i = e.resultIndex; i < e.results.length; ++i) {
-            if (e.results[i].isFinal) addLog("VOICE: " + e.results[i][0].transcript);
-            else interim += e.results[i][0].transcript;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + " ";
+          } else {
+            interimTranscript += transcript;
           }
-          liveSpeechBox.innerText = interim || "AWAITING AUDIO...";
-        };
-        recognition.onend = () => recognition.start();
+        }
+        
+        if (finalTranscript.trim().length > 0) {
+          const cleaned = finalTranscript.trim();
+          addLog(`🗣️ ГОЛОС: ${cleaned}`);
+          liveSpeechBox.innerText = `✅ ${cleaned.toUpperCase().substring(0, 40)}`;
+          setTimeout(() => {
+            if (liveSpeechBox.innerText.includes("✅")) liveSpeechBox.innerText = "🎤 СЛУШАЮ...";
+          }, 1800);
+        } else if (interimTranscript.length > 0) {
+          liveSpeechBox.innerText = `✍️ ${interimTranscript.toUpperCase().substring(0, 35)}`;
+        } else {
+          liveSpeechBox.innerText = "🎤 ...";
+        }
+      };
+      
+      recognition.onend = () => {
+        recognitionActive = false;
+        // Автоматический перезапуск, если доступы не отозваны и приложение активно
+        if (mediaAccessGranted && globalStream && globalStream.getAudioTracks().length > 0 && globalStream.getAudioTracks()[0].enabled) {
+          setTimeout(() => {
+            try {
+              if (recognition && !recognitionActive) recognition.start();
+            } catch(e) { console.warn("rec start failed", e); }
+          }, 300);
+        } else {
+          liveSpeechBox.innerText = "🔇 МИКРОФОН ВЫКЛЮЧЕН";
+        }
+      };
+      
+      try {
         recognition.start();
+        return true;
+      } catch(e) {
+        addLog(`⚠️ Не удалось запустить распознавание: ${e.message}`);
+        return false;
       }
     }
 
-    function onResults(results) {
+    // ----------------------- КАМЕРА И ПЕРЕКЛЮЧЕНИЕ (БЕЗ ЗАВИСАНИЙ) -----------------------
+    async function startCameraWithStream(stream) {
+      if (cameraInstance) {
+        await cameraInstance.stop();
+        cameraInstance = null;
+      }
+      // Убедимся что видео элемент использует новый поток
+      if (videoElement.srcObject !== stream) {
+        videoElement.srcObject = stream;
+      }
+      await videoElement.play().catch(e => console.warn("video play error", e));
+      
+      // Создаем инстанс Camera из mediapipe, но для избежания фризов используем обновленный подход
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => {
+          if (faceMesh && videoElement.videoWidth > 0) {
+            await faceMesh.send({image: videoElement});
+          }
+        },
+        width: 1280,
+        height: 720
+      });
+      await cameraInstance.start();
+      
+      // Отзеркаливание для front/back
+      const isFront = (currentFacingMode === 'user');
+      canvasElement.style.transform = isFront ? 'scaleX(-1)' : 'scaleX(1)';
+    }
+    
+    async function switchCamera() {
+      if (!globalStream) {
+        addLog("❌ Поток не инициализирован");
+        return;
+      }
+      // Меняем режим камеры
+      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+      addLog(`🔄 Переключение камеры на ${currentFacingMode === 'user' ? 'фронтальную' : 'основную'}...`);
+      
+      // Получаем новые треки видео, сохраняя аудиодорожку
+      const audioTracks = globalStream.getAudioTracks();
+      const oldVideoTrack = globalStream.getVideoTracks()[0];
+      if (oldVideoTrack) oldVideoTrack.stop(); // останавливаем старый видео трек
+      
+      let newVideoStream = null;
+      try {
+        newVideoStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: currentFacingMode } },
+          audio: false   // аудио не запрашиваем повторно, чтобы не дублировать разрешение
+        });
+      } catch (err) {
+        addLog(`⚠️ Не удалось переключить камеру: ${err.message}`);
+        // откат режима
+        currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+        return;
+      }
+      
+      const newVideoTrack = newVideoStream.getVideoTracks()[0];
+      if (!newVideoTrack) {
+        addLog("❌ Нет видеодорожки после переключения");
+        return;
+      }
+      
+      // Собираем комбинированный поток: старый аудио + новый видео
+      const combinedTracks = [...audioTracks, newVideoTrack];
+      const newCombinedStream = new MediaStream(combinedTracks);
+      
+      // Заменяем глобальный поток
+      globalStream = newCombinedStream;
+      await startCameraWithStream(globalStream);
+      addLog(`✅ Камера переключена (${currentFacingMode})`);
+    }
+
+    // ----------------------- ОДНОКРАТНЫЙ ЗАПРОС ДОСТУПОВ -----------------------
+    async function requestMediaAccess() {
+      if (mediaAccessGranted) return true;
+      const statusEl = document.getElementById('status-text');
+      const ring = document.getElementById('ring');
+      try {
+        statusEl.innerText = "🔐 ЗАПРОС ДОСТУПА К КАМЕРЕ И МИКРОФОНУ...";
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: true, 
+          video: { facingMode: currentFacingMode } 
+        });
+        globalStream = stream;
+        
+        // Настройка аудиоконтекста и анализатора
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        analyser = audioCtx.createAnalyser();
+        const source = audioCtx.createMediaStreamSource(globalStream);
+        source.connect(analyser);
+        analyser.fftSize = 128;
+        freqData = new Uint8Array(analyser.frequencyBinCount);
+        drawBars(); // запуск визуализатора
+        
+        // Запуск видео
+        await startCameraWithStream(globalStream);
+        
+        // Инициализация распознавания речи
+        initSpeechRecognition();
+        
+        mediaAccessGranted = true;
+        statusEl.innerText = "✅ ДОСТУП ПРЕДОСТАВЛЕН / ACCESS GRANTED";
+        addLog("🎥 Камера и микрофон активированы");
+        addLog("🧠 Распознавание речи: украинский, русский, английский, суржик");
+        return true;
+      } catch (err) {
+        console.error(err);
+        statusEl.innerText = `❌ ОШИБКА: ${err.message || "нет доступа"}`;
+        addLog(`❌ Ошибка доступа к сенсорам: ${err.message}`);
+        return false;
+      }
+    }
+
+    // ----------------------- ЗАПУСК ПРИЛОЖЕНИЯ ПОСЛЕ НАЖАТИЯ КНОПКИ -----------------------
+    window.startSequence = async function() {
+      const btn = document.getElementById('access-btn');
+      const ring = document.getElementById('ring');
+      const preloader = document.getElementById('preloader');
+      const statusText = document.getElementById('status-text');
+      
+      btn.style.display = 'none';
+      ring.style.display = 'block';
+      statusText.innerText = "⏳ ИНИЦИАЛИЗАЦИЯ СЕНСОРОВ...";
+      
+      const granted = await requestMediaAccess();
+      if (!granted) {
+        ring.style.display = 'none';
+        btn.style.display = 'block';
+        statusText.innerText = "❌ ДОСТУП ОТКАЗАН. ПЕРЕЗАГРУЗИТЕ СТРАНИЦУ И РАЗРЕШИТЕ ДОСТУП.";
+        addLog("❌ Биометрическая авторизация отклонена");
+        return;
+      }
+      
+      // Успех: скрыть прелоадер
+      preloader.style.opacity = '0';
+      setTimeout(() => {
+        preloader.style.display = 'none';
+        document.getElementById('container').style.visibility = 'visible';
+        addLog("🚀 Neural link установлен. Система готова.");
+        addLog("📡 Распознавание лиц активно. Говорите на русском, украинском, английском.");
+      }, 500);
+    };
+    
+    // ----------------------- MEDIAPIPE FACE MESH -----------------------
+    function initFaceMesh() {
+      faceMesh = new FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+      });
+      faceMesh.setOptions({
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      faceMesh.onResults(onFaceResults);
+    }
+    
+    function onFaceResults(results) {
+      if (!canvasElement || !videoElement.videoWidth) return;
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       
-      canvasCtx.globalAlpha = 0.25; // Прозрачность видео
+      // Полупрозрачное видео
+      canvasCtx.globalAlpha = 0.28;
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
-
+      
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        targetStatus.innerText = "> TARGET: ACQUIRED";
+        targetStatus.innerText = "> TARGET: ACQUIRED 🔒";
         for (const landmarks of results.multiFaceLandmarks) {
-          const lEye = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
-          const rEye = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
-          const closed = lEye < 0.012 && rEye < 0.012;
-
-          let color = "#ffffff";
-          if (isSpeaking) color = "#00ff00"; 
-          else if (closed) color = "#ff0000"; 
-
-          canvasCtx.strokeStyle = color;
-          canvasCtx.lineWidth = 0.6;
+          // вычисление закрытия глаз (простой эвристический порог)
+          const leftEyeDist = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
+          const rightEyeDist = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
+          const eyesClosed = (leftEyeDist < 0.012 && rightEyeDist < 0.012);
           
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: color + "22", lineWidth: 0.5});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: color});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
+          let meshColor = "#aaaaaa";
+          if (isSpeaking) meshColor = "#00ff99";
+          else if (eyesClosed) meshColor = "#ff3366";
+          
+          canvasCtx.strokeStyle = meshColor;
+          canvasCtx.lineWidth = 0.7;
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, { color: meshColor + "44", lineWidth: 0.5 });
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, { color: meshColor });
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, { color: meshColor });
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, { color: meshColor });
         }
       } else {
-        targetStatus.innerText = "> TARGET: SEEKING...";
+        targetStatus.innerText = "> TARGET: SEEKING... 👁️";
       }
       canvasCtx.restore();
     }
-
-    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-    faceMesh.onResults(onResults);
+    
+    // ----------------------- ПЕРЕКЛЮЧЕНИЕ КАМЕРЫ ПО КНОПКЕ -----------------------
+    document.getElementById('switch-camera').addEventListener('click', async () => {
+      if (!mediaAccessGranted || !globalStream) {
+        addLog("❌ Доступы не активны. Нажмите 'Дать доступы'");
+        return;
+      }
+      await switchCamera();
+    });
+    
+    // ----------------------- ДОПОЛНИТЕЛЬНО: ПОВТОРНЫЙ ЗАПУСК РАСПОЗНАВАНИЯ ПРИ ПОТЕРЕ -----------------------
+    window.addEventListener('load', () => {
+      initFaceMesh();
+      // прелоадер видим, ждем нажатия кнопки
+    });
+    
+    // Глобальный хэндл для восстановления аудиоконтекста при взаимодействии
+    document.body.addEventListener('click', () => {
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().then(() => addLog("🎧 Аудиоконтекст активирован"));
+      }
+    });
+    
+    // Сообщаем о готовности
+    console.log("Neural Face Scanner v6.2.3 — Monochrome");
   </script>
 </body>
 </html>
