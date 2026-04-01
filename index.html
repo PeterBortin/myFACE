@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myFACE</title>
+  <title>myFACE + HANDS</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
@@ -80,6 +81,7 @@
     <div class="interface-overlay">
       <div>> LINK_STATUS: ACTIVE</div>
       <div id="target-status">> TARGET: SEEKING...</div>
+      <div id="hand-status">> LIMBS: NOT DETECTED</div>
     </div>
     <div class="bottom-peripherals">
       <div id="live-speech-box">...</div>
@@ -98,6 +100,7 @@
     const audioCanvas = document.getElementById('audio_visualizer');
     const aCtx = audioCanvas.getContext('2d');
     const targetStatus = document.getElementById('target-status');
+    const handStatus = document.getElementById('hand-status');
 
     let currentFacingMode = 'user';
     let cameraInstance = null;
@@ -133,7 +136,7 @@
       if (!isTyping) processLogQueue();
     }
 
-    // --- ЭКСПОРТ (ИСПРАВЛЕННАЯ КИРИЛЛИЦА) ---
+    // --- ЭКСПОРТ ---
     window.exportToPDF = function() {
       if (fullLogHistory.length === 0) return alert("LOG IS EMPTY");
       const header = "NEURAL SCANNER LOG REPORT\n--------------------------\n";
@@ -142,7 +145,7 @@
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `neural_log_${Date.now()}.txt`; // TXT самый надежный для кириллицы без тяжелых библиотек
+      link.download = `neural_log_${Date.now()}.txt`;
       link.click();
       URL.revokeObjectURL(url);
     };
@@ -158,19 +161,24 @@
       try {
         btn.style.display = 'none';
         status.innerText = "ACCESSING CORE SENSORS...";
+        
+        // Запрашиваем поток один раз при старте
         globalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        
         ring.style.display = 'block';
         status.innerText = "CALIBRATING...";
 
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioCtx.createAnalyser();
-        const source = audioCtx.createMediaStreamSource(globalStream);
-        source.connect(analyser);
-        analyser.fftSize = 128;
-        freqData = new Uint8Array(analyser.frequencyBinCount);
+        // Настройка аудио (делается 1 раз)
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            const source = audioCtx.createMediaStreamSource(globalStream);
+            source.connect(analyser);
+            analyser.fftSize = 128;
+            freqData = new Uint8Array(analyser.frequencyBinCount);
+            drawBars();
+        }
         
-        drawBars();
-        videoElement.srcObject = globalStream;
         await startCamera();
         
         document.getElementById('preloader').style.opacity = '0';
@@ -181,6 +189,7 @@
         }, 500);
 
       } catch (err) {
+        console.error(err);
         status.innerText = "FATAL ERROR: ACCESS DENIED";
         btn.style.display = 'block';
         ring.style.display = 'none';
@@ -196,15 +205,21 @@
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
       const barWidth = (audioCanvas.width / freqData.length) * 2;
       let x = 0;
+      
+      // Проверка активности звука для индикации "isSpeaking"
+      let sum = 0;
       for (let i = 0; i < freqData.length; i++) {
+        sum += freqData[i];
         const barHeight = (freqData[i] / 255) * audioCanvas.height;
         aCtx.fillStyle = `rgb(${freqData[i]+100},${freqData[i]+100},${freqData[i]+100})`;
         aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
         x += barWidth;
       }
+      // Если уровень шума выше порога, считаем что говорят
+      isSpeaking = (sum / freqData.length) > 30; 
     }
 
-    // --- УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ РЕЧИ ---
+    // --- РЕЧЬ ---
     function initSpeech() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) return;
@@ -225,33 +240,41 @@
           }
         }
         if (interim !== "") {
-          isSpeaking = true;
           liveSpeechBox.innerText = interim.toUpperCase();
         }
       };
 
       recognition.onend = () => { 
         liveSpeechBox.innerText = "IDLE";
-        isSpeaking = false;
-        recognition.start(); // Авто-рестарт для предотвращения IDLE
+        recognition.start(); 
       };
 
       recognition.onerror = () => { recognition.stop(); };
       recognition.start();
     }
 
-    function onResults(results) {
+    // --- МЕХАНИКА ОБРАБОТКИ КАДРА ---
+    async function onFrame() {
+        await faceMesh.send({image: videoElement});
+        await hands.send({image: videoElement});
+    }
+
+    function onResults(faceResults) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
+      
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      
+      // Фоновое изображение
       canvasCtx.globalAlpha = 0.15;
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(faceResults.image, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.globalAlpha = 1.0;
 
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+      // ЛИЦО
+      if (faceResults.multiFaceLandmarks && faceResults.multiFaceLandmarks.length > 0) {
         targetStatus.innerText = "> TARGET: ACQUIRED";
-        for (const landmarks of results.multiFaceLandmarks) {
+        for (const landmarks of faceResults.multiFaceLandmarks) {
           const leftD = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
           const rightD = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
           const closed = leftD < 0.015 && rightD < 0.015;
@@ -265,7 +288,6 @@
           drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
           drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
           
-          // Только внешний контур рта
           const mouthOuter = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291];
           canvasCtx.beginPath();
           mouthOuter.forEach((idx, i) => {
@@ -282,14 +304,32 @@
       canvasCtx.restore();
     }
 
+    function onHandResults(results) {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        handStatus.innerText = `> LIMBS: ${results.multiHandLandmarks.length} DETECTED`;
+        results.multiHandLandmarks.forEach((landmarks) => {
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#ffffff', lineWidth: 1.5});
+          drawLandmarks(canvasCtx, landmarks, {color: '#ffffff', lineWidth: 1, radius: 2});
+        });
+      } else {
+        handStatus.innerText = "> LIMBS: NOT DETECTED";
+      }
+    }
+
+    // Инициализация моделей
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
     faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
 
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    hands.onResults(onHandResults);
+
     async function startCamera() {
       if(cameraInstance) await cameraInstance.stop();
+      
       cameraInstance = new Camera(videoElement, {
-        onFrame: async () => { await faceMesh.send({image: videoElement}); },
+        onFrame: onFrame,
         facingMode: currentFacingMode, width: 1280, height: 720
       });
       await cameraInstance.start();
