@@ -514,24 +514,52 @@
       const status = document.getElementById('status-text');
 
       btn.disabled = true;
-      status.textContent = 'REQUESTING SENSOR ACCESS...';
+      status.classList.remove('error');
       bar.style.display = 'block';
 
+      // Check basic API support
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        status.textContent = 'ERROR: CAMERA API NOT AVAILABLE (NEED HTTPS OR LOCALHOST)';
+        status.classList.add('error');
+        bar.style.display = 'none';
+        btn.disabled = false;
+        return;
+      }
+
       try {
-        // Single permission request: both camera and microphone
-        globalStream = await navigator.mediaDevices.getUserMedia({
+        status.textContent = 'REQUESTING CAMERA ACCESS...';
+        // Request video first (most likely to fail — gives clearer error)
+        const videoStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: true
+          audio: false
         });
 
-        status.textContent = 'CALIBRATING AUDIO CORE...';
-        initAudio(globalStream);
+        status.textContent = 'REQUESTING MICROPHONE ACCESS...';
+        let audioStream = null;
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch(audioErr) {
+          // Audio is optional — continue without it
+          console.warn('Audio access denied:', audioErr);
+          addLog && addLog('AUDIO: ACCESS DENIED — VISUALIZER DISABLED');
+        }
+
+        // Combine into globalStream
+        globalStream = new MediaStream([
+          ...videoStream.getTracks(),
+          ...(audioStream ? audioStream.getTracks() : [])
+        ]);
+
+        if (audioStream) {
+          status.textContent = 'CALIBRATING AUDIO CORE...';
+          initAudio(audioStream);
+        }
 
         status.textContent = 'LOADING NEURAL MODELS...';
         await initModels();
 
         status.textContent = 'STARTING CAMERA FEED...';
-        await startCamera(globalStream);
+        await startCamera(videoStream);
 
         status.textContent = 'ONLINE';
 
@@ -541,13 +569,20 @@
         setTimeout(() => {
           preloader.style.display = 'none';
           document.getElementById('container').style.display = 'block';
-          initSpeech(globalStream);
+          if (audioStream) initSpeech();
           addLog('SYSTEM ONLINE — BIOMETRIC SCAN ACTIVE');
         }, 600);
 
       } catch (err) {
         console.error(err);
-        status.textContent = 'FATAL: ACCESS DENIED — CHECK PERMISSIONS';
+        let msg = 'FATAL: ';
+        if (err.name === 'NotAllowedError')     msg += 'PERMISSION DENIED BY USER';
+        else if (err.name === 'NotFoundError')  msg += 'NO CAMERA FOUND ON DEVICE';
+        else if (err.name === 'NotReadableError') msg += 'CAMERA IN USE BY ANOTHER APP';
+        else if (err.name === 'OverconstrainedError') msg += 'CAMERA CONSTRAINTS FAILED';
+        else if (err.name === 'SecurityError')  msg += 'HTTPS REQUIRED (NOT FILE://)';
+        else msg += err.message || 'UNKNOWN ERROR';
+        status.textContent = msg;
         status.classList.add('error');
         bar.style.display = 'none';
         btn.disabled = false;
@@ -555,17 +590,19 @@
     };
 
     // ── AUDIO SETUP ──
-    function initAudio(stream) {
-      // Resume context if browser suspended it
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      analyser  = audioCtx.createAnalyser();
-      analyser.fftSize = 64; // smaller = faster
-      analyser.smoothingTimeConstant = 0.75;
-      freqData  = new Uint8Array(analyser.frequencyBinCount);
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-      drawBars();
+    function initAudio(audioStream) {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser  = audioCtx.createAnalyser();
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.75;
+        freqData  = new Uint8Array(analyser.frequencyBinCount);
+        const source = audioCtx.createMediaStreamSource(audioStream);
+        source.connect(analyser);
+        drawBars();
+      } catch(e) {
+        console.warn('Audio init failed:', e);
+      }
     }
 
     function drawBars() {
@@ -603,7 +640,7 @@
     }
 
     // ── SPEECH ──
-    function initSpeech(stream) {
+    function initSpeech() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { addLog('SPEECH ENGINE: NOT SUPPORTED IN THIS BROWSER'); return; }
 
@@ -649,37 +686,33 @@
     }
 
     // ── CAMERA ──
-    async function startCamera(existingStream) {
+    let currentVideoStream = null;
+
+    async function startCamera(videoStream) {
       if (cameraInstance) { await cameraInstance.stop(); cameraInstance = null; }
 
-      // If switching camera, get a new video-only stream
-      if (!existingStream || existingStream._facingMode !== currentFacingMode) {
-        // Stop existing video tracks only
-        if (globalStream) {
-          globalStream.getVideoTracks().forEach(t => t.stop());
-        }
-        const newVideoStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
-        });
-        // Replace video tracks in globalStream
-        newVideoStream.getVideoTracks().forEach(t => {
-          globalStream.addTrack(t);
-        });
-        existingStream = globalStream;
-        existingStream._facingMode = currentFacingMode;
+      // Stop previous video tracks if switching
+      if (currentVideoStream && currentVideoStream !== videoStream) {
+        currentVideoStream.getTracks().forEach(t => t.stop());
       }
+      currentVideoStream = videoStream;
 
-      // Assign video-only stream to video element
-      const videoOnlyStream = new MediaStream(existingStream.getVideoTracks());
-      videoElement.srcObject = videoOnlyStream;
-      await new Promise(r => { videoElement.onloadedmetadata = r; });
-      await videoElement.play();
+      videoElement.srcObject = videoStream;
+      await new Promise((res, rej) => {
+        videoElement.onloadedmetadata = res;
+        videoElement.onerror = rej;
+        setTimeout(res, 3000); // safety timeout
+      });
+
+      try { await videoElement.play(); } catch(e) { /* autoplay policy — Camera util will handle it */ }
 
       cameraInstance = new Camera(videoElement, {
         onFrame: async () => {
           if (videoElement.readyState < 2) return;
-          await faceMesh.send({ image: videoElement });
-          await hands.send({ image: videoElement });
+          try {
+            await faceMesh.send({ image: videoElement });
+            await hands.send({ image: videoElement });
+          } catch(e) { /* frame skip on overload */ }
         },
         width: 1280, height: 720
       });
@@ -690,8 +723,18 @@
 
     document.getElementById('switch-camera').addEventListener('click', async () => {
       currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-      await startCamera(null);
-      addLog(`CAMERA SWITCHED: ${currentFacingMode.toUpperCase()}`);
+      try {
+        const newVideoStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        await startCamera(newVideoStream);
+        addLog(`CAMERA SWITCHED: ${currentFacingMode.toUpperCase()}`);
+      } catch(err) {
+        addLog(`SWITCH FAILED: ${err.name}`);
+        // Revert
+        currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+      }
     });
 
     // ── RENDER ──
