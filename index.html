@@ -2,293 +2,304 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>myFACE | Neural Interface</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>myFACE</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
-    :root { --glow: #00f2ff; --bg: #050505; --accent: #ffffff; }
-    body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
-    
-    /* Улучшенный Прелоадер */
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Helvetica', Arial, sans-serif; color: #888; }
     #preloader {
-      position: fixed; inset: 0; background: var(--bg); z-index: 1000;
-      display: flex; flex-direction: column; justify-content: center; align-items: center;
-      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #000; z-index: 200; display: flex;
+      flex-direction: column; justify-content: center; align-items: center;
+      transition: opacity 0.5s ease; border: 1px solid #333; box-sizing: border-box;
     }
-    .loader-ui { width: 150px; height: 2px; background: #222; position: relative; overflow: hidden; margin: 20px 0; }
-    .loader-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
-    
+    .loader-ring {
+      display: none; width: 60px; height: 60px; border: 2px solid #222;
+      border-radius: 50%; border-top-color: #fff;
+      animation: spin 1s linear infinite; margin-bottom: 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     #access-btn {
-      background: none; border: 1px solid var(--accent); color: var(--accent);
-      padding: 12px 40px; cursor: pointer; text-transform: uppercase;
-      letter-spacing: 5px; font-weight: bold; transition: 0.3s;
+      background: none; border: 1px solid #fff; color: #fff;
+      padding: 15px 30px; cursor: pointer; text-transform: uppercase;
+      letter-spacing: 3px; font-family: inherit; transition: 0.3s;
     }
-    #access-btn:hover { background: var(--accent); color: #000; box-shadow: 0 0 20px rgba(255,255,255,0.2); }
-
-    /* Интерфейс */
-    #container { position: relative; width: 100vw; height: 100vh; opacity: 0; transition: opacity 1s; }
-    .output_canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    
+    #access-btn:hover { background: #fff; color: #000; }
+    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
+    .input_video { display: none; }
+    .output_canvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      object-fit: cover; transform: scaleX(-1); z-index: 1;
+    }
     .controls {
-      position: absolute; top: 20px; right: 20px; z-index: 100;
-      display: flex; flex-direction: column; gap: 10px;
+      position: absolute; top: 20px; right: 20px; z-index: 110;
+      display: flex; gap: 10px;
     }
     .ui-btn {
-      background: rgba(0,0,0,0.6); border: 1px solid #444; color: #ccc;
-      padding: 10px; cursor: pointer; font-size: 9px; letter-spacing: 1px;
-      backdrop-filter: blur(5px); transition: 0.2s;
+      background: rgba(0,0,0,0.7); border: 1px solid #fff; color: #fff;
+      padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
+      font-family: 'Helvetica', sans-serif;
     }
-    .ui-btn:hover { border-color: #fff; color: #fff; }
-
-    .overlay-text { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 10px; line-height: 1.5; color: rgba(255,255,255,0.5); }
-    
-    /* Нижняя панель */
-    .bottom-panel {
+    .interface-overlay { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 11px; pointer-events: none; color: #666; }
+    .bottom-peripherals {
       position: absolute; bottom: 0; left: 0; width: 100%;
-      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
-      padding: 20px; box-sizing: border-box; z-index: 20;
+      display: flex; flex-direction: column; align-items: center;
+      z-index: 10; background: linear-gradient(to top, #000 90%, transparent); padding-bottom: 20px;
     }
-    #live-speech { 
-      font-size: 24px; color: #fff; text-align: center; height: 30px; 
-      margin-bottom: 15px; text-shadow: 0 0 10px rgba(255,255,255,0.5);
+    #live-speech-box { width: 90%; min-height: 35px; margin-bottom: 5px; text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #fff; }
+    #audio_visualizer { width: 90%; height: 80px; margin-bottom: 10px; background: rgba(255,255,255,0.02); border: 1px solid #222; }
+    #terminal-box {
+      width: 90%; height: 150px; background: rgba(255, 255, 255, 0.01);
+      border: 1px solid #222; padding: 10px; box-sizing: border-box;
+      overflow-y: auto; font-size: 10px; scrollbar-width: thin; scrollbar-color: #333 transparent;
     }
-    #visualizer { width: 100%; height: 60px; margin-bottom: 15px; opacity: 0.7; }
-    #terminal {
-      height: 120px; background: rgba(255,255,255,0.03); border: 1px solid #222;
-      padding: 10px; font-size: 11px; overflow-y: auto; scrollbar-width: none;
-    }
-    .log-line { margin-bottom: 4px; border-left: 2px solid var(--accent); padding-left: 8px; animation: blink 0.1s; }
-    @keyframes blink { from { opacity: 0; } to { opacity: 1; } }
+    .log-entry { margin: 2px 0; color: #fff; border-left: 1px solid #fff; padding-left: 8px; white-space: pre-wrap; text-transform: uppercase; }
   </style>
 </head>
 
 <body>
   <div id="preloader">
-    <div style="letter-spacing: 10px; font-size: 12px; color: #555;">MYFACE SYSTEM v2.0</div>
-    <div class="loader-ui"><div class="loader-bar" id="load-progress"></div></div>
-    <button id="access-btn">INITIALIZE</button>
+    <div style="color:#fff; margin-bottom:10px;">created by bortin</div>
+    <div class="loader-ring" id="ring"></div>
+    <button id="access-btn" onclick="startSequence()">open system</button>
+    <p id="status-text" style="margin-top: 20px; font-size: 10px; color: #444;">AWAITING BIOMETRIC AUTHORIZATION...</p>
+  </div>
+
+  <div class="controls">
+    <button id="export-pdf" class="ui-btn">Export Log</button>
+    <button id="switch-camera" class="ui-btn">Switch Cam</button>
   </div>
 
   <div id="container">
-    <video id="input_video" style="display:none" playsinline muted></video>
-    <canvas id="output_canvas" class="output_canvas"></canvas>
-    
-    <div class="controls">
-      <button class="ui-btn" id="btn-cam">SWITCH CAMERA</button>
-      <button class="ui-btn" id="btn-export">SAVE SYSTEM LOG</button>
+    <video class="input_video" playsinline muted></video>
+    <canvas class="output_canvas"></canvas>
+    <div class="interface-overlay">
+      <div>> LINK_STATUS: ACTIVE</div>
+      <div id="target-status">> TARGET: SEEKING...</div>
     </div>
-
-    <div class="overlay-text" id="sys-info">
-      > STATUS: STABLE<br>
-      > SENSORS: ACTIVE<br>
-      > TARGET: SCANNING
-    </div>
-
-    <div class="bottom-panel">
-      <div id="live-speech">READY</div>
-      <canvas id="visualizer"></canvas>
-      <div id="terminal"></div>
+    <div class="bottom-peripherals">
+      <div id="live-speech-box">...</div>
+      <canvas id="audio_visualizer"></canvas>
+      <div id="terminal-box"><div id="log-content"></div></div>
     </div>
   </div>
 
   <script type="module">
-    const video = document.getElementById('input_video');
-    const canvas = document.getElementById('output_canvas');
-    const ctx = canvas.getContext('2d');
-    const terminal = document.getElementById('terminal');
-    const visCanvas = document.getElementById('visualizer');
-    const visCtx = visCanvas.getContext('2d');
+    const videoElement = document.querySelector('.input_video');
+    const canvasElement = document.querySelector('.output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const liveSpeechBox = document.getElementById('live-speech-box');
+    const terminalBox = document.getElementById('terminal-box');
+    const logContent = document.getElementById('log-content');
+    const audioCanvas = document.getElementById('audio_visualizer');
+    const aCtx = audioCanvas.getContext('2d');
+    const targetStatus = document.getElementById('target-status');
 
-    let state = {
-      isSpeaking: false,
-      facingMode: 'user',
-      stream: null,
-      audioCtx: null,
-      analyser: null,
-      fullLog: []
+    let currentFacingMode = 'user';
+    let cameraInstance = null;
+    let audioCtx, analyser, freqData, globalStream;
+    let isSpeaking = false;
+    let logQueue = [];
+    let fullLogHistory = [];
+    let isTyping = false;
+
+    // --- ЛОГИКА ТЕРМИНАЛА ---
+    async function processLogQueue() {
+      if (isTyping || logQueue.length === 0) return;
+      isTyping = true;
+      const { text, timestamp } = logQueue.shift();
+      fullLogHistory.push(`[${timestamp}] ${text.toUpperCase()}`);
+      
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      logContent.appendChild(entry);
+      
+      const message = `[${timestamp}] ${text.toUpperCase()}`;
+      for (let i = 0; i < message.length; i++) {
+        entry.innerText += message[i];
+        terminalBox.scrollTop = terminalBox.scrollHeight;
+        await new Promise(r => setTimeout(r, 10));
+      }
+      isTyping = false;
+      processLogQueue();
+    }
+
+    function addLog(text) {
+      logQueue.push({ text, timestamp: new Date().toLocaleTimeString() });
+      if (!isTyping) processLogQueue();
+    }
+
+    // --- ЭКСПОРТ (ИСПРАВЛЕННАЯ КИРИЛЛИЦА) ---
+    window.exportToPDF = function() {
+      if (fullLogHistory.length === 0) return alert("LOG IS EMPTY");
+      const header = "NEURAL SCANNER LOG REPORT\n--------------------------\n";
+      const content = header + fullLogHistory.join('\n');
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `neural_log_${Date.now()}.txt`; // TXT самый надежный для кириллицы без тяжелых библиотек
+      link.click();
+      URL.revokeObjectURL(url);
     };
 
-    // --- ЛОГИРОВАНИЕ ---
-    function log(msg) {
-      const time = new Date().toLocaleTimeString();
-      const line = document.createElement('div');
-      line.className = 'log-line';
-      line.textContent = `[${time}] ${msg.toUpperCase()}`;
-      terminal.prepend(line);
-      state.fullLog.push(`[${time}] ${msg}`);
-      if (terminal.childNodes.length > 20) terminal.lastChild.remove();
-    }
+    document.getElementById('export-pdf').addEventListener('click', exportToPDF);
 
-    // --- АУДИО АНАЛИЗАТОР ---
-    function initAudio(stream) {
-      state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      state.analyser = state.audioCtx.createAnalyser();
-      const source = state.audioCtx.createMediaStreamSource(stream);
-      source.connect(state.analyser);
-      state.analyser.fftSize = 64;
-      drawVisualizer();
-    }
+    // --- ИНИЦИАЛИЗАЦИЯ ---
+    window.startSequence = async function() {
+      const btn = document.getElementById('access-btn');
+      const ring = document.getElementById('ring');
+      const status = document.getElementById('status-text');
 
-    function drawVisualizer() {
-      requestAnimationFrame(drawVisualizer);
-      const buffer = new Uint8Array(state.analyser.frequencyBinCount);
-      state.analyser.getByteFrequencyData(buffer);
-      
-      visCanvas.width = visCanvas.clientWidth;
-      visCanvas.height = visCanvas.clientHeight;
-      const barWidth = visCanvas.width / buffer.length;
-      
-      visCtx.clearRect(0, 0, visCanvas.width, visCanvas.height);
-      buffer.forEach((v, i) => {
-        const h = (v / 255) * visCanvas.height;
-        visCtx.fillStyle = `rgba(255, 255, 255, ${v/255})`;
-        visCtx.fillRect(i * barWidth, visCanvas.height - h, barWidth - 2, h);
-      });
-    }
-
-    // --- FACE MESH КОНФИГУРАЦИЯ ---
-    const faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-    });
-
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
-
-    faceMesh.onResults((results) => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      
-      ctx.save();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Рисуем видео-подложку
-      ctx.globalAlpha = 0.2;
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-      ctx.restore();
-
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        document.getElementById('sys-info').innerHTML = "> STATUS: STABLE<br>> TARGET: LOCKED";
-        const landmarks = results.multiFaceLandmarks[0];
-        drawFaceOverlay(landmarks);
-      } else {
-        document.getElementById('sys-info').innerHTML = "> STATUS: STABLE<br>> TARGET: LOST";
-      }
-    });
-
-    function drawFaceOverlay(points) {
-      const color = state.isSpeaking ? "#00f2ff" : "#ffffff";
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 0.8;
-
-      // Сетка (упрощенная для быстродействия)
-      ctx.beginPath();
-      ctx.globalAlpha = 0.3;
-      for (let i = 0; i < points.length; i += 5) {
-        const p = points[i];
-        ctx.rect(p.x * canvas.width, p.y * canvas.height, 1, 1);
-      }
-      ctx.stroke();
-
-      // Губы (акцент на речь)
-      ctx.beginPath();
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 2;
-      [13, 14, 78, 308].forEach(idx => {
-        const p = points[idx];
-        ctx.lineTo(p.x * canvas.width, p.y * canvas.height);
-      });
-      ctx.stroke();
-    }
-
-    // --- СИСТЕМА КАМЕРЫ ---
-    async function startSystem() {
       try {
-        log("Requesting sensor access...");
-        // Запрос один раз на всё
-        state.stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: state.facingMode, width: 1280, height: 720 },
-          audio: true
-        });
+        btn.style.display = 'none';
+        status.innerText = "ACCESSING CORE SENSORS...";
+        globalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        ring.style.display = 'block';
+        status.innerText = "CALIBRATING...";
 
-        video.srcObject = state.stream;
-        video.play();
-
-        initAudio(state.stream);
-        initSpeech();
-
-        const camera = new Camera(video, {
-          onFrame: async () => { await faceMesh.send({image: video}); }
-        });
-        camera.start();
-
-        document.getElementById('preloader').style.opacity = '0';
-        document.getElementById('container').style.opacity = '1';
-        setTimeout(() => document.getElementById('preloader').style.display = 'none', 800);
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        const source = audioCtx.createMediaStreamSource(globalStream);
+        source.connect(analyser);
+        analyser.fftSize = 128;
+        freqData = new Uint8Array(analyser.frequencyBinCount);
         
-        log("Neural link established");
+        drawBars();
+        videoElement.srcObject = globalStream;
+        await startCamera();
+        
+        document.getElementById('preloader').style.opacity = '0';
+        setTimeout(() => {
+          document.getElementById('preloader').style.display = 'none';
+          document.getElementById('container').style.visibility = 'visible';
+          initSpeech();
+        }, 500);
+
       } catch (err) {
-        alert("Camera/Mic access required");
-        location.reload();
+        status.innerText = "FATAL ERROR: ACCESS DENIED";
+        btn.style.display = 'block';
+        ring.style.display = 'none';
+      }
+    };
+
+    function drawBars() {
+      requestAnimationFrame(drawBars);
+      if(!analyser) return;
+      audioCanvas.width = audioCanvas.clientWidth;
+      audioCanvas.height = audioCanvas.clientHeight;
+      analyser.getByteFrequencyData(freqData);
+      aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
+      const barWidth = (audioCanvas.width / freqData.length) * 2;
+      let x = 0;
+      for (let i = 0; i < freqData.length; i++) {
+        const barHeight = (freqData[i] / 255) * audioCanvas.height;
+        aCtx.fillStyle = `rgb(${freqData[i]+100},${freqData[i]+100},${freqData[i]+100})`;
+        aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
+        x += barWidth;
       }
     }
 
-    // --- РАСПОЗНАВАНИЕ РЕЧИ ---
+    // --- УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ РЕЧИ ---
     function initSpeech() {
-      const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!Speech) return;
-      
-      const rec = new Speech();
-      rec.lang = 'ru-RU';
-      rec.continuous = true;
-      rec.interimResults = true;
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
 
-      rec.onresult = (e) => {
-        const text = Array.from(e.results).map(r => r[0].transcript).pop();
-        document.getElementById('live-speech').textContent = text.toUpperCase();
-        state.isSpeaking = true;
-        if (e.results[e.results.length - 1].isFinal) {
-          log(text);
-          state.isSpeaking = false;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'ru-RU';
+
+      recognition.onresult = (e) => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          const transcript = e.results[i][0].transcript.trim();
+          if (e.results[i].isFinal && transcript !== "") {
+            addLog(transcript);
+          } else {
+            interim = transcript;
+          }
+        }
+        if (interim !== "") {
+          isSpeaking = true;
+          liveSpeechBox.innerText = interim.toUpperCase();
         }
       };
 
-      rec.onend = () => rec.start(); // Поддержание жизни
-      rec.start();
+      recognition.onend = () => { 
+        liveSpeechBox.innerText = "IDLE";
+        isSpeaking = false;
+        recognition.start(); // Авто-рестарт для предотвращения IDLE
+      };
+
+      recognition.onerror = () => { recognition.stop(); };
+      recognition.start();
     }
 
-    // --- КНОПКИ ---
-    document.getElementById('access-btn').onclick = startSystem;
+    function onResults(results) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.globalAlpha = 0.15;
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.globalAlpha = 1.0;
 
-    document.getElementById('btn-cam').onclick = async () => {
-      state.facingMode = state.facingMode === 'user' ? 'environment' : 'user';
-      log(`Switching to ${state.facingMode} sensor`);
-      const newVideoTrack = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: state.facingMode }
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        targetStatus.innerText = "> TARGET: ACQUIRED";
+        for (const landmarks of results.multiFaceLandmarks) {
+          const leftD = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
+          const rightD = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
+          const closed = leftD < 0.015 && rightD < 0.015;
+
+          let color = isSpeaking ? "#00ff00" : (closed ? "#ff0000" : "#ffffff");
+
+          canvasCtx.strokeStyle = color;
+          canvasCtx.lineWidth = 0.5;
+          
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: color + "33", lineWidth: 0.5});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
+          
+          // Только внешний контур рта
+          const mouthOuter = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291];
+          canvasCtx.beginPath();
+          mouthOuter.forEach((idx, i) => {
+            const p = landmarks[idx];
+            if (i === 0) canvasCtx.moveTo(p.x * canvasElement.width, p.y * canvasElement.height);
+            else canvasCtx.lineTo(p.x * canvasElement.width, p.y * canvasElement.height);
+          });
+          canvasCtx.closePath();
+          canvasCtx.stroke();
+        }
+      } else {
+        targetStatus.innerText = "> TARGET: SEEKING...";
+      }
+      canvasCtx.restore();
+    }
+
+    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+    faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    faceMesh.onResults(onResults);
+
+    async function startCamera() {
+      if(cameraInstance) await cameraInstance.stop();
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => { await faceMesh.send({image: videoElement}); },
+        facingMode: currentFacingMode, width: 1280, height: 720
       });
-      const videoTrack = newVideoTrack.getVideoTracks()[0];
-      const sender = state.stream.getTracks().find(t => t.kind === 'video');
-      state.stream.removeTrack(sender);
-      state.stream.addTrack(videoTrack);
-      video.srcObject = state.stream;
-    };
+      await cameraInstance.start();
+      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
+    }
 
-    document.getElementById('btn-export').onclick = () => {
-      const blob = new Blob([state.fullLog.join('\n')], {type: 'text/plain'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `sys_log_${Date.now()}.txt`;
-      a.click();
-    };
-
+    document.getElementById('switch-camera').addEventListener('click', () => {
+      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+      startCamera();
+    });
   </script>
 </body>
 </html>
