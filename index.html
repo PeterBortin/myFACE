@@ -1,305 +1,934 @@
 <!DOCTYPE html>
+
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myFACE</title>
-  
+  <title>myFACE // NEURAL SCANNER</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
-    body { margin: 0; background: #000; overflow: hidden; font-family: 'Helvetica', Arial, sans-serif; color: #888; }
+    :root {
+      --cyan: #00f5ff;
+      --red: #ff2244;
+      --green: #00ff88;
+      --dim: #0a0a0f;
+      --mid: #111118;
+      --border: rgba(0, 245, 255, 0.15);
+      --glow: 0 0 20px rgba(0, 245, 255, 0.3);
+      --font-mono: 'Share Tech Mono', monospace;
+      --font-title: 'Orbitron', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--dim);
+      overflow: hidden;
+      font-family: var(--font-mono);
+      color: var(--cyan);
+      cursor: crosshair;
+    }
+
+    /* ─── SCAN LINE OVERLAY ─── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none; z-index: 9999;
+      animation: scanMove 8s linear infinite;
+    }
+
+    @keyframes scanMove {
+      0% { background-position: 0 0; }
+      100% { background-position: 0 100px; }
+    }
+
+    /* ─── CORNER BRACKETS ─── */
+    .corner {
+      position: fixed;
+      width: 30px; height: 30px;
+      z-index: 1000; pointer-events: none;
+    }
+    .corner::before, .corner::after {
+      content: ''; position: absolute;
+      background: var(--cyan);
+    }
+    .corner::before { width: 100%; height: 2px; top: 0; }
+    .corner::after { width: 2px; height: 100%; top: 0; }
+    .corner.tl { top: 15px; left: 15px; }
+    .corner.tr { top: 15px; right: 15px; transform: scaleX(-1); }
+    .corner.bl { bottom: 15px; left: 15px; transform: scaleY(-1); }
+    .corner.br { bottom: 15px; right: 15px; transform: scale(-1); }
+
+    /* ─── PRELOADER ─── */
     #preloader {
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: #000; z-index: 200; display: flex;
-      flex-direction: column; justify-content: center; align-items: center;
-      transition: opacity 0.5s ease; border: 1px solid #333; box-sizing: border-box;
+      position: fixed; inset: 0;
+      background: var(--dim);
+      z-index: 500;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      gap: 0;
+      transition: opacity 0.8s ease, visibility 0.8s ease;
     }
-    .loader-ring {
-      display: none; width: 60px; height: 60px; border: 2px solid #222;
-      border-radius: 50%; border-top-color: #fff;
-      animation: spin 1s linear infinite; margin-bottom: 20px;
+    #preloader.hidden { opacity: 0; visibility: hidden; }
+
+    .boot-logo {
+      font-family: var(--font-title);
+      font-size: clamp(28px, 5vw, 52px);
+      font-weight: 900;
+      letter-spacing: 8px;
+      color: var(--cyan);
+      text-shadow: 0 0 40px var(--cyan), 0 0 80px rgba(0,245,255,0.3);
+      animation: flicker 3s infinite;
+      margin-bottom: 8px;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .boot-sub {
+      font-size: 10px;
+      letter-spacing: 6px;
+      color: rgba(0,245,255,0.4);
+      margin-bottom: 60px;
+    }
+
+    @keyframes flicker {
+      0%, 95%, 100% { opacity: 1; }
+      96% { opacity: 0.4; }
+      97% { opacity: 1; }
+      98% { opacity: 0.2; }
+      99% { opacity: 1; }
+    }
+
+    .boot-lines {
+      width: min(400px, 85vw);
+      margin-bottom: 40px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .boot-line {
+      font-size: 9px;
+      color: rgba(0,245,255,0.5);
+      letter-spacing: 1px;
+      opacity: 0;
+      animation: fadeInLine 0.3s forwards;
+    }
+    .boot-line.ok::after {
+      content: ' [OK]';
+      color: var(--green);
+    }
+    .boot-line.err::after {
+      content: ' [WARN]';
+      color: var(--red);
+    }
+
+    @keyframes fadeInLine { to { opacity: 1; } }
+
     #access-btn {
-      background: none; border: 1px solid #fff; color: #fff;
-      padding: 15px 30px; cursor: pointer; text-transform: uppercase;
-      letter-spacing: 3px; font-family: inherit; transition: 0.3s;
+      font-family: var(--font-title);
+      background: transparent;
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      padding: 14px 40px;
+      font-size: 11px;
+      letter-spacing: 4px;
+      cursor: pointer;
+      text-transform: uppercase;
+      position: relative;
+      overflow: hidden;
+      transition: color 0.3s;
+      display: none;
     }
-    #access-btn:hover { background: #fff; color: #000; }
-    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; visibility: hidden; }
+    #access-btn::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: var(--cyan);
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+    }
+    #access-btn:hover::before { transform: translateX(0); }
+    #access-btn:hover { color: var(--dim); }
+    #access-btn span { position: relative; z-index: 1; }
+
+    .ring-container {
+      position: relative;
+      width: 70px; height: 70px;
+      margin-bottom: 30px;
+      display: none;
+    }
+    .ring-container svg {
+      position: absolute; inset: 0;
+      animation: spin 1.2s linear infinite;
+    }
+    .ring-container svg.reverse { animation-direction: reverse; animation-duration: 1.8s; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #status-text {
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: rgba(0,245,255,0.35);
+      margin-top: 20px;
+      min-height: 14px;
+    }
+
+    /* ─── MAIN CONTAINER ─── */
+    #container {
+      position: relative;
+      width: 100vw; height: 100vh;
+      visibility: hidden;
+    }
+
     .input_video { display: none; }
+
     .output_canvas {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      object-fit: cover; transform: scaleX(-1); z-index: 1;
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      z-index: 1;
     }
-    .controls {
-      position: absolute; top: 20px; right: 20px; z-index: 110;
-      display: flex; gap: 10px;
+
+    /* ─── HUD OVERLAY ─── */
+    .hud-overlay {
+      position: absolute; inset: 0;
+      z-index: 10;
+      pointer-events: none;
     }
+
+    /* Top left status */
+    .hud-tl {
+      position: absolute;
+      top: 25px; left: 25px;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: rgba(0,245,255,0.6);
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .hud-tl .hud-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .hud-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
+      50% { opacity: 0.3; box-shadow: none; }
+    }
+
+    /* Top right controls */
+    .hud-tr {
+      position: absolute;
+      top: 20px; right: 20px;
+      display: flex; gap: 8px;
+      pointer-events: all;
+      z-index: 20;
+    }
+
     .ui-btn {
-      background: rgba(0,0,0,0.7); border: 1px solid #fff; color: #fff;
-      padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px;
-      font-family: 'Helvetica', sans-serif;
+      font-family: var(--font-mono);
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(0,245,255,0.3);
+      color: rgba(0,245,255,0.7);
+      padding: 7px 14px;
+      font-size: 9px;
+      letter-spacing: 2px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
     }
-    .interface-overlay { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 11px; pointer-events: none; color: #666; }
-    .bottom-peripherals {
-      position: absolute; bottom: 0; left: 0; width: 100%;
-      display: flex; flex-direction: column; align-items: center;
-      z-index: 10; background: linear-gradient(to top, #000 90%, transparent); padding-bottom: 20px;
+    .ui-btn:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: var(--glow);
+      background: rgba(0,245,255,0.05);
     }
-    #live-speech-box { width: 90%; min-height: 35px; margin-bottom: 5px; text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #fff; }
-    #audio_visualizer { width: 90%; height: 80px; margin-bottom: 10px; background: rgba(255,255,255,0.02); border: 1px solid #222; }
+    .ui-btn:active { transform: scale(0.97); }
+
+    /* Target reticle (center face lock) */
+    #reticle {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 120px; height: 120px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    #reticle.visible { opacity: 1; }
+    #reticle svg { width: 100%; height: 100%; }
+
+    /* ─── SCAN BAR ─── */
+    #scan-bar {
+      position: absolute;
+      left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      box-shadow: 0 0 20px var(--cyan), 0 0 40px rgba(0,245,255,0.4);
+      z-index: 15;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.5s;
+    }
+    #scan-bar.active {
+      opacity: 1;
+      animation: scanLine 3s ease-in-out infinite;
+    }
+    @keyframes scanLine {
+      0% { top: 0%; }
+      100% { top: 100%; }
+    }
+
+    /* ─── ACQUIRED FLASH ─── */
+    #acquired-flash {
+      position: absolute; inset: 0;
+      pointer-events: none; z-index: 30;
+      opacity: 0;
+    }
+    #acquired-flash.flash {
+      animation: acquiredFlash 0.6s ease forwards;
+    }
+    @keyframes acquiredFlash {
+      0% { opacity: 0; background: rgba(0,255,136,0.15); }
+      30% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    /* ─── TARGET STATUS (center label) ─── */
+    #target-label {
+      position: absolute;
+      top: calc(50% + 70px); left: 50%;
+      transform: translateX(-50%);
+      font-family: var(--font-title);
+      font-size: 9px;
+      letter-spacing: 4px;
+      color: var(--cyan);
+      opacity: 0;
+      transition: opacity 0.3s;
+      white-space: nowrap;
+      text-shadow: 0 0 10px var(--cyan);
+      pointer-events: none;
+    }
+    #target-label.visible { opacity: 1; }
+
+    /* ─── BOTTOM PANEL ─── */
+    .bottom-panel {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      z-index: 20;
+      background: linear-gradient(to top, rgba(0,0,0,0.95) 70%, transparent);
+      padding: 0 25px 20px;
+    }
+
+    /* Speech box */
+    #live-speech-box {
+      text-align: center;
+      font-family: var(--font-title);
+      font-size: clamp(14px, 2.5vw, 20px);
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: #fff;
+      min-height: 32px;
+      padding: 8px 0 6px;
+      transition: color 0.3s;
+      text-shadow: 0 0 20px rgba(255,255,255,0.4);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #live-speech-box.speaking {
+      color: var(--green);
+      text-shadow: 0 0 20px var(--green);
+    }
+
+    /* Visualizer */
+    #audio_visualizer {
+      width: 100%;
+      height: 60px;
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    /* Terminal */
     #terminal-box {
-      width: 90%; height: 150px; background: rgba(255, 255, 255, 0.01);
-      border: 1px solid #222; padding: 10px; box-sizing: border-box;
-      overflow-y: auto; font-size: 10px; scrollbar-width: thin; scrollbar-color: #333 transparent;
+      width: 100%;
+      height: 120px;
+      border: 1px solid rgba(0,245,255,0.12);
+      background: rgba(0,0,0,0.4);
+      backdrop-filter: blur(5px);
+      padding: 10px 12px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,245,255,0.2) transparent;
+      position: relative;
     }
-    .log-entry { margin: 2px 0; color: #fff; border-left: 1px solid #fff; padding-left: 8px; white-space: pre-wrap; text-transform: uppercase; }
+    #terminal-box::before {
+      content: 'NEURAL LOG // SESSION';
+      position: absolute; top: 0; left: 12px;
+      font-size: 8px; letter-spacing: 3px;
+      color: rgba(0,245,255,0.25);
+      pointer-events: none;
+    }
+
+    .log-entry {
+      font-size: 9px;
+      color: rgba(0,245,255,0.7);
+      border-left: 1px solid rgba(0,245,255,0.3);
+      padding-left: 8px;
+      margin: 3px 0;
+      white-space: pre-wrap;
+      letter-spacing: 0.5px;
+      opacity: 0;
+      animation: logAppear 0.3s forwards;
+    }
+    .log-entry .ts { color: rgba(0,245,255,0.35); margin-right: 6px; }
+    .log-entry.speech { border-color: var(--green); color: rgba(0,255,136,0.8); }
+
+    @keyframes logAppear {
+      from { opacity: 0; transform: translateX(-4px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ─── METRICS SIDEBAR (RIGHT) ─── */
+    #metrics {
+      position: absolute;
+      right: 25px; top: 50%;
+      transform: translateY(-50%);
+      z-index: 15;
+      pointer-events: none;
+      display: flex; flex-direction: column; gap: 16px;
+      opacity: 0; transition: opacity 0.5s;
+    }
+    #metrics.visible { opacity: 1; }
+
+    .metric-block {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+    }
+    .metric-label { font-size: 7px; letter-spacing: 3px; color: rgba(0,245,255,0.4); }
+    .metric-bar {
+      width: 80px; height: 2px;
+      background: rgba(0,245,255,0.1);
+      position: relative;
+      overflow: hidden;
+    }
+    .metric-fill {
+      position: absolute; top: 0; left: 0; height: 100%;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+      transition: width 0.4s ease;
+    }
+    .metric-value { font-size: 9px; letter-spacing: 2px; color: var(--cyan); }
+
+    /* ─── GLITCH ON ACQUIRE ─── */
+    @keyframes glitch {
+      0% { clip-path: inset(0 0 95% 0); transform: translate(-3px, 0); }
+      10% { clip-path: inset(40% 0 50% 0); transform: translate(3px, 0); }
+      20% { clip-path: inset(80% 0 5% 0); transform: translate(-2px, 0); }
+      30% { clip-path: inset(20% 0 70% 0); transform: translate(2px, 0); }
+      40% { clip-path: inset(60% 0 30% 0); transform: translate(-1px, 0); }
+      50%, 100% { clip-path: none; transform: none; }
+    }
+
+    .glitch-active::after {
+      content: attr(data-text);
+      position: absolute; inset: 0;
+      color: var(--red);
+      animation: glitch 0.4s steps(1) forwards;
+      pointer-events: none;
+    }
+
+    /* ─── CREATOR TAG ─── */
+    #creator {
+      position: absolute;
+      bottom: 180px; left: 25px;
+      font-size: 8px; letter-spacing: 2px;
+      color: rgba(0,245,255,0.2);
+      z-index: 20; pointer-events: none;
+    }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 600px) {
+      #metrics { display: none; }
+      .hud-tl { font-size: 8px; }
+      #terminal-box { height: 90px; }
+    }
   </style>
+
 </head>
 
 <body>
+
+  <!-- Corner brackets -->
+
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+
+  <!-- ─── PRELOADER ─── -->
+
   <div id="preloader">
-    <div style="color:#fff; margin-bottom:10px;">created by bortin</div>
-    <div class="loader-ring" id="ring"></div>
-    <button id="access-btn" onclick="startSequence()">open system</button>
-    <p id="status-text" style="margin-top: 20px; font-size: 10px; color: #444;">AWAITING BIOMETRIC AUTHORIZATION...</p>
+    <div class="boot-logo">myFACE</div>
+    <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
+
+```
+<div class="boot-lines" id="boot-lines"></div>
+
+<div class="ring-container" id="ring-container">
+  <svg viewBox="0 0 70 70">
+    <circle cx="35" cy="35" r="30" fill="none" stroke="rgba(0,245,255,0.15)" stroke-width="1"/>
+    <circle cx="35" cy="35" r="30" fill="none" stroke="var(--cyan)" stroke-width="1.5"
+      stroke-dasharray="40 150" stroke-linecap="round"/>
+  </svg>
+  <svg viewBox="0 0 70 70" class="reverse" style="width:50px;height:50px;top:10px;left:10px">
+    <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.08)" stroke-width="1"/>
+    <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.4)" stroke-width="1"
+      stroke-dasharray="15 110" stroke-linecap="round"/>
+  </svg>
+</div>
+
+<button id="access-btn" onclick="startSequence()"><span>// INITIALIZE SYSTEM //</span></button>
+<div id="status-text">AWAITING BIOMETRIC AUTHORIZATION</div>
+```
+
   </div>
 
-  <div class="controls">
-    <button id="export-pdf" class="ui-btn">Export Log</button>
-    <button id="switch-camera" class="ui-btn">Switch Cam</button>
-  </div>
+  <!-- ─── MAIN UI ─── -->
 
   <div id="container">
     <video class="input_video" playsinline muted></video>
     <canvas class="output_canvas"></canvas>
-    <div class="interface-overlay">
-      <div>> LINK_STATUS: ACTIVE</div>
-      <div id="target-status">> TARGET: SEEKING...</div>
-    </div>
-    <div class="bottom-peripherals">
-      <div id="live-speech-box">...</div>
-      <canvas id="audio_visualizer"></canvas>
-      <div id="terminal-box"><div id="log-content"></div></div>
-    </div>
+
+```
+<!-- Scan bar -->
+<div id="scan-bar"></div>
+
+<!-- Acquired flash -->
+<div id="acquired-flash"></div>
+
+<!-- HUD overlay -->
+<div class="hud-overlay">
+  <div class="hud-tl">
+    <div class="hud-row"><div class="hud-dot"></div><span>LINK_STATUS: ACTIVE</span></div>
+    <div class="hud-row" id="target-status"><span>> TARGET: SEEKING...</span></div>
+    <div class="hud-row" id="fps-row"><span>FPS: --</span></div>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="hud-tr">
+  <button id="export-btn" class="ui-btn">Export Log</button>
+  <button id="switch-cam" class="ui-btn">Switch Cam</button>
+</div>
+
+<!-- Reticle -->
+<div id="reticle">
+  <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g stroke="#00f5ff" stroke-width="1" opacity="0.8">
+      <!-- Corners -->
+      <path d="M 20 10 L 10 10 L 10 20"/>
+      <path d="M 100 10 L 110 10 L 110 20"/>
+      <path d="M 10 100 L 10 110 L 20 110"/>
+      <path d="M 110 100 L 110 110 L 100 110"/>
+      <!-- Center cross -->
+      <line x1="60" y1="50" x2="60" y2="56" stroke-width="0.8" opacity="0.5"/>
+      <line x1="60" y1="64" x2="60" y2="70" stroke-width="0.8" opacity="0.5"/>
+      <line x1="50" y1="60" x2="56" y2="60" stroke-width="0.8" opacity="0.5"/>
+      <line x1="64" y1="60" x2="70" y2="60" stroke-width="0.8" opacity="0.5"/>
+      <!-- Rotating ring -->
+      <circle cx="60" cy="60" r="18" stroke-dasharray="8 6" opacity="0.4">
+        <animateTransform attributeName="transform" type="rotate"
+          from="0 60 60" to="360 60 60" dur="4s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+  </svg>
+</div>
+
+<!-- Target label -->
+<div id="target-label">TARGET ACQUIRED</div>
+
+<!-- Right metrics -->
+<div id="metrics">
+  <div class="metric-block">
+    <div class="metric-label">SYMMETRY</div>
+    <div class="metric-bar"><div class="metric-fill" id="m-symmetry" style="width:0%"></div></div>
+    <div class="metric-value" id="mv-symmetry">--</div>
+  </div>
+  <div class="metric-block">
+    <div class="metric-label">CONFIDENCE</div>
+    <div class="metric-bar"><div class="metric-fill" id="m-conf" style="width:0%"></div></div>
+    <div class="metric-value" id="mv-conf">--</div>
+  </div>
+  <div class="metric-block">
+    <div class="metric-label">MESH DENSITY</div>
+    <div class="metric-bar"><div class="metric-fill" id="m-mesh" style="width:78%"></div></div>
+    <div class="metric-value" id="mv-mesh">478</div>
+  </div>
+</div>
+
+<!-- Creator -->
+<div id="creator">CREATED BY BORTIN</div>
+
+<!-- Bottom panel -->
+<div class="bottom-panel">
+  <div id="live-speech-box">...</div>
+  <canvas id="audio_visualizer"></canvas>
+  <div id="terminal-box"><div id="log-content"></div></div>
+</div>
+```
+
   </div>
 
   <script type="module">
-    const videoElement = document.querySelector('.input_video');
-    const canvasElement = document.querySelector('.output_canvas');
-    const canvasCtx = canvasElement.getContext('2d');
-    const liveSpeechBox = document.getElementById('live-speech-box');
-    const terminalBox = document.getElementById('terminal-box');
-    const logContent = document.getElementById('log-content');
-    const audioCanvas = document.getElementById('audio_visualizer');
-    const aCtx = audioCanvas.getContext('2d');
-    const targetStatus = document.getElementById('target-status');
+    // ─── ELEMENTS ───
+    const videoEl       = document.querySelector('.input_video');
+    const canvasEl      = document.querySelector('.output_canvas');
+    const canvasCtx     = canvasEl.getContext('2d');
+    const liveSpeech    = document.getElementById('live-speech-box');
+    const terminalBox   = document.getElementById('terminal-box');
+    const logContent    = document.getElementById('log-content');
+    const audioCanvas   = document.getElementById('audio_visualizer');
+    const aCtx          = audioCanvas.getContext('2d');
+    const targetStatus  = document.getElementById('target-status');
+    const reticle       = document.getElementById('reticle');
+    const targetLabel   = document.getElementById('target-label');
+    const scanBar       = document.getElementById('scan-bar');
+    const acqFlash      = document.getElementById('acquired-flash');
+    const metricsPanel  = document.getElementById('metrics');
+    const fpsRow        = document.getElementById('fps-row');
 
-    let currentFacingMode = 'user';
-    let cameraInstance = null;
+    // ─── STATE ───
+    let facingMode   = 'user';
+    let camInstance  = null;
     let audioCtx, analyser, freqData, globalStream;
-    let isSpeaking = false;
-    let logQueue = [];
-    let fullLogHistory = [];
-    let isTyping = false;
+    let isSpeaking   = false;
+    let logHistory   = [];
+    let prevTarget   = false;  // was face detected last frame?
+    let frameCount   = 0;
+    let lastFpsTime  = performance.now();
+    let recognition  = null;
+    let recStarting  = false;
 
-    // --- ЛОГИКА ТЕРМИНАЛА ---
-    async function processLogQueue() {
-      if (isTyping || logQueue.length === 0) return;
-      isTyping = true;
-      const { text, timestamp } = logQueue.shift();
-      fullLogHistory.push(`[${timestamp}] ${text.toUpperCase()}`);
-      
-      const entry = document.createElement('div');
-      entry.className = 'log-entry';
-      logContent.appendChild(entry);
-      
-      const message = `[${timestamp}] ${text.toUpperCase()}`;
-      for (let i = 0; i < message.length; i++) {
-        entry.innerText += message[i];
-        terminalBox.scrollTop = terminalBox.scrollHeight;
-        await new Promise(r => setTimeout(r, 10));
-      }
-      isTyping = false;
-      processLogQueue();
-    }
+    // ─── BOOT SEQUENCE ───
+    const bootMessages = [
+      { txt: 'INITIALIZING NEURAL CORE...', cls: 'ok', delay: 300 },
+      { txt: 'LOADING MEDIAPIPE FACE_MESH...', cls: 'ok', delay: 600 },
+      { txt: 'CALIBRATING DEPTH SENSORS...', cls: 'ok', delay: 900 },
+      { txt: 'BIOMETRIC DATABASE: READY', cls: 'ok', delay: 1200 },
+      { txt: 'AUDIO SUBSYSTEM: STANDBY', cls: 'err', delay: 1500 },
+      { txt: 'AWAITING OPERATOR CLEARANCE...', cls: '', delay: 1800 },
+    ];
 
-    function addLog(text) {
-      logQueue.push({ text, timestamp: new Date().toLocaleTimeString() });
-      if (!isTyping) processLogQueue();
-    }
+    window.addEventListener('DOMContentLoaded', () => {
+      const container = document.getElementById('boot-lines');
+      bootMessages.forEach(({ txt, cls, delay }) => {
+        setTimeout(() => {
+          const div = document.createElement('div');
+          div.className = `boot-line ${cls}`;
+          div.textContent = '> ' + txt;
+          div.style.animationDelay = '0s';
+          container.appendChild(div);
+        }, delay);
+      });
+      setTimeout(() => {
+        document.getElementById('access-btn').style.display = 'block';
+      }, 2200);
+    });
 
-    // --- ЭКСПОРТ (ИСПРАВЛЕННАЯ КИРИЛЛИЦА) ---
-    window.exportToPDF = function() {
-      if (fullLogHistory.length === 0) return alert("LOG IS EMPTY");
-      const header = "NEURAL SCANNER LOG REPORT\n--------------------------\n";
-      const content = header + fullLogHistory.join('\n');
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `neural_log_${Date.now()}.txt`; // TXT самый надежный для кириллицы без тяжелых библиотек
-      link.click();
-      URL.revokeObjectURL(url);
-    };
-
-    document.getElementById('export-pdf').addEventListener('click', exportToPDF);
-
-    // --- ИНИЦИАЛИЗАЦИЯ ---
+    // ─── START SEQUENCE ───
     window.startSequence = async function() {
-      const btn = document.getElementById('access-btn');
-      const ring = document.getElementById('ring');
+      const btn    = document.getElementById('access-btn');
+      const ring   = document.getElementById('ring-container');
       const status = document.getElementById('status-text');
+      btn.style.display = 'none';
 
       try {
-        btn.style.display = 'none';
-        status.innerText = "ACCESSING CORE SENSORS...";
+        status.textContent = 'ACCESSING CORE SENSORS...';
         globalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         ring.style.display = 'block';
-        status.innerText = "CALIBRATING...";
+        status.textContent = 'CALIBRATING NEURAL MESH...';
 
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioCtx.createAnalyser();
-        const source = audioCtx.createMediaStreamSource(globalStream);
-        source.connect(analyser);
-        analyser.fftSize = 128;
+        analyser.fftSize = 256;
+        const src = audioCtx.createMediaStreamSource(globalStream);
+        src.connect(analyser);
         freqData = new Uint8Array(analyser.frequencyBinCount);
-        
+
         drawBars();
-        videoElement.srcObject = globalStream;
+        videoEl.srcObject = globalStream;
         await startCamera();
-        
-        document.getElementById('preloader').style.opacity = '0';
+
+        const loader = document.getElementById('preloader');
+        loader.classList.add('hidden');
         setTimeout(() => {
-          document.getElementById('preloader').style.display = 'none';
+          loader.style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
+          scanBar.classList.add('active');
           initSpeech();
-        }, 500);
+          addLog('SYSTEM ONLINE — BIOMETRIC SCANNING ACTIVE', 'system');
+        }, 800);
 
       } catch (err) {
-        status.innerText = "FATAL ERROR: ACCESS DENIED";
+        status.textContent = 'FATAL ERROR: ACCESS DENIED';
         btn.style.display = 'block';
         ring.style.display = 'none';
+        console.error(err);
       }
     };
 
+    // ─── AUDIO VISUALIZER ───
     function drawBars() {
       requestAnimationFrame(drawBars);
-      if(!analyser) return;
-      audioCanvas.width = audioCanvas.clientWidth;
+      if (!analyser) return;
+      audioCanvas.width  = audioCanvas.clientWidth;
       audioCanvas.height = audioCanvas.clientHeight;
       analyser.getByteFrequencyData(freqData);
       aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-      const barWidth = (audioCanvas.width / freqData.length) * 2;
+
+      const total = freqData.length;
+      const barW  = (audioCanvas.width / total) * 2.2;
       let x = 0;
-      for (let i = 0; i < freqData.length; i++) {
-        const barHeight = (freqData[i] / 255) * audioCanvas.height;
-        aCtx.fillStyle = `rgb(${freqData[i]+100},${freqData[i]+100},${freqData[i]+100})`;
-        aCtx.fillRect(x, audioCanvas.height - barHeight, barWidth - 1, barHeight);
-        x += barWidth;
+      for (let i = 0; i < total; i++) {
+        const v = freqData[i] / 255;
+        const h = v * audioCanvas.height;
+        // Cyan to green gradient based on amplitude
+        const r = Math.floor(v * 0);
+        const g = Math.floor(200 + v * 55);
+        const b = Math.floor(255 * (1 - v * 0.3));
+        aCtx.fillStyle = `rgba(${r},${g},${b},${0.5 + v * 0.5})`;
+        aCtx.fillRect(x, audioCanvas.height - h, barW - 1, h);
+        x += barW;
       }
     }
 
-    // --- УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ РЕЧИ ---
+    // ─── SPEECH RECOGNITION (with restart guard) ───
     function initSpeech() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) return;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { addLog('SPEECH ENGINE: NOT AVAILABLE IN THIS BROWSER', 'warn'); return; }
 
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      recognition = new SR();
+      recognition.continuous     = true;
       recognition.interimResults = true;
-      recognition.lang = 'ru-RU';
+      recognition.lang           = 'ru-RU';
 
       recognition.onresult = (e) => {
-        let interim = "";
-        for (let i = e.resultIndex; i < e.results.length; ++i) {
-          const transcript = e.results[i][0].transcript.trim();
-          if (e.results[i].isFinal && transcript !== "") {
-            addLog(transcript);
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript.trim();
+          if (e.results[i].isFinal && t) {
+            addLog(t, 'speech');
           } else {
-            interim = transcript;
+            interim = t;
           }
         }
-        if (interim !== "") {
+        if (interim) {
           isSpeaking = true;
-          liveSpeechBox.innerText = interim.toUpperCase();
+          liveSpeech.textContent = interim.toUpperCase();
+          liveSpeech.classList.add('speaking');
         }
       };
 
-      recognition.onend = () => { 
-        liveSpeechBox.innerText = "IDLE";
+      recognition.onend = () => {
         isSpeaking = false;
-        recognition.start(); // Авто-рестарт для предотвращения IDLE
+        liveSpeech.classList.remove('speaking');
+        liveSpeech.textContent = 'IDLE';
+        if (!recStarting) {
+          recStarting = true;
+          setTimeout(() => { recStarting = false; recognition.start(); }, 200);
+        }
       };
 
-      recognition.onerror = () => { recognition.stop(); };
+      recognition.onerror = (e) => {
+        if (e.error !== 'no-speech') {
+          console.warn('Speech error:', e.error);
+        }
+      };
+
       recognition.start();
     }
 
+    // ─── LOG ───
+    function addLog(text, type = 'info') {
+      const ts    = new Date().toLocaleTimeString('ru-RU');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type === 'speech' ? 'speech' : ''}`;
+      entry.innerHTML = `<span class="ts">[${ts}]</span>${text.toUpperCase()}`;
+      logContent.appendChild(entry);
+      terminalBox.scrollTop = terminalBox.scrollHeight;
+      logHistory.push(`[${ts}] ${text.toUpperCase()}`);
+    }
+
+    // ─── EXPORT ───
+    document.getElementById('export-btn').addEventListener('click', () => {
+      if (!logHistory.length) { alert('LOG IS EMPTY'); return; }
+      const content = 'NEURAL SCANNER LOG\n==================\n' + logHistory.join('\n');
+      const blob    = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url     = URL.createObjectURL(blob);
+      const a       = Object.assign(document.createElement('a'), { href: url, download: `neural_log_${Date.now()}.txt` });
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // ─── FACE MESH RESULTS ───
+    let acquiredLogged = false;
+
     function onResults(results) {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
+      // FPS counter
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime > 1000) {
+        fpsRow.querySelector('span').textContent = `FPS: ${frameCount}`;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      canvasEl.width  = videoEl.videoWidth  || canvasEl.clientWidth;
+      canvasEl.height = videoEl.videoHeight || canvasEl.clientHeight;
       canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.globalAlpha = 0.15;
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+      // Darkened video feed
+      canvasCtx.globalAlpha = 0.18;
+      canvasCtx.drawImage(results.image, 0, 0, canvasEl.width, canvasEl.height);
       canvasCtx.globalAlpha = 1.0;
 
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        targetStatus.innerText = "> TARGET: ACQUIRED";
-        for (const landmarks of results.multiFaceLandmarks) {
-          const leftD = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
-          const rightD = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
-          const closed = leftD < 0.015 && rightD < 0.015;
+      const faces = results.multiFaceLandmarks;
+      const hasTarget = faces && faces.length > 0;
 
-          let color = isSpeaking ? "#00ff00" : (closed ? "#ff0000" : "#ffffff");
+      if (hasTarget) {
+        // First acquire
+        if (!prevTarget) {
+          reticle.classList.add('visible');
+          targetLabel.classList.add('visible');
+          acqFlash.classList.remove('flash');
+          void acqFlash.offsetWidth; // reflow
+          acqFlash.classList.add('flash');
+          metricsPanel.classList.add('visible');
+          if (!acquiredLogged) {
+            addLog('BIOMETRIC TARGET ACQUIRED — SCANNING IN PROGRESS', 'system');
+            acquiredLogged = true;
+          }
+          targetStatus.querySelector('span').textContent = '> TARGET: ACQUIRED';
+        }
 
-          canvasCtx.strokeStyle = color;
-          canvasCtx.lineWidth = 0.5;
-          
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: color + "33", lineWidth: 0.5});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
-          
-          // Только внешний контур рта
-          const mouthOuter = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291];
+        for (const landmarks of faces) {
+          // Eye open/close detection
+          const ld = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
+          const rd = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
+          const eyesClosed = ld < 0.015 && rd < 0.015;
+
+          // Color logic
+          let color;
+          if (isSpeaking)    color = '#00ff88';
+          else if (eyesClosed) color = '#ff2244';
+          else                 color = '#00f5ff';
+
+          // Mesh tesselation (subtle)
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, { color: color + '22', lineWidth: 0.4 });
+
+          // Eye contours
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, { color: color + 'cc', lineWidth: 1 });
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE,  { color: color + 'cc', lineWidth: 1 });
+
+          // Face oval
+          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, { color: color + '44', lineWidth: 0.8 });
+
+          // Mouth outer
+          const mouthOuter = [61,146,91,181,84,17,314,405,321,375,291,308,324,318,402,317,14,87,178,88,95,185,40,39,37,0,267,269,270,409];
           canvasCtx.beginPath();
+          canvasCtx.strokeStyle = color + 'bb';
+          canvasCtx.lineWidth = 1;
           mouthOuter.forEach((idx, i) => {
             const p = landmarks[idx];
-            if (i === 0) canvasCtx.moveTo(p.x * canvasElement.width, p.y * canvasElement.height);
-            else canvasCtx.lineTo(p.x * canvasElement.width, p.y * canvasElement.height);
+            const px = p.x * canvasEl.width;
+            const py = p.y * canvasEl.height;
+            i === 0 ? canvasCtx.moveTo(px, py) : canvasCtx.lineTo(px, py);
           });
           canvasCtx.closePath();
           canvasCtx.stroke();
+
+          // Landmark dots for key points
+          const keyPoints = [1, 4, 6, 8, 9, 10, 152, 234, 454];
+          keyPoints.forEach(idx => {
+            const p = landmarks[idx];
+            canvasCtx.beginPath();
+            canvasCtx.arc(p.x * canvasEl.width, p.y * canvasEl.height, 2, 0, Math.PI * 2);
+            canvasCtx.fillStyle = color;
+            canvasCtx.fill();
+          });
+
+          // Update metrics
+          const symm = Math.abs(landmarks[234].x - (1 - landmarks[454].x));
+          const symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
+          document.getElementById('m-symmetry').style.width  = symmPct + '%';
+          document.getElementById('mv-symmetry').textContent = symmPct + '%';
+          document.getElementById('m-conf').style.width      = '91%';
+          document.getElementById('mv-conf').textContent     = '91%';
         }
+
       } else {
-        targetStatus.innerText = "> TARGET: SEEKING...";
+        // Lost target
+        if (prevTarget) {
+          reticle.classList.remove('visible');
+          targetLabel.classList.remove('visible');
+          metricsPanel.classList.remove('visible');
+          targetStatus.querySelector('span').textContent = '> TARGET: SEEKING...';
+          addLog('TARGET LOST — RESUMING SCAN', 'system');
+          acquiredLogged = false;
+        }
       }
+
+      prevTarget = hasTarget;
       canvasCtx.restore();
     }
 
-    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    // ─── FACE MESH INIT ───
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
     faceMesh.onResults(onResults);
 
+    // ─── CAMERA ───
     async function startCamera() {
-      if(cameraInstance) await cameraInstance.stop();
-      cameraInstance = new Camera(videoElement, {
-        onFrame: async () => { await faceMesh.send({image: videoElement}); },
-        facingMode: currentFacingMode, width: 1280, height: 720
+      if (camInstance) { try { await camInstance.stop(); } catch(e) {} }
+      camInstance = new Camera(videoEl, {
+        onFrame: async () => {
+          if (videoEl.readyState >= 2) await faceMesh.send({ image: videoEl });
+        },
+        facingMode: facingMode,
+        width: 1280,
+        height: 720
       });
-      await cameraInstance.start();
-      canvasElement.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'scaleX(1)';
+      await camInstance.start();
+      canvasEl.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
     }
 
-    document.getElementById('switch-camera').addEventListener('click', () => {
-      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+    document.getElementById('switch-cam').addEventListener('click', () => {
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
       startCamera();
     });
   </script>
+
 </body>
 </html>
