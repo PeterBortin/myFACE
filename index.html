@@ -438,7 +438,7 @@
           stroke-dasharray="15 110" stroke-linecap="round"/>
       </svg>
     </div>
-    <button id="access-btn" onclick="startSequence()"><span>// INITIALIZE SYSTEM //</span></button>
+    <button id="access-btn" onclick="startSequence()"><span>open system</span></button>
     <div id="status-text">AWAITING BIOMETRIC AUTHORIZATION</div>
   </div>
 
@@ -506,7 +506,7 @@
 
 <div class="bottom-panel">
   <div id="live-speech-box">...</div>
-  <canvas id="audio_visualizer"></canvas>
+  <canvas id="audio_visualizer" width="600" height="60"></canvas>
   <div id="terminal-box"><div id="log-content"></div></div>
 </div>
 
@@ -588,7 +588,6 @@
         audioCtxNode.createMediaStreamSource(stream).connect(analyser);
         freqData = new Uint8Array(analyser.frequencyBinCount);
 
-        drawBars();
         videoEl.srcObject = stream;
         await startCamera();
 
@@ -597,6 +596,8 @@
         setTimeout(function() {
           loader.style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
+          // Start visualizer AFTER container is visible so offsetWidth is correct
+          startVisualizer();
           initSpeech();
           addLog('SYSTEM ONLINE - BIOMETRIC SCANNING ACTIVE', 'system');
         }, 800);
@@ -609,35 +610,56 @@
       }
     };
 
-    // Equalizer visualizer
+    // Equalizer — ResizeObserver keeps canvas buffer in sync with CSS layout
+    var vizRunning = false;
+
+    function startVisualizer() {
+      if (vizRunning) return;
+      vizRunning = true;
+
+      // Sync canvas buffer size to its CSS render size
+      var ro = new ResizeObserver(function() {
+        var w = audioCanvas.offsetWidth;
+        var h = audioCanvas.offsetHeight;
+        if (w > 0 && h > 0) {
+          audioCanvas.width  = w;
+          audioCanvas.height = h;
+        }
+      });
+      ro.observe(audioCanvas);
+
+      // Force initial sync right now
+      var initW = audioCanvas.offsetWidth  || 600;
+      var initH = audioCanvas.offsetHeight || 60;
+      audioCanvas.width  = initW;
+      audioCanvas.height = initH;
+
+      drawBars();
+    }
+
     function drawBars() {
       requestAnimationFrame(drawBars);
       if (!analyser || !freqData) return;
 
-      // getBoundingClientRect works even when container is transitioning from hidden.
-      // offsetWidth is the fallback; 600x60 is the safe last-resort default.
-      var rect = audioCanvas.getBoundingClientRect();
-      var cw   = Math.round(rect.width)  || audioCanvas.offsetWidth  || 600;
-      var ch   = Math.round(rect.height) || audioCanvas.offsetHeight || 60;
-
-      if (audioCanvas.width  !== cw) audioCanvas.width  = cw;
-      if (audioCanvas.height !== ch) audioCanvas.height = ch;
+      var cw = audioCanvas.width;
+      var ch = audioCanvas.height;
+      if (cw < 1 || ch < 1) return;
 
       analyser.getByteFrequencyData(freqData);
       aCtx.clearRect(0, 0, cw, ch);
 
       var total = freqData.length;
-      var barW  = (cw / total) * 2.2;
-      var x     = 0;
+      var barW  = cw / total;
+      var gap   = Math.max(barW * 0.15, 1);
 
       for (var i = 0; i < total; i++) {
         var v  = freqData[i] / 255;
-        var bh = Math.max(v * ch, 1); // always at least 1px so idle bars are visible
+        var bh = Math.max(v * ch, 2);
         var g  = Math.floor(200 + v * 55);
         var b  = Math.floor(255 * (1 - v * 0.3));
-        aCtx.fillStyle = 'rgba(0,' + g + ',' + b + ',' + (0.3 + v * 0.7) + ')';
-        aCtx.fillRect(x, ch - bh, Math.max(barW - 1, 1), bh);
-        x += barW;
+        var alpha = 0.35 + v * 0.65;
+        aCtx.fillStyle = 'rgba(0,' + g + ',' + b + ',' + alpha + ')';
+        aCtx.fillRect(i * barW, ch - bh, barW - gap, bh);
       }
     }
 
