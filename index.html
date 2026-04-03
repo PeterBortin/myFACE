@@ -1,9 +1,10 @@
 <!DOCTYPE html>
+
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myFACE | NEURAL HUD</title>
+  <title>myFACE</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
@@ -80,15 +81,22 @@
       font-weight: 900;
       letter-spacing: 8px;
       color: var(--cyan);
-      text-shadow: 0 0 40px var(--cyan);
+      text-shadow: 0 0 40px var(--cyan), 0 0 80px rgba(0,245,255,0.3);
       animation: flicker 3s infinite;
       margin-bottom: 8px;
     }
-
+    .boot-sub {
+      font-size: 10px;
+      letter-spacing: 6px;
+      color: rgba(0,245,255,0.4);
+      margin-bottom: 60px;
+    }
     @keyframes flicker {
       0%, 95%, 100% { opacity: 1; }
       96% { opacity: 0.4; }
+      97% { opacity: 1; }
       98% { opacity: 0.2; }
+      99% { opacity: 1; }
     }
 
     .boot-lines {
@@ -99,10 +107,12 @@
     .boot-line {
       font-size: 9px;
       color: rgba(0,245,255,0.5);
+      letter-spacing: 1px;
       opacity: 0;
       animation: fadeInLine 0.3s forwards;
     }
     .boot-line.ok::after  { content: ' [OK]';   color: var(--green); }
+    .boot-line.err::after { content: ' [WARN]'; color: var(--red); }
     @keyframes fadeInLine { to { opacity: 1; } }
 
     #access-btn {
@@ -115,7 +125,44 @@
       letter-spacing: 4px;
       cursor: pointer;
       text-transform: uppercase;
+      position: relative;
+      overflow: hidden;
+      transition: color 0.3s;
       display: none;
+    }
+    #access-btn::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: var(--cyan);
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+    }
+    #access-btn:hover::before { transform: translateX(0); }
+    #access-btn:hover { color: var(--dim); }
+    #access-btn span { position: relative; z-index: 1; }
+
+    .ring-container {
+      position: relative;
+      width: 70px; height: 70px;
+      margin-bottom: 30px;
+      display: none;
+    }
+    .ring-container svg {
+      position: absolute; inset: 0;
+      animation: spin 1.2s linear infinite;
+    }
+    .ring-container svg.reverse {
+      animation-direction: reverse;
+      animation-duration: 1.8s;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #status-text {
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: rgba(0,245,255,0.35);
+      margin-top: 20px;
+      min-height: 14px;
     }
 
     #container {
@@ -143,8 +190,19 @@
       position: absolute;
       top: 25px; left: 25px;
       font-size: 9px;
+      letter-spacing: 2px;
       color: rgba(0,245,255,0.6);
       display: flex; flex-direction: column; gap: 5px;
+    }
+    .hud-row { display: flex; align-items: center; gap: 8px; }
+    .hud-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--green);
+      animation: pulseDot 2s ease-in-out infinite;
+    }
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
+      50%       { opacity: 0.3; box-shadow: none; }
     }
 
     .hud-tr {
@@ -161,9 +219,19 @@
       color: rgba(0,245,255,0.7);
       padding: 7px 14px;
       font-size: 9px;
+      letter-spacing: 2px;
       cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
       backdrop-filter: blur(10px);
     }
+    .ui-btn:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: var(--glow);
+      background: rgba(0,245,255,0.05);
+    }
+    .ui-btn:active { transform: scale(0.97); }
 
     #reticle {
       position: absolute;
@@ -175,6 +243,80 @@
       transition: opacity 0.4s;
     }
     #reticle.visible { opacity: 1; }
+    #reticle svg { width: 100%; height: 100%; }
+
+    #acquired-flash {
+      position: absolute; inset: 0;
+      pointer-events: none; z-index: 30;
+      opacity: 0;
+    }
+    #acquired-flash.flash {
+      animation: acquiredFlash 0.6s ease forwards;
+    }
+    @keyframes acquiredFlash {
+      0%   { opacity: 0; background: rgba(0,255,136,0.15); }
+      30%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    #target-label {
+      position: absolute;
+      top: calc(50% + 70px); left: 50%;
+      transform: translateX(-50%);
+      font-family: var(--font-title);
+      font-size: 9px;
+      letter-spacing: 4px;
+      color: var(--cyan);
+      opacity: 0;
+      transition: opacity 0.3s;
+      white-space: nowrap;
+      text-shadow: 0 0 10px var(--cyan);
+      pointer-events: none;
+    }
+    #target-label.visible { opacity: 1; }
+
+    #creator {
+      position: absolute;
+      bottom: 185px; left: 25px;
+      font-size: 8px; letter-spacing: 2px;
+      color: rgba(0,245,255,0.2);
+      z-index: 20; pointer-events: none;
+    }
+
+    #lang-indicator {
+      position: absolute;
+      bottom: 185px; right: 25px;
+      font-size: 8px; letter-spacing: 3px;
+      color: rgba(0,245,255,0.3);
+      z-index: 20; pointer-events: none;
+    }
+
+    #metrics {
+      position: absolute;
+      right: 25px; top: 50%;
+      transform: translateY(-50%);
+      z-index: 15;
+      pointer-events: none;
+      display: flex; flex-direction: column; gap: 16px;
+      opacity: 0; transition: opacity 0.5s;
+    }
+    #metrics.visible { opacity: 1; }
+    .metric-block {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+    }
+    .metric-label { font-size: 7px; letter-spacing: 3px; color: rgba(0,245,255,0.4); }
+    .metric-bar {
+      width: 80px; height: 2px;
+      background: rgba(0,245,255,0.1);
+      position: relative; overflow: hidden;
+    }
+    .metric-fill {
+      position: absolute; top: 0; left: 0; height: 100%;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+      transition: width 0.4s ease;
+    }
+    .metric-value { font-size: 9px; letter-spacing: 2px; color: var(--cyan); }
 
     .bottom-panel {
       position: absolute;
@@ -187,17 +329,28 @@
     #live-speech-box {
       text-align: center;
       font-family: var(--font-title);
-      font-size: 18px;
+      font-size: clamp(14px, 2.5vw, 20px);
+      font-weight: 700;
+      letter-spacing: 3px;
       color: #fff;
-      min-height: 30px;
-      margin-bottom: 5px;
+      min-height: 32px;
+      padding: 8px 0 6px;
+      transition: color 0.3s;
+      text-shadow: 0 0 20px rgba(255,255,255,0.4);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #live-speech-box.speaking {
+      color: var(--green);
+      text-shadow: 0 0 20px var(--green);
     }
 
     #audio_visualizer {
       width: 100%;
       height: 60px;
-      display: block;
       margin-bottom: 10px;
+      display: block;
     }
 
     #terminal-box {
@@ -205,209 +358,461 @@
       height: 120px;
       border: 1px solid rgba(0,245,255,0.12);
       background: rgba(0,0,0,0.4);
-      padding: 10px;
+      backdrop-filter: blur(5px);
+      padding: 16px 12px 10px;
       overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,245,255,0.2) transparent;
+      position: relative;
+    }
+    #terminal-box::before {
+      content: 'NEURAL LOG // SESSION';
+      position: sticky; top: 0;
+      display: block;
+      font-size: 8px; letter-spacing: 3px;
+      color: rgba(0,245,255,0.25);
+      margin-bottom: 4px;
     }
     .log-entry {
-      font-size: 10px;
-      margin-bottom: 4px;
-      border-left: 2px solid var(--cyan);
+      font-size: 9px;
+      color: rgba(0,245,255,0.7);
+      border-left: 1px solid rgba(0,245,255,0.3);
       padding-left: 8px;
+      margin: 3px 0;
+      white-space: pre-wrap;
+      letter-spacing: 0.5px;
+      opacity: 0;
+      animation: logAppear 0.3s forwards;
     }
-    .log-entry.speech { border-color: var(--green); color: var(--green); }
+    .log-entry .ts { color: rgba(0,245,255,0.35); margin-right: 6px; }
+    .log-entry.speech { border-color: var(--green); color: rgba(0,255,136,0.8); }
+    @keyframes logAppear {
+      from { opacity: 0; transform: translateX(-4px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @media (max-width: 600px) {
+      #metrics { display: none; }
+      .hud-tl  { font-size: 8px; }
+      #terminal-box { height: 90px; }
+    }
   </style>
+
 </head>
 
 <body>
-  <div class="corner tl"></div><div class="corner tr"></div>
-  <div class="corner bl"></div><div class="corner br"></div>
+
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
 
   <div id="preloader">
     <div class="boot-logo">myFACE</div>
+    <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
     <div class="boot-lines" id="boot-lines"></div>
-    <button id="access-btn" onclick="startSequence()">Open System</button>
-    <div id="status-text" style="margin-top:20px; font-size:10px; opacity:0.5;">INITIALIZING...</div>
+    <div class="ring-container" id="ring-container">
+      <svg viewBox="0 0 70 70">
+        <circle cx="35" cy="35" r="30" fill="none" stroke="rgba(0,245,255,0.15)" stroke-width="1"/>
+        <circle cx="35" cy="35" r="30" fill="none" stroke="var(--cyan)" stroke-width="1.5"
+          stroke-dasharray="40 150" stroke-linecap="round"/>
+      </svg>
+      <svg viewBox="0 0 70 70" class="reverse" style="width:50px;height:50px;top:10px;left:10px">
+        <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.08)" stroke-width="1"/>
+        <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.4)" stroke-width="1"
+          stroke-dasharray="15 110" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <button id="access-btn" onclick="startSequence()"><span>open system</span></button>
+    <div id="status-text">AWAITING BIOMETRIC AUTHORIZATION</div>
   </div>
 
   <div id="container">
     <video class="input_video" playsinline muted></video>
     <canvas class="output_canvas"></canvas>
 
+    <div id="acquired-flash"></div>
+
     <div class="hud-overlay">
       <div class="hud-tl">
-        <div id="target-status">TARGET: SEEKING...</div>
-        <div id="fps-row">FPS: --</div>
+        <div class="hud-row"><div class="hud-dot"></div><span>LINK_STATUS: ACTIVE</span></div>
+        <div class="hud-row" id="target-status"><span>&gt; TARGET: SEEKING...</span></div>
+        <div class="hud-row" id="fps-row"><span>FPS: --</span></div>
       </div>
     </div>
 
     <div class="hud-tr">
-      <button class="ui-btn" onclick="toggleLang()">RU / UK</button>
-      <button class="ui-btn" id="switch-cam">Cam</button>
+      <button id="export-btn" class="ui-btn">Export Log</button>
+      <button id="lang-btn" class="ui-btn" onclick="toggleLang()">RU / UK</button>
+      <button id="switch-cam" class="ui-btn">Switch Cam</button>
     </div>
 
     <div id="reticle">
-      <svg viewBox="0 0 100 100" stroke="var(--cyan)" fill="none">
-        <circle cx="50" cy="50" r="40" stroke-dasharray="5 5" opacity="0.3" />
-        <path d="M 30 50 L 70 50 M 50 30 L 50 70" stroke-width="0.5" />
+      <svg viewBox="0 0 120 120" fill="none">
+        <g stroke="#00f5ff" stroke-width="1" opacity="0.8">
+          <path d="M 20 10 L 10 10 L 10 20"/>
+          <path d="M 100 10 L 110 10 L 110 20"/>
+          <path d="M 10 100 L 10 110 L 20 110"/>
+          <path d="M 110 100 L 110 110 L 100 110"/>
+          <line x1="60" y1="50" x2="60" y2="56" stroke-width="0.8" opacity="0.5"/>
+          <line x1="60" y1="64" x2="60" y2="70" stroke-width="0.8" opacity="0.5"/>
+          <line x1="50" y1="60" x2="56" y2="60" stroke-width="0.8" opacity="0.5"/>
+          <line x1="64" y1="60" x2="70" y2="60" stroke-width="0.8" opacity="0.5"/>
+          <circle cx="60" cy="60" r="18" stroke-dasharray="8 6" opacity="0.4">
+            <animateTransform attributeName="transform" type="rotate"
+              from="0 60 60" to="360 60 60" dur="4s" repeatCount="indefinite"/>
+          </circle>
+        </g>
       </svg>
     </div>
 
+    <div id="target-label">TARGET ACQUIRED</div>
+
+    <div id="metrics">
+      <div class="metric-block">
+        <div class="metric-label">SYMMETRY</div>
+        <div class="metric-bar"><div class="metric-fill" id="m-symmetry" style="width:0%"></div></div>
+        <div class="metric-value" id="mv-symmetry">--</div>
+      </div>
+      <div class="metric-block">
+        <div class="metric-label">CONFIDENCE</div>
+        <div class="metric-bar"><div class="metric-fill" id="m-conf" style="width:0%"></div></div>
+        <div class="metric-value" id="mv-conf">--</div>
+      </div>
+      <div class="metric-block">
+        <div class="metric-label">MESH PTS</div>
+        <div class="metric-bar"><div class="metric-fill" style="width:78%"></div></div>
+        <div class="metric-value">478</div>
+      </div>
+    </div>
+
+    <div id="creator">CREATED BY BORTIN</div>
+    <div id="lang-indicator">LANG: --</div>
+
     <div class="bottom-panel">
-      <div id="live-speech-box">IDLE</div>
+      <div id="live-speech-box">...</div>
       <canvas id="audio_visualizer"></canvas>
       <div id="terminal-box"><div id="log-content"></div></div>
     </div>
   </div>
 
   <script type="module">
-    const videoEl = document.querySelector('.input_video');
-    const canvasEl = document.querySelector('.output_canvas');
-    const ctx = canvasEl.getContext('2d');
-    const audioCanvas = document.getElementById('audio_visualizer');
-    const aCtx = audioCanvas.getContext('2d');
-    const liveSpeech = document.getElementById('live-speech-box');
-    const logContent = document.getElementById('log-content');
-    const terminalBox = document.getElementById('terminal-box');
+    const videoEl      = document.querySelector('.input_video');
+    const canvasEl     = document.querySelector('.output_canvas');
+    const ctx          = canvasEl.getContext('2d');
+    const liveSpeech   = document.getElementById('live-speech-box');
+    const terminalBox  = document.getElementById('terminal-box');
+    const logContent   = document.getElementById('log-content');
+    const audioCanvas  = document.getElementById('audio_visualizer');
+    const aCtx         = audioCanvas.getContext('2d');
+    const targetStatus = document.getElementById('target-status');
+    const reticle      = document.getElementById('reticle');
+    const targetLabel  = document.getElementById('target-label');
+    const acqFlash     = document.getElementById('acquired-flash');
+    const metricsEl    = document.getElementById('metrics');
+    const fpsRow       = document.getElementById('fps-row');
+    const langInd      = document.getElementById('lang-indicator');
 
-    let audioCtxNode, analyser, freqData, camInstance;
-    let recognition, currentLang = 'ru-RU';
+    let facingMode     = 'user';
+    let camInstance    = null;
+    let audioCtxNode   = null;
+    let analyser       = null;
+    let freqData       = null;
+    let isSpeaking     = false;
+    let logHistory     = [];
+    let prevTarget     = false;
+    let frameCount     = 0;
+    let lastFpsTime    = performance.now();
+    let recognition    = null;
+    let recRestarting  = false;
+    let acquiredLogged = false;
 
-    // Загрузочный экран
+    const bootMessages = [
+      { txt: 'INITIALIZING NEURAL CORE...',   cls: 'ok',  delay: 300  },
+      { txt: 'LOADING MEDIAPIPE FACE_MESH...', cls: 'ok',  delay: 600  },
+      { txt: 'CALIBRATING DEPTH SENSORS...',   cls: 'ok',  delay: 900  },
+      { txt: 'BIOMETRIC DATABASE: READY',      cls: 'ok',  delay: 1200 },
+      { txt: 'AUDIO SUBSYSTEM: STANDBY',       cls: 'ok',  delay: 1500 },
+      { txt: 'AWAITING OPERATOR CLEARANCE...', cls: '',    delay: 1800 },
+    ];
+
     window.addEventListener('DOMContentLoaded', () => {
-      const lines = ["LOADING CORE...", "CONNECTING NEURAL NETWORK...", "SYSTEM READY"];
-      const box = document.getElementById('boot-lines');
-      lines.forEach((l, i) => {
-        setTimeout(() => {
-          const d = document.createElement('div');
-          d.className = 'boot-line ok'; d.textContent = '> ' + l;
-          box.appendChild(d);
-        }, i * 500);
+      const container = document.getElementById('boot-lines');
+      bootMessages.forEach(function(msg) {
+        setTimeout(function() {
+          var div = document.createElement('div');
+          div.className = msg.cls ? ('boot-line ' + msg.cls) : 'boot-line';
+          div.textContent = '> ' + msg.txt;
+          container.appendChild(div);
+        }, msg.delay);
       });
-      setTimeout(() => document.getElementById('access-btn').style.display = 'block', 1500);
+      setTimeout(function() {
+        document.getElementById('access-btn').style.display = 'block';
+      }, 2200);
     });
 
-    // Инициализация при входе
     window.startSequence = async function() {
+      var btn    = document.getElementById('access-btn');
+      var ring   = document.getElementById('ring-container');
+      var status = document.getElementById('status-text');
+      btn.style.display = 'none';
+
       try {
-        audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        status.textContent = 'ACCESSING CORE SENSORS...';
         
+        // КРИТИЧЕСКИЙ ФИКС: Инициализация AudioContext строго по клику
+        audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtxNode.state === 'suspended') {
+            await audioCtxNode.resume();
+        }
+
+        var stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        ring.style.display = 'block';
+        status.textContent = 'CALIBRATING NEURAL MESH...';
+
         analyser = audioCtxNode.createAnalyser();
-        analyser.fftSize = 128;
+        analyser.fftSize = 64; // Оптимально для визуального эквалайзера
         const source = audioCtxNode.createMediaStreamSource(stream);
         source.connect(analyser);
+        
         freqData = new Uint8Array(analyser.frequencyBinCount);
 
         videoEl.srcObject = stream;
         await startCamera();
-        
-        document.getElementById('preloader').classList.add('hidden');
-        document.getElementById('container').style.visibility = 'visible';
-        
-        startVisualizer();
-        initSpeech();
-        addLog("SYSTEM STARTUP COMPLETE", "system");
-      } catch (e) {
-        alert("Access Denied: " + e);
+
+        var loader = document.getElementById('preloader');
+        loader.classList.add('hidden');
+        setTimeout(function() {
+          loader.style.display = 'none';
+          document.getElementById('container').style.visibility = 'visible';
+          syncCanvasSize();
+          startVisualizer();
+          initSpeech();
+          addLog('SYSTEM ONLINE - BIOMETRIC SCANNING ACTIVE', 'system');
+        }, 800);
+
+      } catch (err) {
+        status.textContent = 'FATAL ERROR: ACCESS DENIED';
+        btn.style.display = 'block';
+        ring.style.display = 'none';
+        console.error(err);
       }
     };
 
-    // ФИКС: Оживление при возврате во вкладку
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && audioCtxNode) {
-        audioCtxNode.resume();
-      }
-    });
-
-    function startVisualizer() {
-      const draw = () => {
-        requestAnimationFrame(draw);
-        if (!analyser) return;
-
-        // Принудительно синхронизируем размер внутреннего буфера с CSS
-        audioCanvas.width = audioCanvas.clientWidth;
-        audioCanvas.height = audioCanvas.clientHeight;
-
-        analyser.getByteFrequencyData(freqData);
-        aCtx.clearRect(0, 0, audioCanvas.width, audioCanvas.height);
-
-        const barWidth = audioCanvas.width / freqData.length;
-        
-        // Сетка
-        aCtx.strokeStyle = 'rgba(0, 245, 255, 0.05)';
-        for(let i=0; i<audioCanvas.height; i+=10) {
-          aCtx.beginPath(); aCtx.moveTo(0, i); aCtx.lineTo(audioCanvas.width, i); aCtx.stroke();
-        }
-
-        for (let i = 0; i < freqData.length; i++) {
-          const v = freqData[i] / 255;
-          const h = v * audioCanvas.height;
-          aCtx.fillStyle = `hsla(${180 + v*50}, 100%, 50%, ${0.3 + v*0.7})`;
-          aCtx.fillRect(i * barWidth, audioCanvas.height - h, barWidth - 2, h);
-        }
-      };
-      draw();
+    function syncCanvasSize() {
+        if (!audioCanvas) return;
+        audioCanvas.width  = audioCanvas.clientWidth || 600;
+        audioCanvas.height = audioCanvas.clientHeight || 60;
     }
 
+    window.addEventListener('resize', syncCanvasSize);
+
+    function startVisualizer() {
+      function drawBars() {
+        requestAnimationFrame(drawBars);
+        if (!analyser || !freqData) return;
+
+        analyser.getByteFrequencyData(freqData);
+        
+        const cw = audioCanvas.width;
+        const ch = audioCanvas.height;
+        aCtx.clearRect(0, 0, cw, ch);
+
+        const barCount = freqData.length;
+        const barWidth = cw / barCount;
+        
+        for (let i = 0; i < barCount; i++) {
+          const val = freqData[i] / 255;
+          const bh = Math.max(val * ch, 2); // Минимальная высота 2px
+          
+          const g = Math.floor(200 + val * 55);
+          const b = Math.floor(255 * (1 - val * 0.3));
+          
+          aCtx.fillStyle = `rgba(0, ${g}, ${b}, ${0.4 + val * 0.6})`;
+          aCtx.fillRect(i * barWidth, ch - bh, barWidth - 4, bh);
+          
+          // Эффект "пикового" свечения
+          if (val > 0.1) {
+              aCtx.fillStyle = `rgba(0, 245, 255, ${val * 0.5})`;
+              aCtx.fillRect(i * barWidth, ch - bh - 2, barWidth - 4, 1);
+          }
+        }
+      }
+      drawBars();
+    }
+
+    function detectSpeechLang() {
+      var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'ru-RU';
+      if (/^uk/i.test(nav)) return 'uk-UA';
+      if (/^ru/i.test(nav)) return 'ru-RU';
+      return 'ru-RU';
+    }
+
+    var currentLang = 'ru-RU';
+    var _SR_ref = null;
+
     function initSpeech() {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) return;
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        addLog('SPEECH ENGINE: NOT SUPPORTED', 'system');
+        langInd.textContent = 'LANG: N/A';
+        return;
+      }
+      currentLang = detectSpeechLang();
+      _SR_ref = SR;
+      startRecognition(SR, currentLang);
+    }
+
+    function startRecognition(SR, lang) {
+      if (recognition) {
+        recognition.onend = null;
+        try { recognition.abort(); } catch(_) {}
+      }
+      recRestarting = false;
+      currentLang = lang;
+      langInd.textContent = 'LANG: ' + lang.toUpperCase();
+
       recognition = new SR();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = currentLang;
+      recognition.lang = lang;
 
-      recognition.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) addLog(t, 'speech');
-          else interim = t;
+      recognition.onresult = function(e) {
+        var interim = '';
+        for (var i = e.resultIndex; i < e.results.length; i++) {
+          var t = e.results[i][0].transcript.trim();
+          if (e.results[i].isFinal && t) {
+            addLog(t, 'speech');
+          } else {
+            interim = t;
+          }
         }
-        liveSpeech.textContent = interim || 'LISTENING...';
+        if (interim) {
+          isSpeaking = true;
+          liveSpeech.textContent = interim.toUpperCase();
+          liveSpeech.classList.add('speaking');
+        }
       };
-      recognition.onend = () => recognition.start();
-      recognition.start();
+
+      recognition.onend = function() {
+        isSpeaking = false;
+        liveSpeech.classList.remove('speaking');
+        liveSpeech.textContent = 'IDLE';
+        if (!recRestarting) {
+          setTimeout(() => startRecognition(SR, currentLang), 400);
+        }
+      };
+
+      try { recognition.start(); addLog('SPEECH ENGINE: ' + lang.toUpperCase(), 'system'); } catch(_) {}
     }
 
-    window.toggleLang = () => {
-      currentLang = currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
-      recognition.lang = currentLang;
-      addLog("LANGUAGE SWITCHED TO: " + currentLang, "system");
+    window.toggleLang = function() {
+      recRestarting = true;
+      var newLang = currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
+      var btn = document.getElementById('lang-btn');
+      btn.textContent = newLang === 'ru-RU' ? 'RU / UK' : 'UK / RU';
+      startRecognition(_SR_ref, newLang);
     };
 
-    function addLog(msg, type) {
-      const d = document.createElement('div');
-      d.className = 'log-entry ' + type;
-      d.textContent = `[${new Date().toLocaleTimeString()}] ${msg.toUpperCase()}`;
-      logContent.appendChild(d);
+    function addLog(text, type) {
+      var ts = new Date().toLocaleTimeString('ru-RU');
+      var entry = document.createElement('div');
+      entry.className = type === 'speech' ? 'log-entry speech' : 'log-entry';
+      entry.innerHTML = `<span class="ts">[${ts}]</span>${text.toUpperCase()}`;
+      logContent.appendChild(entry);
       terminalBox.scrollTop = terminalBox.scrollHeight;
+      logHistory.push(`[${ts}] ${text.toUpperCase()}`);
     }
+
+    document.getElementById('export-btn').addEventListener('click', function() {
+      if (!logHistory.length) return;
+      var content = 'NEURAL SCANNER LOG\n' + logHistory.join('\n');
+      var blob = new Blob([content], { type: 'text/plain' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `log_${Date.now()}.txt`;
+      a.click();
+    });
 
     async function startCamera() {
+      if (camInstance) await camInstance.stop();
       camInstance = new Camera(videoEl, {
-        onFrame: async () => await faceMesh.send({image: videoEl}),
-        width: 1280, height: 720
+        onFrame: async () => { if (videoEl.readyState >= 2) await faceMesh.send({ image: videoEl }); },
+        facingMode: facingMode, width: 1280, height: 720
       });
-      camInstance.start();
+      await camInstance.start();
+      canvasEl.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
     }
 
-    const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
-    faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true});
-    faceMesh.onResults((res) => {
-      ctx.save();
-      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-      ctx.globalAlpha = 0.2;
-      ctx.drawImage(res.image, 0, 0, canvasEl.width, canvasEl.height);
-      ctx.restore();
-
-      if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
-        document.getElementById('reticle').classList.add('visible');
-        drawConnectors(ctx, res.multiFaceLandmarks[0], FACEMESH_TESSELATION, {color: '#00f5ff33', lineWidth: 0.5});
-      } else {
-        document.getElementById('reticle').classList.remove('visible');
-      }
+    document.getElementById('switch-cam').addEventListener('click', () => {
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
+      startCamera();
     });
+
+    function onResults(results) {
+      frameCount++;
+      var now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsRow.querySelector('span').textContent = 'FPS: ' + frameCount;
+        frameCount = 0; lastFpsTime = now;
+      }
+
+      var W = videoEl.videoWidth || canvasEl.clientWidth;
+      var H = videoEl.videoHeight || canvasEl.clientHeight;
+      if (canvasEl.width !== W) canvasEl.width = W;
+      if (canvasEl.height !== H) canvasEl.height = H;
+
+      ctx.save();
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalAlpha = 0.18;
+      ctx.drawImage(results.image, 0, 0, W, H);
+      ctx.globalAlpha = 1.0;
+
+      var faces = results.multiFaceLandmarks;
+      var hasTarget = !!(faces && faces.length > 0);
+
+      if (hasTarget) {
+        if (!prevTarget) {
+          reticle.classList.add('visible');
+          targetLabel.classList.add('visible');
+          acqFlash.classList.add('flash');
+          metricsEl.classList.add('visible');
+          targetStatus.querySelector('span').textContent = '> TARGET: ACQUIRED';
+          if (!acquiredLogged) { addLog('BIOMETRIC TARGET ACQUIRED', 'system'); acquiredLogged = true; }
+        }
+
+        const lm = faces[0];
+        const isBlinking = Math.hypot(lm[159].x-lm[145].x, lm[159].y-lm[145].y) < 0.015;
+        const color = isSpeaking ? '#00ff88' : (isBlinking ? '#ff2244' : '#00f5ff');
+
+        drawConnectors(ctx, lm, FACEMESH_TESSELATION, { color: color + '1a', lineWidth: 0.3 });
+        drawConnectors(ctx, lm, FACEMESH_FACE_OVAL, { color: color + '55', lineWidth: 1 });
+        drawConnectors(ctx, lm, FACEMESH_LIPS, { color: color + 'dd', lineWidth: 1.2 });
+        drawConnectors(ctx, lm, FACEMESH_RIGHT_EYE, { color: color + 'dd', lineWidth: 1.2 });
+        drawConnectors(ctx, lm, FACEMESH_LEFT_EYE, { color: color + 'dd', lineWidth: 1.2 });
+
+        const symm = Math.abs(lm[234].x - (1 - lm[454].x));
+        const symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
+        document.getElementById('m-symmetry').style.width = symmPct + '%';
+        document.getElementById('mv-symmetry').textContent = symmPct + '%';
+        document.getElementById('m-conf').style.width = '94%';
+        document.getElementById('mv-conf').textContent = '94%';
+      } else {
+        if (prevTarget) {
+          reticle.classList.remove('visible');
+          targetLabel.classList.remove('visible');
+          metricsEl.classList.remove('visible');
+          targetStatus.querySelector('span').textContent = '> TARGET: SEEKING...';
+          addLog('TARGET LOST', 'system'); acquiredLogged = false;
+        }
+      }
+      prevTarget = hasTarget;
+      ctx.restore();
+    }
+
+    var faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    faceMesh.onResults(onResults);
   </script>
 </body>
 </html>
