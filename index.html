@@ -4,815 +4,933 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myFACE</title>
-
+  <title>myFACE // NEURAL SCANNER</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
-
   <style>
     :root {
-      --cyan:       #00f5ff;
-      --red:        #ff2244;
-      --green:      #00ff88;
-      --dim:        #0a0a0f;
-      --border:     rgba(0, 245, 255, 0.15);
-      --glow:       0 0 20px rgba(0, 245, 255, 0.3);
-      --font-mono:  'Share Tech Mono', monospace;
-      --font-title: 'Orbitron', monospace;
+      --cyan:  #00f5ff;
+      --red:   #ff2244;
+      --green: #00ff88;
+      --dim:   #0a0a0f;
+      --glow:  0 0 18px rgba(0,245,255,0.35);
+      --fm:    'Share Tech Mono', monospace;
+      --ft:    'Orbitron', monospace;
     }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--dim); overflow:hidden; font-family:var(--fm); color:var(--cyan); cursor:crosshair; }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+```
+/* CRT lines */
+body::before {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+}
 
-    body {
-      background: var(--dim);
-      overflow: hidden;
-      font-family: var(--font-mono);
-      color: var(--cyan);
-      cursor: crosshair;
-    }
+/* Corner brackets */
+.corner { position:fixed; width:30px; height:30px; z-index:1000; pointer-events:none; }
+.corner::before,.corner::after { content:''; position:absolute; background:var(--cyan); }
+.corner::before { width:100%; height:2px; top:0; }
+.corner::after  { width:2px; height:100%; top:0; }
+.corner.tl { top:15px; left:15px; }
+.corner.tr { top:15px; right:15px; transform:scaleX(-1); }
+.corner.bl { bottom:15px; left:15px; transform:scaleY(-1); }
+.corner.br { bottom:15px; right:15px; transform:scale(-1); }
 
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0,0,0,0.06) 2px,
-        rgba(0,0,0,0.06) 4px
-      );
-      pointer-events: none;
-      z-index: 9999;
-    }
+/* ── PRELOADER ── */
+#preloader {
+  position:fixed; inset:0; background:var(--dim); z-index:500;
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  transition: opacity 0.8s ease, visibility 0.8s ease;
+}
+#preloader.hidden { opacity:0; visibility:hidden; }
+.boot-logo {
+  font-family:var(--ft); font-size:clamp(28px,5vw,52px); font-weight:900;
+  letter-spacing:8px; color:var(--cyan);
+  text-shadow:0 0 40px var(--cyan),0 0 80px rgba(0,245,255,0.3);
+  animation:flicker 3s infinite; margin-bottom:8px;
+}
+.boot-sub { font-size:10px; letter-spacing:6px; color:rgba(0,245,255,0.4); margin-bottom:50px; }
+@keyframes flicker {
+  0%,95%,100%{opacity:1} 96%{opacity:0.4} 97%{opacity:1} 98%{opacity:0.2} 99%{opacity:1}
+}
+.boot-lines { width:min(400px,85vw); margin-bottom:36px; display:flex; flex-direction:column; gap:5px; }
+.boot-line { font-size:9px; color:rgba(0,245,255,0.5); letter-spacing:1px; opacity:0; animation:fadeIn .3s forwards; }
+.boot-line.ok::after  { content:' [OK]';   color:var(--green); }
+.boot-line.err::after { content:' [WARN]'; color:var(--red); }
+@keyframes fadeIn { to{opacity:1} }
 
-    .corner {
-      position: fixed;
-      width: 30px; height: 30px;
-      z-index: 1000; pointer-events: none;
-    }
-    .corner::before, .corner::after {
-      content: ''; position: absolute;
-      background: var(--cyan);
-    }
-    .corner::before { width: 100%; height: 2px; top: 0; }
-    .corner::after  { width: 2px; height: 100%; top: 0; }
-    .corner.tl { top: 15px; left: 15px; }
-    .corner.tr { top: 15px; right: 15px; transform: scaleX(-1); }
-    .corner.bl { bottom: 15px; left: 15px; transform: scaleY(-1); }
-    .corner.br { bottom: 15px; right: 15px; transform: scale(-1); }
+/* Equalizer in preloader — starts immediately on mic grant */
+#preload-viz {
+  width:min(340px,80vw); height:44px; margin-bottom:30px;
+  border:1px solid rgba(0,245,255,0.12); background:rgba(0,245,255,0.02);
+}
 
-    #preloader {
-      position: fixed; inset: 0;
-      background: var(--dim);
-      z-index: 500;
-      display: flex; flex-direction: column;
-      justify-content: center; align-items: center;
-      transition: opacity 0.8s ease, visibility 0.8s ease;
-    }
-    #preloader.hidden { opacity: 0; visibility: hidden; }
+#access-btn {
+  font-family:var(--ft); background:transparent; border:1px solid var(--cyan);
+  color:var(--cyan); padding:14px 40px; font-size:11px; letter-spacing:4px;
+  cursor:pointer; text-transform:uppercase; position:relative; overflow:hidden;
+  transition:color .3s; display:none;
+}
+#access-btn::before {
+  content:''; position:absolute; inset:0; background:var(--cyan);
+  transform:translateX(-100%); transition:transform .3s ease;
+}
+#access-btn:hover::before { transform:translateX(0); }
+#access-btn:hover { color:var(--dim); }
+#access-btn span { position:relative; z-index:1; }
 
-    .boot-logo {
-      font-family: var(--font-title);
-      font-size: clamp(28px, 5vw, 52px);
-      font-weight: 900;
-      letter-spacing: 8px;
-      color: var(--cyan);
-      text-shadow: 0 0 40px var(--cyan), 0 0 80px rgba(0,245,255,0.3);
-      animation: flicker 3s infinite;
-      margin-bottom: 8px;
-    }
-    .boot-sub {
-      font-size: 10px;
-      letter-spacing: 6px;
-      color: rgba(0,245,255,0.4);
-      margin-bottom: 60px;
-    }
-    @keyframes flicker {
-      0%, 95%, 100% { opacity: 1; }
-      96% { opacity: 0.4; }
-      97% { opacity: 1; }
-      98% { opacity: 0.2; }
-      99% { opacity: 1; }
-    }
+.ring-wrap { position:relative; width:70px; height:70px; margin-bottom:28px; display:none; }
+.ring-wrap svg { position:absolute; inset:0; animation:spin 1.2s linear infinite; }
+.ring-wrap svg.rev { animation-direction:reverse; animation-duration:1.8s; }
+@keyframes spin { to{transform:rotate(360deg)} }
 
-    .boot-lines {
-      width: min(400px, 85vw);
-      margin-bottom: 40px;
-      display: flex; flex-direction: column; gap: 6px;
-    }
-    .boot-line {
-      font-size: 9px;
-      color: rgba(0,245,255,0.5);
-      letter-spacing: 1px;
-      opacity: 0;
-      animation: fadeInLine 0.3s forwards;
-    }
-    .boot-line.ok::after  { content: ' [OK]';   color: var(--green); }
-    .boot-line.err::after { content: ' [WARN]'; color: var(--red); }
-    @keyframes fadeInLine { to { opacity: 1; } }
+#status-text { font-size:9px; letter-spacing:3px; color:rgba(0,245,255,0.35); margin-top:18px; min-height:14px; }
 
-    #access-btn {
-      font-family: var(--font-title);
-      background: transparent;
-      border: 1px solid var(--cyan);
-      color: var(--cyan);
-      padding: 14px 40px;
-      font-size: 11px;
-      letter-spacing: 4px;
-      cursor: pointer;
-      text-transform: uppercase;
-      position: relative;
-      overflow: hidden;
-      transition: color 0.3s;
-      display: none;
-    }
-    #access-btn::before {
-      content: '';
-      position: absolute; inset: 0;
-      background: var(--cyan);
-      transform: translateX(-100%);
-      transition: transform 0.3s ease;
-    }
-    #access-btn:hover::before { transform: translateX(0); }
-    #access-btn:hover { color: var(--dim); }
-    #access-btn span { position: relative; z-index: 1; }
+/* ── MAIN ── */
+#container { position:relative; width:100vw; height:100vh; visibility:hidden; }
+.input_video { display:none; }
+.output_canvas {
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; transform:scaleX(-1); z-index:1;
+}
 
-    .ring-container {
-      position: relative;
-      width: 70px; height: 70px;
-      margin-bottom: 30px;
-      display: none;
-    }
-    .ring-container svg {
-      position: absolute; inset: 0;
-      animation: spin 1.2s linear infinite;
-    }
-    .ring-container svg.reverse {
-      animation-direction: reverse;
-      animation-duration: 1.8s;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+/* HUD left */
+.hud-tl {
+  position:absolute; top:25px; left:25px; z-index:10; pointer-events:none;
+  font-size:9px; letter-spacing:2px; color:rgba(0,245,255,0.6);
+  display:flex; flex-direction:column; gap:5px;
+}
+.hud-row { display:flex; align-items:center; gap:8px; }
+.hud-dot { width:5px; height:5px; border-radius:50%; background:var(--green); animation:pdot 2s ease-in-out infinite; }
+@keyframes pdot { 0%,100%{opacity:1;box-shadow:0 0 6px var(--green)} 50%{opacity:.3;box-shadow:none} }
 
-    #status-text {
-      font-size: 9px;
-      letter-spacing: 3px;
-      color: rgba(0,245,255,0.35);
-      margin-top: 20px;
-      min-height: 14px;
-    }
+/* ── BUTTONS — 2-state ── */
+.hud-tr {
+  position:absolute; top:20px; right:20px;
+  display:flex; gap:8px; z-index:20;
+}
+.ui-btn {
+  font-family:var(--fm); font-size:9px; letter-spacing:2px;
+  cursor:pointer; text-transform:uppercase;
+  background:rgba(0,0,0,0.65); backdrop-filter:blur(10px);
+  border:1px solid rgba(0,245,255,0.3); color:rgba(0,245,255,0.7);
+  padding:7px 14px; transition:all .2s; position:relative; overflow:hidden;
+}
+.ui-btn .st-a, .ui-btn .st-b { display:block; transition:transform .25s, opacity .25s; }
+.ui-btn .st-b { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) translateY(14px); opacity:0; white-space:nowrap; }
+.ui-btn:hover .st-a { transform:translateY(-14px); opacity:0; }
+.ui-btn:hover .st-b { transform:translate(-50%,-50%) translateY(0); opacity:1; }
+.ui-btn:hover { border-color:var(--cyan); color:var(--cyan); box-shadow:var(--glow); background:rgba(0,245,255,0.06); }
+.ui-btn:active { transform:scale(0.97); }
+/* active lang highlight */
+.ui-btn.lang-active { border-color:rgba(0,255,136,0.5); color:var(--green); }
 
-    #container {
-      position: relative;
-      width: 100vw; height: 100vh;
-      visibility: hidden;
-    }
+/* Acquired flash */
+#acquired-flash { position:absolute; inset:0; pointer-events:none; z-index:30; opacity:0; }
+#acquired-flash.flash { animation:aFlash .6s ease forwards; }
+@keyframes aFlash { 0%{opacity:0;background:rgba(0,255,136,0.12)} 30%{opacity:1} 100%{opacity:0} }
 
-    .input_video { display: none; }
+/* Reticle */
+#reticle {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:120px; height:120px; pointer-events:none; opacity:0; transition:opacity .4s;
+}
+#reticle.visible { opacity:1; }
 
-    .output_canvas {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1);
-      z-index: 1;
-    }
+/* 3D face frame — drawn on overlay canvas */
+#face-frame-canvas {
+  position:absolute; inset:0; width:100%; height:100%;
+  pointer-events:none; z-index:8;
+}
 
-    .hud-overlay {
-      position: absolute; inset: 0;
-      z-index: 10;
-      pointer-events: none;
-    }
-    .hud-tl {
-      position: absolute;
-      top: 25px; left: 25px;
-      font-size: 9px;
-      letter-spacing: 2px;
-      color: rgba(0,245,255,0.6);
-      display: flex; flex-direction: column; gap: 5px;
-    }
-    .hud-row { display: flex; align-items: center; gap: 8px; }
-    .hud-dot {
-      width: 5px; height: 5px; border-radius: 50%;
-      background: var(--green);
-      animation: pulseDot 2s ease-in-out infinite;
-    }
-    @keyframes pulseDot {
-      0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
-      50%       { opacity: 0.3; box-shadow: none; }
-    }
+/* Face info label box (top-left of 3D frame) */
+#face-info {
+  position:absolute; z-index:12; pointer-events:none;
+  font-size:9px; letter-spacing:1.5px; line-height:1.7;
+  color:var(--cyan); opacity:0; transition:opacity .3s;
+}
+#face-info.visible { opacity:1; }
+#face-info span { display:block; overflow:hidden; white-space:nowrap; }
+/* glitch on info text */
+@keyframes glitchText {
+  0%  { clip-path:inset(0 0 90% 0); transform:translate(-2px,0); }
+  15% { clip-path:inset(30% 0 50% 0); transform:translate(2px,0); }
+  30% { clip-path:inset(70% 0 10% 0); transform:translate(-1px,0); }
+  50%,100% { clip-path:none; transform:none; }
+}
+#face-info.glitch { animation:glitchText .35s steps(1); }
 
-    .hud-tr {
-      position: absolute;
-      top: 20px; right: 20px;
-      display: flex; gap: 8px;
-      pointer-events: all;
-      z-index: 20;
-    }
-    .ui-btn {
-      font-family: var(--font-mono);
-      background: rgba(0,0,0,0.6);
-      border: 1px solid rgba(0,245,255,0.3);
-      color: rgba(0,245,255,0.7);
-      padding: 7px 14px;
-      font-size: 9px;
-      letter-spacing: 2px;
-      cursor: pointer;
-      text-transform: uppercase;
-      transition: all 0.2s;
-      backdrop-filter: blur(10px);
-    }
-    .ui-btn:hover {
-      border-color: var(--cyan);
-      color: var(--cyan);
-      box-shadow: var(--glow);
-      background: rgba(0,245,255,0.05);
-    }
-    .ui-btn:active { transform: scale(0.97); }
+/* Target label */
+#target-label {
+  position:absolute; top:calc(50% + 74px); left:50%; transform:translateX(-50%);
+  font-family:var(--ft); font-size:9px; letter-spacing:4px; color:var(--cyan);
+  opacity:0; transition:opacity .3s; white-space:nowrap;
+  text-shadow:0 0 10px var(--cyan); pointer-events:none;
+}
+#target-label.visible { opacity:1; }
 
-    #reticle {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 120px; height: 120px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.4s;
-    }
-    #reticle.visible { opacity: 1; }
-    #reticle svg { width: 100%; height: 100%; }
+/* Right metrics */
+#metrics {
+  position:absolute; right:25px; top:50%; transform:translateY(-50%);
+  z-index:15; pointer-events:none; display:flex; flex-direction:column; gap:16px;
+  opacity:0; transition:opacity .5s;
+}
+#metrics.visible { opacity:1; }
+.metric-block { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+.metric-label { font-size:7px; letter-spacing:3px; color:rgba(0,245,255,0.4); }
+.metric-bar { width:80px; height:2px; background:rgba(0,245,255,0.1); position:relative; overflow:hidden; }
+.metric-fill { position:absolute; top:0; left:0; height:100%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); transition:width .4s ease; }
+.metric-value { font-size:9px; letter-spacing:2px; color:var(--cyan); }
 
-    #acquired-flash {
-      position: absolute; inset: 0;
-      pointer-events: none; z-index: 30;
-      opacity: 0;
-    }
-    #acquired-flash.flash {
-      animation: acquiredFlash 0.6s ease forwards;
-    }
-    @keyframes acquiredFlash {
-      0%   { opacity: 0; background: rgba(0,255,136,0.15); }
-      30%  { opacity: 1; }
-      100% { opacity: 0; }
-    }
+/* Bottom panel */
+.bottom-panel {
+  position:absolute; bottom:0; left:0; right:0; z-index:20;
+  background:linear-gradient(to top, rgba(0,0,0,0.95) 70%, transparent);
+  padding:0 25px 20px;
+}
+#live-speech-box {
+  text-align:center; font-family:var(--ft);
+  font-size:clamp(14px,2.5vw,20px); font-weight:700; letter-spacing:3px;
+  color:#fff; min-height:32px; padding:8px 0 6px;
+  transition:color .3s; text-shadow:0 0 20px rgba(255,255,255,0.4);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+#live-speech-box.speaking { color:var(--green); text-shadow:0 0 20px var(--green); }
 
-    #target-label {
-      position: absolute;
-      top: calc(50% + 70px); left: 50%;
-      transform: translateX(-50%);
-      font-family: var(--font-title);
-      font-size: 9px;
-      letter-spacing: 4px;
-      color: var(--cyan);
-      opacity: 0;
-      transition: opacity 0.3s;
-      white-space: nowrap;
-      text-shadow: 0 0 10px var(--cyan);
-      pointer-events: none;
-    }
-    #target-label.visible { opacity: 1; }
+/* ── EQUALIZER ── */
+#audio_visualizer {
+  width:100%; height:60px; margin-bottom:10px; display:block;
+  position:relative;
+}
+/* waveform label */
+#viz-label {
+  position:absolute; right:0; top:-14px;
+  font-size:7px; letter-spacing:3px; color:rgba(0,245,255,0.3); pointer-events:none;
+}
+.viz-wrap { position:relative; margin-bottom:10px; }
 
-    #creator {
-      position: absolute;
-      bottom: 185px; left: 25px;
-      font-size: 8px; letter-spacing: 2px;
-      color: rgba(0,245,255,0.2);
-      z-index: 20; pointer-events: none;
-    }
+#terminal-box {
+  width:100%; height:120px;
+  border:1px solid rgba(0,245,255,0.12); background:rgba(0,0,0,0.4);
+  backdrop-filter:blur(5px); padding:16px 12px 10px;
+  overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(0,245,255,0.2) transparent;
+  position:relative;
+}
+#terminal-box::before {
+  content:'NEURAL LOG // SESSION'; position:sticky; top:0; display:block;
+  font-size:8px; letter-spacing:3px; color:rgba(0,245,255,0.25); margin-bottom:4px;
+}
+.log-entry {
+  font-size:9px; color:rgba(0,245,255,0.7); border-left:1px solid rgba(0,245,255,0.3);
+  padding-left:8px; margin:3px 0; white-space:pre-wrap; letter-spacing:0.5px;
+  opacity:0; animation:logIn .3s forwards;
+}
+.log-entry .ts { color:rgba(0,245,255,0.35); margin-right:6px; }
+.log-entry.speech { border-color:var(--green); color:rgba(0,255,136,0.8); }
+@keyframes logIn { from{opacity:0;transform:translateX(-4px)} to{opacity:1;transform:none} }
 
-    #lang-indicator {
-      position: absolute;
-      bottom: 185px; right: 25px;
-      font-size: 8px; letter-spacing: 3px;
-      color: rgba(0,245,255,0.3);
-      z-index: 20; pointer-events: none;
-    }
+#creator {
+  position:absolute; bottom:185px; left:25px;
+  font-size:8px; letter-spacing:2px; color:rgba(0,245,255,0.2); z-index:20; pointer-events:none;
+}
+#lang-indicator {
+  position:absolute; bottom:185px; right:25px;
+  font-size:8px; letter-spacing:3px; color:rgba(0,245,255,0.3); z-index:20; pointer-events:none;
+}
 
-    #metrics {
-      position: absolute;
-      right: 25px; top: 50%;
-      transform: translateY(-50%);
-      z-index: 15;
-      pointer-events: none;
-      display: flex; flex-direction: column; gap: 16px;
-      opacity: 0; transition: opacity 0.5s;
-    }
-    #metrics.visible { opacity: 1; }
-    .metric-block {
-      display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
-    }
-    .metric-label { font-size: 7px; letter-spacing: 3px; color: rgba(0,245,255,0.4); }
-    .metric-bar {
-      width: 80px; height: 2px;
-      background: rgba(0,245,255,0.1);
-      position: relative; overflow: hidden;
-    }
-    .metric-fill {
-      position: absolute; top: 0; left: 0; height: 100%;
-      background: var(--cyan);
-      box-shadow: 0 0 8px var(--cyan);
-      transition: width 0.4s ease;
-    }
-    .metric-value { font-size: 9px; letter-spacing: 2px; color: var(--cyan); }
+@media(max-width:600px) {
+  #metrics{display:none} .hud-tl{font-size:8px} #terminal-box{height:90px}
+}
+```
 
-    .bottom-panel {
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      z-index: 20;
-      background: linear-gradient(to top, rgba(0,0,0,0.95) 70%, transparent);
-      padding: 0 25px 20px;
-    }
-
-    #live-speech-box {
-      text-align: center;
-      font-family: var(--font-title);
-      font-size: clamp(14px, 2.5vw, 20px);
-      font-weight: 700;
-      letter-spacing: 3px;
-      color: #fff;
-      min-height: 32px;
-      padding: 8px 0 6px;
-      transition: color 0.3s;
-      text-shadow: 0 0 20px rgba(255,255,255,0.4);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    #live-speech-box.speaking {
-      color: var(--green);
-      text-shadow: 0 0 20px var(--green);
-    }
-
-    #audio_visualizer {
-      width: 100%;
-      height: 60px;
-      margin-bottom: 10px;
-      display: block;
-    }
-
-    #terminal-box {
-      width: 100%;
-      height: 120px;
-      border: 1px solid rgba(0,245,255,0.12);
-      background: rgba(0,0,0,0.4);
-      backdrop-filter: blur(5px);
-      padding: 16px 12px 10px;
-      overflow-y: auto;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(0,245,255,0.2) transparent;
-      position: relative;
-    }
-    #terminal-box::before {
-      content: 'NEURAL LOG // SESSION';
-      position: sticky; top: 0;
-      display: block;
-      font-size: 8px; letter-spacing: 3px;
-      color: rgba(0,245,255,0.25);
-      margin-bottom: 4px;
-    }
-    .log-entry {
-      font-size: 9px;
-      color: rgba(0,245,255,0.7);
-      border-left: 1px solid rgba(0,245,255,0.3);
-      padding-left: 8px;
-      margin: 3px 0;
-      white-space: pre-wrap;
-      letter-spacing: 0.5px;
-      opacity: 0;
-      animation: logAppear 0.3s forwards;
-    }
-    .log-entry .ts { color: rgba(0,245,255,0.35); margin-right: 6px; }
-    .log-entry.speech { border-color: var(--green); color: rgba(0,255,136,0.8); }
-    @keyframes logAppear {
-      from { opacity: 0; transform: translateX(-4px); }
-      to   { opacity: 1; transform: translateX(0); }
-    }
-
-    @media (max-width: 600px) {
-      #metrics { display: none; }
-      .hud-tl  { font-size: 8px; }
-      #terminal-box { height: 90px; }
-    }
   </style>
-
 </head>
-
 <body>
 
-  <div class="corner tl"></div>
-  <div class="corner tr"></div>
-  <div class="corner bl"></div>
-  <div class="corner br"></div>
+<div class="corner tl"></div>
+<div class="corner tr"></div>
+<div class="corner bl"></div>
+<div class="corner br"></div>
 
-  <div id="preloader">
-    <div class="boot-logo">myFACE</div>
-    <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
-    <div class="boot-lines" id="boot-lines"></div>
-    <div class="ring-container" id="ring-container">
-      <svg viewBox="0 0 70 70">
-        <circle cx="35" cy="35" r="30" fill="none" stroke="rgba(0,245,255,0.15)" stroke-width="1"/>
-        <circle cx="35" cy="35" r="30" fill="none" stroke="var(--cyan)" stroke-width="1.5"
-          stroke-dasharray="40 150" stroke-linecap="round"/>
-      </svg>
-      <svg viewBox="0 0 70 70" class="reverse" style="width:50px;height:50px;top:10px;left:10px">
-        <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.08)" stroke-width="1"/>
-        <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.4)" stroke-width="1"
-          stroke-dasharray="15 110" stroke-linecap="round"/>
-      </svg>
-    </div>
-    <button id="access-btn" onclick="startSequence()"><span>open system</span></button>
-    <div id="status-text">AWAITING BIOMETRIC AUTHORIZATION</div>
+<!-- PRELOADER -->
+
+<div id="preloader">
+  <div class="boot-logo">myFACE</div>
+  <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
+  <div class="boot-lines" id="boot-lines"></div>
+  <!-- Equalizer visible immediately after mic grant -->
+  <canvas id="preload-viz" width="340" height="44"></canvas>
+  <div class="ring-wrap" id="ring-wrap">
+    <svg viewBox="0 0 70 70">
+      <circle cx="35" cy="35" r="30" fill="none" stroke="rgba(0,245,255,0.15)" stroke-width="1"/>
+      <circle cx="35" cy="35" r="30" fill="none" stroke="var(--cyan)" stroke-width="1.5" stroke-dasharray="40 150" stroke-linecap="round"/>
+    </svg>
+    <svg viewBox="0 0 70 70" class="rev" style="width:50px;height:50px;top:10px;left:10px">
+      <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.08)" stroke-width="1"/>
+      <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0,245,255,0.4)" stroke-width="1" stroke-dasharray="15 110" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <button id="access-btn" onclick="startSequence()"><span>// INITIALIZE SYSTEM //</span></button>
+  <div id="status-text">AWAITING BIOMETRIC AUTHORIZATION</div>
+</div>
+
+<!-- MAIN -->
+
+<div id="container">
+  <video class="input_video" playsinline muted></video>
+  <canvas class="output_canvas"></canvas>
+  <canvas id="face-frame-canvas"></canvas>
+  <div id="acquired-flash"></div>
+
+  <div class="hud-tl">
+    <div class="hud-row"><div class="hud-dot"></div><span>LINK_STATUS: ACTIVE</span></div>
+    <div class="hud-row" id="target-status"><span>&gt; TARGET: SEEKING...</span></div>
+    <div class="hud-row" id="fps-row"><span>FPS: --</span></div>
   </div>
 
-  <div id="container">
-    <video class="input_video" playsinline muted></video>
-    <canvas class="output_canvas"></canvas>
+  <div class="hud-tr">
+    <button id="export-btn" class="ui-btn">
+      <span class="st-a">Export Log</span>
+      <span class="st-b">Save .TXT</span>
+    </button>
+    <button id="lang-btn" class="ui-btn lang-active" onclick="toggleLang()">
+      <span class="st-a" id="lang-st-a">RU</span>
+      <span class="st-b" id="lang-st-b">Switch: UK</span>
+    </button>
+    <button id="switch-cam" class="ui-btn">
+      <span class="st-a" id="cam-st-a">Front Cam</span>
+      <span class="st-b" id="cam-st-b">Back Cam</span>
+    </button>
+  </div>
 
-    <div id="acquired-flash"></div>
+  <div id="reticle">
+    <svg viewBox="0 0 120 120" fill="none">
+      <g stroke="#00f5ff" stroke-width="1" opacity="0.8">
+        <path d="M20 10L10 10L10 20"/><path d="M100 10L110 10L110 20"/>
+        <path d="M10 100L10 110L20 110"/><path d="M110 100L110 110L100 110"/>
+        <line x1="60" y1="50" x2="60" y2="56" stroke-width=".8" opacity=".5"/>
+        <line x1="60" y1="64" x2="60" y2="70" stroke-width=".8" opacity=".5"/>
+        <line x1="50" y1="60" x2="56" y2="60" stroke-width=".8" opacity=".5"/>
+        <line x1="64" y1="60" x2="70" y2="60" stroke-width=".8" opacity=".5"/>
+        <circle cx="60" cy="60" r="18" stroke-dasharray="8 6" opacity=".4">
+          <animateTransform attributeName="transform" type="rotate" from="0 60 60" to="360 60 60" dur="4s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+    </svg>
+  </div>
 
-    <div class="hud-overlay">
-      <div class="hud-tl">
-        <div class="hud-row"><div class="hud-dot"></div><span>LINK_STATUS: ACTIVE</span></div>
-        <div class="hud-row" id="target-status"><span>&gt; TARGET: SEEKING...</span></div>
-        <div class="hud-row" id="fps-row"><span>FPS: --</span></div>
-      </div>
+  <div id="target-label">TARGET ACQUIRED</div>
+  <div id="face-info"><span id="fi-0"></span><span id="fi-1"></span><span id="fi-2"></span></div>
+
+  <div id="metrics">
+    <div class="metric-block">
+      <div class="metric-label">SYMMETRY</div>
+      <div class="metric-bar"><div class="metric-fill" id="m-symmetry" style="width:0%"></div></div>
+      <div class="metric-value" id="mv-symmetry">--</div>
     </div>
-
-    <div class="hud-tr">
-      <button id="export-btn" class="ui-btn">Export Log</button>
-      <button id="lang-btn" class="ui-btn" onclick="toggleLang()">RU / UK</button>
-      <button id="switch-cam" class="ui-btn">Switch Cam</button>
+    <div class="metric-block">
+      <div class="metric-label">CONFIDENCE</div>
+      <div class="metric-bar"><div class="metric-fill" id="m-conf" style="width:0%"></div></div>
+      <div class="metric-value" id="mv-conf">--</div>
     </div>
-
-    <div id="reticle">
-      <svg viewBox="0 0 120 120" fill="none">
-        <g stroke="#00f5ff" stroke-width="1" opacity="0.8">
-          <path d="M 20 10 L 10 10 L 10 20"/>
-          <path d="M 100 10 L 110 10 L 110 20"/>
-          <path d="M 10 100 L 10 110 L 20 110"/>
-          <path d="M 110 100 L 110 110 L 100 110"/>
-          <line x1="60" y1="50" x2="60" y2="56" stroke-width="0.8" opacity="0.5"/>
-          <line x1="60" y1="64" x2="60" y2="70" stroke-width="0.8" opacity="0.5"/>
-          <line x1="50" y1="60" x2="56" y2="60" stroke-width="0.8" opacity="0.5"/>
-          <line x1="64" y1="60" x2="70" y2="60" stroke-width="0.8" opacity="0.5"/>
-          <circle cx="60" cy="60" r="18" stroke-dasharray="8 6" opacity="0.4">
-            <animateTransform attributeName="transform" type="rotate"
-              from="0 60 60" to="360 60 60" dur="4s" repeatCount="indefinite"/>
-          </circle>
-        </g>
-      </svg>
-    </div>
-
-    <div id="target-label">TARGET ACQUIRED</div>
-
-    <div id="metrics">
-      <div class="metric-block">
-        <div class="metric-label">SYMMETRY</div>
-        <div class="metric-bar"><div class="metric-fill" id="m-symmetry" style="width:0%"></div></div>
-        <div class="metric-value" id="mv-symmetry">--</div>
-      </div>
-      <div class="metric-block">
-        <div class="metric-label">CONFIDENCE</div>
-        <div class="metric-bar"><div class="metric-fill" id="m-conf" style="width:0%"></div></div>
-        <div class="metric-value" id="mv-conf">--</div>
-      </div>
-      <div class="metric-block">
-        <div class="metric-label">MESH PTS</div>
-        <div class="metric-bar"><div class="metric-fill" style="width:78%"></div></div>
-        <div class="metric-value">478</div>
-      </div>
-    </div>
-
-    <div id="creator">CREATED BY BORTIN</div>
-    <div id="lang-indicator">LANG: --</div>
-
-    <div class="bottom-panel">
-      <div id="live-speech-box">...</div>
-      <canvas id="audio_visualizer"></canvas>
-      <div id="terminal-box"><div id="log-content"></div></div>
+    <div class="metric-block">
+      <div class="metric-label">MESH PTS</div>
+      <div class="metric-bar"><div class="metric-fill" style="width:78%"></div></div>
+      <div class="metric-value">478</div>
     </div>
   </div>
 
-  <script type="module">
-    const videoEl      = document.querySelector('.input_video');
-    const canvasEl     = document.querySelector('.output_canvas');
-    const ctx          = canvasEl.getContext('2d');
-    const liveSpeech   = document.getElementById('live-speech-box');
-    const terminalBox  = document.getElementById('terminal-box');
-    const logContent   = document.getElementById('log-content');
-    const audioCanvas  = document.getElementById('audio_visualizer');
-    const aCtx         = audioCanvas.getContext('2d');
-    const targetStatus = document.getElementById('target-status');
-    const reticle      = document.getElementById('reticle');
-    const targetLabel  = document.getElementById('target-label');
-    const acqFlash     = document.getElementById('acquired-flash');
-    const metricsEl    = document.getElementById('metrics');
-    const fpsRow       = document.getElementById('fps-row');
-    const langInd      = document.getElementById('lang-indicator');
+  <div id="creator">CREATED BY BORTIN</div>
+  <div id="lang-indicator">LANG: --</div>
 
-    let facingMode     = 'user';
-    let camInstance    = null;
-    let audioCtxNode   = null;
-    let analyser       = null;
-    let freqData       = null;
-    let isSpeaking     = false;
-    let logHistory     = [];
-    let prevTarget     = false;
-    let frameCount     = 0;
-    let lastFpsTime    = performance.now();
-    let recognition    = null;
-    let recRestarting  = false;
-    let acquiredLogged = false;
+  <div class="bottom-panel">
+    <div id="live-speech-box">...</div>
+    <div class="viz-wrap">
+      <div id="viz-label">AUDIO // dB</div>
+      <canvas id="audio_visualizer" width="800" height="60"></canvas>
+    </div>
+    <div id="terminal-box"><div id="log-content"></div></div>
+  </div>
+</div>
 
-    const bootMessages = [
-      { txt: 'INITIALIZING NEURAL CORE...',   cls: 'ok',  delay: 300  },
-      { txt: 'LOADING MEDIAPIPE FACE_MESH...', cls: 'ok',  delay: 600  },
-      { txt: 'CALIBRATING DEPTH SENSORS...',   cls: 'ok',  delay: 900  },
-      { txt: 'BIOMETRIC DATABASE: READY',      cls: 'ok',  delay: 1200 },
-      { txt: 'AUDIO SUBSYSTEM: STANDBY',       cls: 'ok',  delay: 1500 },
-      { txt: 'AWAITING OPERATOR CLEARANCE...', cls: '',    delay: 1800 },
-    ];
+<script type="module">
 
-    window.addEventListener('DOMContentLoaded', () => {
-      const container = document.getElementById('boot-lines');
-      bootMessages.forEach(function(msg) {
-        setTimeout(function() {
-          var div = document.createElement('div');
-          div.className = msg.cls ? ('boot-line ' + msg.cls) : 'boot-line';
-          div.textContent = '> ' + msg.txt;
-          container.appendChild(div);
-        }, msg.delay);
-      });
+  // ── DOM ──
+  const videoEl     = document.querySelector('.input_video');
+  const canvasEl    = document.querySelector('.output_canvas');
+  const ctx         = canvasEl.getContext('2d');
+  const frameCanvas = document.getElementById('face-frame-canvas');
+  const fctx        = frameCanvas.getContext('2d');
+  const liveSpeech  = document.getElementById('live-speech-box');
+  const termBox     = document.getElementById('terminal-box');
+  const logContent  = document.getElementById('log-content');
+  const vizCanvas   = document.getElementById('audio_visualizer');
+  const pvCanvas    = document.getElementById('preload-viz'); // preloader viz
+  const vCtx        = vizCanvas.getContext('2d');
+  const pvCtx       = pvCanvas.getContext('2d');
+  const tgtStatus   = document.getElementById('target-status');
+  const reticleEl   = document.getElementById('reticle');
+  const tgtLabel    = document.getElementById('target-label');
+  const acqFlash    = document.getElementById('acquired-flash');
+  const metricsEl   = document.getElementById('metrics');
+  const fpsRow      = document.getElementById('fps-row');
+  const langInd     = document.getElementById('lang-indicator');
+  const faceInfo    = document.getElementById('face-info');
+  const fi0         = document.getElementById('fi-0');
+  const fi1         = document.getElementById('fi-1');
+  const fi2         = document.getElementById('fi-2');
+
+  // ── State ──
+  let facingMode    = 'user';
+  let camInstance   = null;
+  let audioCtxNode, analyser, freqData;
+  let vizRAF        = null;
+  let isSpeaking    = false;
+  let logHistory    = [];
+  let prevTarget    = false;
+  let frameCount    = 0;
+  let lastFpsTime   = performance.now();
+  let recognition   = null;
+  let recRestarting = false;
+  let acquiredLogged= false;
+  let currentLang   = 'ru-RU';
+  let _SR           = null;
+  // Face frame state
+  let frameGlitchTimer = 0;
+  let faceInfoLines    = ['', '', ''];
+  let typewriterDone   = false;
+
+  // ── Boot messages ──
+  const bootMsgs = [
+    { txt:'INITIALIZING NEURAL CORE...',   cls:'ok',  d:300  },
+    { txt:'LOADING MEDIAPIPE FACE_MESH...', cls:'ok',  d:600  },
+    { txt:'CALIBRATING DEPTH SENSORS...',  cls:'ok',  d:900  },
+    { txt:'BIOMETRIC DATABASE: READY',     cls:'ok',  d:1200 },
+    { txt:'AUDIO SUBSYSTEM: STANDBY',      cls:'err', d:1500 },
+    { txt:'AWAITING OPERATOR CLEARANCE...', cls:'',   d:1800 },
+  ];
+
+  window.addEventListener('DOMContentLoaded', function() {
+    var cont = document.getElementById('boot-lines');
+    bootMsgs.forEach(function(m) {
       setTimeout(function() {
-        document.getElementById('access-btn').style.display = 'block';
-      }, 2200);
+        var d = document.createElement('div');
+        d.className = m.cls ? 'boot-line ' + m.cls : 'boot-line';
+        d.textContent = '> ' + m.txt;
+        cont.appendChild(d);
+      }, m.d);
     });
+    setTimeout(function() {
+      document.getElementById('access-btn').style.display = 'block';
+    }, 2200);
+  });
 
-    window.startSequence = async function() {
-      var btn    = document.getElementById('access-btn');
-      var ring   = document.getElementById('ring-container');
-      var status = document.getElementById('status-text');
-      btn.style.display = 'none';
+  // ── EQUALIZER CORE ──
+  // Draws onto whichever canvas is passed. Called for both preload-viz and main viz.
+  function drawEQ(canvas, ctx2d, W, H) {
+    if (!analyser || !freqData) {
+      // Draw idle flat line when no audio data yet
+      ctx2d.clearRect(0, 0, W, H);
+      ctx2d.strokeStyle = 'rgba(0,245,255,0.15)';
+      ctx2d.lineWidth   = 1;
+      ctx2d.beginPath();
+      ctx2d.moveTo(0, H / 2);
+      ctx2d.lineTo(W, H / 2);
+      ctx2d.stroke();
+      return;
+    }
+    analyser.getByteFrequencyData(freqData);
+    ctx2d.clearRect(0, 0, W, H);
 
-      try {
-        status.textContent = 'ACCESSING CORE SENSORS...';
-        
-        // КРИТИЧЕСКИЙ ФИКС: Инициализация AudioContext строго по клику
-        audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtxNode.state === 'suspended') {
-            await audioCtxNode.resume();
-        }
+    var N    = freqData.length;
+    var barW = W / N;
+    var gap  = Math.max(barW * 0.12, 0.8);
 
-        var stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        ring.style.display = 'block';
-        status.textContent = 'CALIBRATING NEURAL MESH...';
+    for (var i = 0; i < N; i++) {
+      var v     = freqData[i] / 255;
+      var barH  = Math.max(v * H, 1.5);
+      var green = Math.floor(200 + v * 55);
+      var blue  = Math.floor(255 * (1 - v * 0.3));
+      var alpha = 0.3 + v * 0.7;
+      ctx2d.fillStyle = 'rgba(0,' + green + ',' + blue + ',' + alpha + ')';
+      ctx2d.fillRect(i * barW, H - barH, barW - gap, barH);
 
-        analyser = audioCtxNode.createAnalyser();
-        analyser.fftSize = 64; // Оптимально для визуального эквалайзера
-        const source = audioCtxNode.createMediaStreamSource(stream);
-        source.connect(analyser);
-        
-        freqData = new Uint8Array(analyser.frequencyBinCount);
+      // Mirror (top half, subtle)
+      ctx2d.fillStyle = 'rgba(0,' + green + ',' + blue + ',' + (alpha * 0.25) + ')';
+      ctx2d.fillRect(i * barW, 0, barW - gap, barH * 0.4);
+    }
+  }
 
-        videoEl.srcObject = stream;
-        await startCamera();
+  // Shared RAF loop — runs as soon as we have audio context, even in preloader
+  var eqRunning = false;
+  function startEQ() {
+    if (eqRunning) return;
+    eqRunning = true;
 
-        var loader = document.getElementById('preloader');
-        loader.classList.add('hidden');
-        setTimeout(function() {
-          loader.style.display = 'none';
-          document.getElementById('container').style.visibility = 'visible';
-          syncCanvasSize();
-          startVisualizer();
-          initSpeech();
-          addLog('SYSTEM ONLINE - BIOMETRIC SCANNING ACTIVE', 'system');
-        }, 800);
+    // Resize observer for main viz canvas (handles layout changes)
+    var ro = new ResizeObserver(function() {
+      var w = vizCanvas.offsetWidth;
+      var h = vizCanvas.offsetHeight;
+      if (w > 0 && h > 0) { vizCanvas.width = w; vizCanvas.height = h; }
+    });
+    ro.observe(vizCanvas);
 
-      } catch (err) {
-        status.textContent = 'FATAL ERROR: ACCESS DENIED';
-        btn.style.display = 'block';
-        ring.style.display = 'none';
-        console.error(err);
+    function loop() {
+      // Preloader viz
+      if (pvCanvas && pvCanvas.offsetParent !== null) {
+        drawEQ(pvCanvas, pvCtx, pvCanvas.width, pvCanvas.height);
+      }
+      // Main viz
+      var mw = vizCanvas.offsetWidth  || vizCanvas.width  || 600;
+      var mh = vizCanvas.offsetHeight || vizCanvas.height || 60;
+      if (vizCanvas.width  !== mw) vizCanvas.width  = mw;
+      if (vizCanvas.height !== mh) vizCanvas.height = mh;
+      drawEQ(vizCanvas, vCtx, vizCanvas.width, vizCanvas.height);
+
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ── startSequence ──
+  window.startSequence = async function() {
+    var btn    = document.getElementById('access-btn');
+    var ring   = document.getElementById('ring-wrap');
+    var status = document.getElementById('status-text');
+    btn.style.display = 'none';
+    try {
+      status.textContent = 'ACCESSING CORE SENSORS...';
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      ring.style.display = 'block';
+      status.textContent = 'CALIBRATING NEURAL MESH...';
+
+      // Audio setup — happens immediately so EQ runs in preloader
+      audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
+      analyser     = audioCtxNode.createAnalyser();
+      analyser.fftSize        = 512;
+      analyser.smoothingTimeConstant = 0.75;
+      audioCtxNode.createMediaStreamSource(stream).connect(analyser);
+      freqData = new Uint8Array(analyser.frequencyBinCount);
+
+      // Start EQ immediately — it draws in preloader while camera loads
+      startEQ();
+
+      videoEl.srcObject = stream;
+      await startCamera();
+
+      var loader = document.getElementById('preloader');
+      loader.classList.add('hidden');
+      setTimeout(function() {
+        loader.style.display = 'none';
+        document.getElementById('container').style.visibility = 'visible';
+        initSpeech();
+        addLog('SYSTEM ONLINE - BIOMETRIC SCANNING ACTIVE', 'system');
+      }, 800);
+
+    } catch(err) {
+      status.textContent = 'FATAL ERROR: ACCESS DENIED';
+      btn.style.display  = 'block';
+      document.getElementById('ring-wrap').style.display = 'none';
+      console.error(err);
+    }
+  };
+
+  // ── Language detection ──
+  function detectLang() {
+    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'ru-RU';
+    if (/^uk/i.test(nav)) return 'uk-UA';
+    return 'ru-RU';
+  }
+
+  function updateLangBtn(lang) {
+    var isRU = lang === 'ru-RU';
+    document.getElementById('lang-st-a').textContent = isRU ? 'RU' : 'UK';
+    document.getElementById('lang-st-b').textContent = isRU ? 'Switch: UK' : 'Switch: RU';
+    langInd.textContent = 'LANG: ' + lang.toUpperCase();
+  }
+
+  // ── Speech recognition ──
+  function initSpeech() {
+    _SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!_SR) { addLog('SPEECH ENGINE: NOT SUPPORTED', 'system'); return; }
+    currentLang = detectLang();
+    updateLangBtn(currentLang);
+    startRecognition(currentLang);
+  }
+
+  function startRecognition(lang) {
+    if (recognition) {
+      recognition.onend   = null;
+      recognition.onerror = null;
+      try { recognition.abort(); } catch(_) {}
+      recognition = null;
+    }
+    recRestarting = false;
+    currentLang   = lang;
+    updateLangBtn(lang);
+
+    recognition = new _SR();
+    recognition.continuous     = true;
+    recognition.interimResults = true;
+    recognition.lang           = lang;
+
+    recognition.onresult = function(e) {
+      var interim = '';
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        var t = e.results[i][0].transcript.trim();
+        if (e.results[i].isFinal && t) addLog(t, 'speech');
+        else interim = t;
+      }
+      if (interim) {
+        isSpeaking = true;
+        liveSpeech.textContent = interim.toUpperCase();
+        liveSpeech.classList.add('speaking');
       }
     };
-
-    function syncCanvasSize() {
-        if (!audioCanvas) return;
-        audioCanvas.width  = audioCanvas.clientWidth || 600;
-        audioCanvas.height = audioCanvas.clientHeight || 60;
-    }
-
-    window.addEventListener('resize', syncCanvasSize);
-
-    function startVisualizer() {
-      function drawBars() {
-        requestAnimationFrame(drawBars);
-        if (!analyser || !freqData) return;
-
-        analyser.getByteFrequencyData(freqData);
-        
-        const cw = audioCanvas.width;
-        const ch = audioCanvas.height;
-        aCtx.clearRect(0, 0, cw, ch);
-
-        const barCount = freqData.length;
-        const barWidth = cw / barCount;
-        
-        for (let i = 0; i < barCount; i++) {
-          const val = freqData[i] / 255;
-          const bh = Math.max(val * ch, 2); // Минимальная высота 2px
-          
-          const g = Math.floor(200 + val * 55);
-          const b = Math.floor(255 * (1 - val * 0.3));
-          
-          aCtx.fillStyle = `rgba(0, ${g}, ${b}, ${0.4 + val * 0.6})`;
-          aCtx.fillRect(i * barWidth, ch - bh, barWidth - 4, bh);
-          
-          // Эффект "пикового" свечения
-          if (val > 0.1) {
-              aCtx.fillStyle = `rgba(0, 245, 255, ${val * 0.5})`;
-              aCtx.fillRect(i * barWidth, ch - bh - 2, barWidth - 4, 1);
-          }
-        }
+    recognition.onend = function() {
+      isSpeaking = false;
+      liveSpeech.classList.remove('speaking');
+      liveSpeech.textContent = 'IDLE';
+      if (!recRestarting) {
+        recRestarting = true;
+        var sl = currentLang;
+        setTimeout(function() { recRestarting = false; startRecognition(sl); }, 400);
       }
-      drawBars();
+    };
+    recognition.onerror = function(e) {
+      if (e.error === 'not-allowed') addLog('MIC ACCESS DENIED', 'system');
+      else if (e.error !== 'no-speech' && e.error !== 'aborted') console.warn(e.error);
+    };
+    try { recognition.start(); addLog('SPEECH: ' + lang.toUpperCase(), 'system'); } catch(_) {}
+  }
+
+  window.toggleLang = function() {
+    if (!_SR) return;
+    var next = currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
+    recRestarting = true;
+    startRecognition(next);
+  };
+
+  // ── Camera ──
+  async function startCamera() {
+    if (camInstance) { try { await camInstance.stop(); } catch(_) {} camInstance = null; }
+    camInstance = new Camera(videoEl, {
+      onFrame: async function() {
+        if (videoEl.readyState >= 2) await faceMesh.send({ image: videoEl });
+      },
+      facingMode: facingMode, width: 1280, height: 720
+    });
+    await camInstance.start();
+    canvasEl.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+    // Update cam button states
+    document.getElementById('cam-st-a').textContent = facingMode === 'user' ? 'Front Cam' : 'Back Cam';
+    document.getElementById('cam-st-b').textContent = facingMode === 'user' ? 'Switch: Back' : 'Switch: Front';
+  }
+
+  document.getElementById('switch-cam').addEventListener('click', function() {
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    startCamera();
+  });
+
+  // ── Log ──
+  function addLog(text, type) {
+    var ts    = new Date().toLocaleTimeString('ru-RU');
+    var entry = document.createElement('div');
+    entry.className = type === 'speech' ? 'log-entry speech' : 'log-entry';
+    var safe = text.toUpperCase().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    entry.innerHTML = '<span class="ts">[' + ts + ']</span>' + safe;
+    logContent.appendChild(entry);
+    termBox.scrollTop = termBox.scrollHeight;
+    logHistory.push('[' + ts + '] ' + text.toUpperCase());
+  }
+
+  document.getElementById('export-btn').addEventListener('click', function() {
+    if (!logHistory.length) { alert('LOG IS EMPTY'); return; }
+    var blob = new Blob(['NEURAL SCANNER LOG\n==================\n' + logHistory.join('\n')], { type:'text/plain;charset=utf-8' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href = url; a.download = 'neural_log_' + Date.now() + '.txt'; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ── 3D PERSPECTIVE FACE FRAME ──
+  // Projects a box in 3D perspective around the detected face bounding box.
+  // Uses 4 vanishing-point corners in screen space to simulate depth.
+
+  var frameGlitch    = false;
+  var frameGlitchEnd = 0;
+  var typeLines      = ['', '', ''];
+  var typeTargets    = ['ID: --', 'CONF: --', 'SCAN: ACTIVE'];
+  var typeIdx        = 0;
+  var typeCharIdx    = 0;
+  var typeTimer      = 0;
+  var typeDone       = false;
+
+  function getFaceBounds(lm, W, H) {
+    var minX = 1, maxX = 0, minY = 1, maxY = 0;
+    for (var i = 0; i < lm.length; i++) {
+      if (lm[i].x < minX) minX = lm[i].x;
+      if (lm[i].x > maxX) maxX = lm[i].x;
+      if (lm[i].y < minY) minY = lm[i].y;
+      if (lm[i].y > maxY) maxY = lm[i].y;
     }
+    var pad  = 0.04;
+    var x    = (minX - pad) * W;
+    var y    = (minY - pad) * H;
+    var w    = (maxX - minX + pad * 2) * W;
+    var h    = (maxY - minY + pad * 2) * H;
+    return { x: x, y: y, w: w, h: h };
+  }
 
-    function detectSpeechLang() {
-      var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'ru-RU';
-      if (/^uk/i.test(nav)) return 'uk-UA';
-      if (/^ru/i.test(nav)) return 'ru-RU';
-      return 'ru-RU';
-    }
+  function drawPerspectiveFrame(lm, W, H, color, now) {
+    if (frameCanvas.width  !== W) frameCanvas.width  = W;
+    if (frameCanvas.height !== H) frameCanvas.height = H;
+    fctx.clearRect(0, 0, W, H);
 
-    var currentLang = 'ru-RU';
-    var _SR_ref = null;
+    var b = getFaceBounds(lm, W, H);
 
-    function initSpeech() {
-      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        addLog('SPEECH ENGINE: NOT SUPPORTED', 'system');
-        langInd.textContent = 'LANG: N/A';
-        return;
-      }
-      currentLang = detectSpeechLang();
-      _SR_ref = SR;
-      startRecognition(SR, currentLang);
-    }
+    // Perspective: back plane is smaller and shifted up/in
+    var depth  = 0.12;
+    var shrink = 1 - depth;
+    var fx = b.x, fy = b.y, fw = b.w, fh = b.h;
+    var cx = fx + fw / 2, cy = fy + fh / 2;
 
-    function startRecognition(SR, lang) {
-      if (recognition) {
-        recognition.onend = null;
-        try { recognition.abort(); } catch(_) {}
-      }
-      recRestarting = false;
-      currentLang = lang;
-      langInd.textContent = 'LANG: ' + lang.toUpperCase();
+    // Front face corners
+    var TL = { x: fx,      y: fy      };
+    var TR = { x: fx + fw, y: fy      };
+    var BL = { x: fx,      y: fy + fh };
+    var BR = { x: fx + fw, y: fy + fh };
 
-      recognition = new SR();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = lang;
+    // Back face corners (perspective shift toward center + up)
+    var shift = fh * depth * 0.5;
+    var bTL = { x: cx + (TL.x - cx) * shrink, y: cy + (TL.y - cy) * shrink - shift };
+    var bTR = { x: cx + (TR.x - cx) * shrink, y: cy + (TR.y - cy) * shrink - shift };
+    var bBL = { x: cx + (BL.x - cx) * shrink, y: cy + (BL.y - cy) * shrink - shift };
+    var bBR = { x: cx + (BR.x - cx) * shrink, y: cy + (BR.y - cy) * shrink - shift };
 
-      recognition.onresult = function(e) {
-        var interim = '';
-        for (var i = e.resultIndex; i < e.results.length; i++) {
-          var t = e.results[i][0].transcript.trim();
-          if (e.results[i].isFinal && t) {
-            addLog(t, 'speech');
+    // Glitch jitter
+    var glitch = frameGlitch && now < frameGlitchEnd;
+    var jx = glitch ? (Math.random() - 0.5) * 8 : 0;
+    var jy = glitch ? (Math.random() - 0.5) * 4 : 0;
+
+    function jp(p) { return { x: p.x + jx, y: p.y + jy }; }
+    TL = jp(TL); TR = jp(TR); BL = jp(BL); BR = jp(BR);
+    bTL = jp(bTL); bTR = jp(bTR); bBL = jp(bBL); bBR = jp(bBR);
+
+    fctx.save();
+    fctx.strokeStyle = color + 'cc';
+    fctx.lineWidth   = 1;
+    fctx.shadowColor = color;
+    fctx.shadowBlur  = glitch ? 18 : 8;
+
+    // Front face
+    fctx.globalAlpha = 0.9;
+    fctx.beginPath();
+    fctx.moveTo(TL.x, TL.y); fctx.lineTo(TR.x, TR.y);
+    fctx.lineTo(BR.x, BR.y); fctx.lineTo(BL.x, BL.y);
+    fctx.closePath(); fctx.stroke();
+
+    // Back face
+    fctx.globalAlpha = 0.35;
+    fctx.beginPath();
+    fctx.moveTo(bTL.x, bTL.y); fctx.lineTo(bTR.x, bTR.y);
+    fctx.lineTo(bBR.x, bBR.y); fctx.lineTo(bBL.x, bBL.y);
+    fctx.closePath(); fctx.stroke();
+
+    // Connecting depth edges (corner pillars)
+    fctx.globalAlpha = 0.45;
+    [[TL, bTL],[TR, bTR],[BL, bBL],[BR, bBR]].forEach(function(pair) {
+      fctx.beginPath();
+      fctx.moveTo(pair[0].x, pair[0].y);
+      fctx.lineTo(pair[1].x, pair[1].y);
+      fctx.stroke();
+    });
+
+    // Corner tick marks on front face
+    var tick = Math.min(fw, fh) * 0.12;
+    fctx.globalAlpha = 1;
+    fctx.lineWidth   = 1.5;
+    [
+      [TL, 1, 1],[TR, -1, 1],[BL, 1, -1],[BR, -1, -1]
+    ].forEach(function(c) {
+      var p = c[0], sx = c[1], sy = c[2];
+      fctx.beginPath();
+      fctx.moveTo(p.x + sx * tick, p.y); fctx.lineTo(p.x, p.y); fctx.lineTo(p.x, p.y + sy * tick);
+      fctx.stroke();
+    });
+
+    fctx.restore();
+
+    // Position face-info div at top-left of front face
+    faceInfo.style.left = (TL.x + 8) + 'px';
+    faceInfo.style.top  = (TL.y - 52) + 'px';
+    faceInfo.classList.add('visible');
+
+    // Typewriter for info lines
+    if (!typeDone) {
+      var nt = now;
+      if (nt > typeTimer) {
+        typeTimer = nt + 45;
+        if (typeIdx < typeTargets.length) {
+          if (typeCharIdx < typeTargets[typeIdx].length) {
+            typeLines[typeIdx] += typeTargets[typeIdx][typeCharIdx];
+            typeCharIdx++;
           } else {
-            interim = t;
+            typeIdx++;
+            typeCharIdx = 0;
+            if (typeIdx >= typeTargets.length) typeDone = true;
           }
         }
-        if (interim) {
-          isSpeaking = true;
-          liveSpeech.textContent = interim.toUpperCase();
-          liveSpeech.classList.add('speaking');
-        }
-      };
-
-      recognition.onend = function() {
-        isSpeaking = false;
-        liveSpeech.classList.remove('speaking');
-        liveSpeech.textContent = 'IDLE';
-        if (!recRestarting) {
-          setTimeout(() => startRecognition(SR, currentLang), 400);
-        }
-      };
-
-      try { recognition.start(); addLog('SPEECH ENGINE: ' + lang.toUpperCase(), 'system'); } catch(_) {}
+      }
     }
 
-    window.toggleLang = function() {
-      recRestarting = true;
-      var newLang = currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
-      var btn = document.getElementById('lang-btn');
-      btn.textContent = newLang === 'ru-RU' ? 'RU / UK' : 'UK / RU';
-      startRecognition(_SR_ref, newLang);
-    };
+    var suffix = glitch ? (Math.random() > 0.5 ? '_' : ' ') : '';
+    fi0.textContent = typeLines[0] + (typeIdx === 0 ? '_' : '');
+    fi1.textContent = typeLines[1] + (typeIdx === 1 ? '_' : '');
+    fi2.textContent = typeLines[2] + (typeIdx === 2 ? '_' : '') + suffix;
+  }
 
-    function addLog(text, type) {
-      var ts = new Date().toLocaleTimeString('ru-RU');
-      var entry = document.createElement('div');
-      entry.className = type === 'speech' ? 'log-entry speech' : 'log-entry';
-      entry.innerHTML = `<span class="ts">[${ts}]</span>${text.toUpperCase()}`;
-      logContent.appendChild(entry);
-      terminalBox.scrollTop = terminalBox.scrollHeight;
-      logHistory.push(`[${ts}] ${text.toUpperCase()}`);
+  function clearFrame() {
+    if (frameCanvas.width && frameCanvas.height) fctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
+    faceInfo.classList.remove('visible');
+    typeDone    = false;
+    typeIdx     = 0;
+    typeCharIdx = 0;
+    typeLines   = ['', '', ''];
+    typeTimer   = 0;
+  }
+
+  // Trigger periodic glitch
+  function triggerGlitch() {
+    frameGlitch    = true;
+    frameGlitchEnd = performance.now() + 200 + Math.random() * 300;
+    faceInfo.classList.add('glitch');
+    setTimeout(function() {
+      frameGlitch = false;
+      faceInfo.classList.remove('glitch');
+    }, 500);
+  }
+  setInterval(triggerGlitch, 3000 + Math.random() * 4000);
+
+  // ── Face Mesh results ──
+  function onResults(results) {
+    frameCount++;
+    var now = performance.now();
+    if (now - lastFpsTime >= 1000) {
+      fpsRow.querySelector('span').textContent = 'FPS: ' + frameCount;
+      frameCount = 0; lastFpsTime = now;
     }
 
-    document.getElementById('export-btn').addEventListener('click', function() {
-      if (!logHistory.length) return;
-      var content = 'NEURAL SCANNER LOG\n' + logHistory.join('\n');
-      var blob = new Blob([content], { type: 'text/plain' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `log_${Date.now()}.txt`;
-      a.click();
-    });
+    var W = videoEl.videoWidth  || canvasEl.clientWidth;
+    var H = videoEl.videoHeight || canvasEl.clientHeight;
+    if (canvasEl.width  !== W) canvasEl.width  = W;
+    if (canvasEl.height !== H) canvasEl.height = H;
 
-    async function startCamera() {
-      if (camInstance) await camInstance.stop();
-      camInstance = new Camera(videoEl, {
-        onFrame: async () => { if (videoEl.readyState >= 2) await faceMesh.send({ image: videoEl }); },
-        facingMode: facingMode, width: 1280, height: 720
-      });
-      await camInstance.start();
-      canvasEl.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
-    }
+    ctx.save();
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = 0.18;
+    ctx.drawImage(results.image, 0, 0, W, H);
+    ctx.globalAlpha = 1;
 
-    document.getElementById('switch-cam').addEventListener('click', () => {
-      facingMode = facingMode === 'user' ? 'environment' : 'user';
-      startCamera();
-    });
+    var faces     = results.multiFaceLandmarks;
+    var hasTarget = !!(faces && faces.length > 0);
 
-    function onResults(results) {
-      frameCount++;
-      var now = performance.now();
-      if (now - lastFpsTime >= 1000) {
-        fpsRow.querySelector('span').textContent = 'FPS: ' + frameCount;
-        frameCount = 0; lastFpsTime = now;
+    if (hasTarget) {
+      if (!prevTarget) {
+        reticleEl.classList.add('visible');
+        tgtLabel.classList.add('visible');
+        acqFlash.classList.remove('flash');
+        void acqFlash.offsetWidth;
+        acqFlash.classList.add('flash');
+        metricsEl.classList.add('visible');
+        tgtStatus.querySelector('span').textContent = '> TARGET: ACQUIRED';
+        // Reset typewriter on new acquire
+        typeDone = false; typeIdx = 0; typeCharIdx = 0;
+        typeLines = ['', '', ''];
+        typeTargets = [
+          'ID: ' + Math.floor(Math.random() * 9000 + 1000).toString(16).toUpperCase(),
+          'CONF: ' + (88 + Math.floor(Math.random() * 12)) + '%',
+          'SCAN: ACTIVE'
+        ];
+        if (!acquiredLogged) { addLog('BIOMETRIC TARGET ACQUIRED', 'system'); acquiredLogged = true; }
       }
 
-      var W = videoEl.videoWidth || canvasEl.clientWidth;
-      var H = videoEl.videoHeight || canvasEl.clientHeight;
-      if (canvasEl.width !== W) canvasEl.width = W;
-      if (canvasEl.height !== H) canvasEl.height = H;
+      for (var fi = 0; fi < faces.length; fi++) {
+        var lm = faces[fi];
+        var ld = Math.hypot(lm[159].x - lm[145].x, lm[159].y - lm[145].y);
+        var rd = Math.hypot(lm[386].x - lm[374].x, lm[386].y - lm[374].y);
+        var eyesClosed = ld < 0.015 && rd < 0.015;
+        var color = isSpeaking ? '#00ff88' : (eyesClosed ? '#ff2244' : '#00f5ff');
 
-      ctx.save();
-      ctx.clearRect(0, 0, W, H);
-      ctx.globalAlpha = 0.18;
-      ctx.drawImage(results.image, 0, 0, W, H);
-      ctx.globalAlpha = 1.0;
+        function dc(list, stroke, lw) { drawConnectors(ctx, lm, list, { color: stroke, lineWidth: lw }); }
 
-      var faces = results.multiFaceLandmarks;
-      var hasTarget = !!(faces && faces.length > 0);
+        dc(FACEMESH_TESSELATION,  color + '18', 0.3);
+        dc(FACEMESH_FACE_OVAL,    color + '55', 1);
+        dc(FACEMESH_RIGHT_EYE,    color + 'dd', 1.2);
+        dc(FACEMESH_LEFT_EYE,     color + 'dd', 1.2);
+        dc(FACEMESH_RIGHT_EYEBROW,color + '88', 1);
+        dc(FACEMESH_LEFT_EYEBROW, color + '88', 1);
+        dc(FACEMESH_LIPS,         color + 'dd', 1.2);
 
-      if (hasTarget) {
-        if (!prevTarget) {
-          reticle.classList.add('visible');
-          targetLabel.classList.add('visible');
-          acqFlash.classList.add('flash');
-          metricsEl.classList.add('visible');
-          targetStatus.querySelector('span').textContent = '> TARGET: ACQUIRED';
-          if (!acquiredLogged) { addLog('BIOMETRIC TARGET ACQUIRED', 'system'); acquiredLogged = true; }
-        }
+        // Iris rings
+        [[469,470,471,472,469],[474,475,476,477,474]].forEach(function(ring) {
+          ctx.beginPath();
+          ring.forEach(function(idx, k) {
+            var p = lm[idx]; if (!p) return;
+            if (k === 0) ctx.moveTo(p.x*W, p.y*H); else ctx.lineTo(p.x*W, p.y*H);
+          });
+          ctx.strokeStyle = color + 'aa'; ctx.lineWidth = 1; ctx.stroke();
+        });
 
-        const lm = faces[0];
-        const isBlinking = Math.hypot(lm[159].x-lm[145].x, lm[159].y-lm[145].y) < 0.015;
-        const color = isSpeaking ? '#00ff88' : (isBlinking ? '#ff2244' : '#00f5ff');
+        // Key dots
+        ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 6;
+        [1,4,6,10,152,234,454,33,263,61,291].forEach(function(idx) {
+          var p = lm[idx]; if (!p) return;
+          ctx.beginPath(); ctx.arc(p.x*W, p.y*H, 1.8, 0, Math.PI*2); ctx.fill();
+        });
+        ctx.shadowBlur = 0;
 
-        drawConnectors(ctx, lm, FACEMESH_TESSELATION, { color: color + '1a', lineWidth: 0.3 });
-        drawConnectors(ctx, lm, FACEMESH_FACE_OVAL, { color: color + '55', lineWidth: 1 });
-        drawConnectors(ctx, lm, FACEMESH_LIPS, { color: color + 'dd', lineWidth: 1.2 });
-        drawConnectors(ctx, lm, FACEMESH_RIGHT_EYE, { color: color + 'dd', lineWidth: 1.2 });
-        drawConnectors(ctx, lm, FACEMESH_LEFT_EYE, { color: color + 'dd', lineWidth: 1.2 });
+        // 3D perspective frame
+        drawPerspectiveFrame(lm, W, H, color, now);
 
-        const symm = Math.abs(lm[234].x - (1 - lm[454].x));
-        const symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
-        document.getElementById('m-symmetry').style.width = symmPct + '%';
+        // Metrics
+        var symm    = Math.abs(lm[234].x - (1 - lm[454].x));
+        var symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
+        document.getElementById('m-symmetry').style.width  = symmPct + '%';
         document.getElementById('mv-symmetry').textContent = symmPct + '%';
-        document.getElementById('m-conf').style.width = '94%';
-        document.getElementById('mv-conf').textContent = '94%';
-      } else {
-        if (prevTarget) {
-          reticle.classList.remove('visible');
-          targetLabel.classList.remove('visible');
-          metricsEl.classList.remove('visible');
-          targetStatus.querySelector('span').textContent = '> TARGET: SEEKING...';
-          addLog('TARGET LOST', 'system'); acquiredLogged = false;
-        }
+        var conf = 88 + Math.floor(Math.random() * 4);
+        document.getElementById('m-conf').style.width  = conf + '%';
+        document.getElementById('mv-conf').textContent = conf + '%';
       }
-      prevTarget = hasTarget;
-      ctx.restore();
+    } else {
+      if (prevTarget) {
+        reticleEl.classList.remove('visible');
+        tgtLabel.classList.remove('visible');
+        metricsEl.classList.remove('visible');
+        tgtStatus.querySelector('span').textContent = '> TARGET: SEEKING...';
+        clearFrame();
+        addLog('TARGET LOST - RESUMING SCAN', 'system');
+        acquiredLogged = false;
+      }
+      // Clear frame canvas when no face
+      if (frameCanvas.width) fctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
     }
 
-    var faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-    faceMesh.onResults(onResults);
-  </script>
+    prevTarget = hasTarget;
+    ctx.restore();
+  }
+
+  var faceMesh = new FaceMesh({
+    locateFile: function(f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + f; }
+  });
+  faceMesh.setOptions({ maxNumFaces:1, refineLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+  faceMesh.onResults(onResults);
+
+</script>
+
 </body>
 </html>
