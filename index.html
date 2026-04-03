@@ -424,7 +424,7 @@
 
   <div id="preloader">
     <div class="boot-logo">myFACE</div>
-    <div class="boot-sub">created by bortin</div>
+    <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
     <div class="boot-lines" id="boot-lines"></div>
     <div class="ring-container" id="ring-container">
       <svg viewBox="0 0 70 70">
@@ -438,8 +438,8 @@
           stroke-dasharray="15 110" stroke-linecap="round"/>
       </svg>
     </div>
-    <button id="access-btn" onclick="startSequence()"><span>open system</span></button>
-    <div id="status-text">biometric scanner</div>
+    <button id="access-btn" onclick="startSequence()"><span>// INITIALIZE SYSTEM //</span></button>
+    <div id="status-text">AWAITING BIOMETRIC AUTHORIZATION</div>
   </div>
 
   <div id="container">
@@ -458,6 +458,7 @@
 
 <div class="hud-tr">
   <button id="export-btn" class="ui-btn">Export Log</button>
+  <button id="lang-btn" class="ui-btn" onclick="toggleLang()">RU / UK</button>
   <button id="switch-cam" class="ui-btn">Switch Cam</button>
 </div>
 
@@ -611,10 +612,14 @@
     // Equalizer visualizer
     function drawBars() {
       requestAnimationFrame(drawBars);
-      if (!analyser) return;
+      if (!analyser || !freqData) return;
 
-      var cw = audioCanvas.clientWidth;
-      var ch = audioCanvas.clientHeight;
+      // getBoundingClientRect works even when container is transitioning from hidden.
+      // offsetWidth is the fallback; 600x60 is the safe last-resort default.
+      var rect = audioCanvas.getBoundingClientRect();
+      var cw   = Math.round(rect.width)  || audioCanvas.offsetWidth  || 600;
+      var ch   = Math.round(rect.height) || audioCanvas.offsetHeight || 60;
+
       if (audioCanvas.width  !== cw) audioCanvas.width  = cw;
       if (audioCanvas.height !== ch) audioCanvas.height = ch;
 
@@ -626,12 +631,12 @@
       var x     = 0;
 
       for (var i = 0; i < total; i++) {
-        var v = freqData[i] / 255;
-        var h = v * ch;
-        var g = Math.floor(200 + v * 55);
-        var b = Math.floor(255 * (1 - v * 0.3));
-        aCtx.fillStyle = 'rgba(0,' + g + ',' + b + ',' + (0.5 + v * 0.5) + ')';
-        aCtx.fillRect(x, ch - h, Math.max(barW - 1, 1), h);
+        var v  = freqData[i] / 255;
+        var bh = Math.max(v * ch, 1); // always at least 1px so idle bars are visible
+        var g  = Math.floor(200 + v * 55);
+        var b  = Math.floor(255 * (1 - v * 0.3));
+        aCtx.fillStyle = 'rgba(0,' + g + ',' + b + ',' + (0.3 + v * 0.7) + ')';
+        aCtx.fillRect(x, ch - bh, Math.max(barW - 1, 1), bh);
         x += barW;
       }
     }
@@ -639,12 +644,15 @@
     // Auto language detection based on browser locale
     function detectSpeechLang() {
       var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'ru-RU';
-      if (nav.startsWith('uk')) return 'uk-UA';
-      if (nav.startsWith('ru')) return 'ru-RU';
-      return nav; // pass through any other locale the browser reports
+      // Normalize: 'uk', 'uk-UA', 'uk_UA' all → 'uk-UA'
+      if (/^uk/i.test(nav)) return 'uk-UA';
+      if (/^ru/i.test(nav)) return 'ru-RU';
+      return 'ru-RU'; // safe fallback
     }
 
-    // Speech recognition
+    var currentLang = 'ru-RU'; // set properly in initSpeech
+
+    // Speech recognition — supports ru-RU and uk-UA
     function initSpeech() {
       var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) {
@@ -653,9 +661,23 @@
         return;
       }
 
-      var lang = detectSpeechLang();
+      currentLang = detectSpeechLang();
+      _SR_ref = SR;
+      startRecognition(SR, currentLang);
+    }
+
+    function startRecognition(SR, lang) {
+      // Stop existing session cleanly
+      if (recognition) {
+        recognition.onend  = null;
+        recognition.onerror = null;
+        try { recognition.abort(); } catch(_) {}
+        recognition = null;
+      }
+      recRestarting = false;
+
+      currentLang = lang;
       langInd.textContent = 'LANG: ' + lang.toUpperCase();
-      addLog('SPEECH ENGINE READY — ' + lang.toUpperCase(), 'system');
 
       recognition = new SR();
       recognition.continuous     = true;
@@ -683,21 +705,41 @@
         isSpeaking = false;
         liveSpeech.classList.remove('speaking');
         liveSpeech.textContent = 'IDLE';
+        // Auto-restart unless we're switching languages
         if (!recRestarting) {
           recRestarting = true;
+          var savedLang = currentLang;
+          var savedSR   = SR;
           setTimeout(function() {
             recRestarting = false;
-            try { recognition.start(); } catch(_) {}
-          }, 300);
+            startRecognition(savedSR, savedLang);
+          }, 400);
         }
       };
 
       recognition.onerror = function(e) {
-        if (e.error !== 'no-speech') console.warn('Speech error:', e.error);
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          addLog('MICROPHONE ACCESS DENIED', 'system');
+        } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+          console.warn('Speech error:', e.error);
+        }
       };
 
-      try { recognition.start(); } catch(_) {}
+      try {
+        recognition.start();
+        addLog('SPEECH ENGINE: ' + lang.toUpperCase(), 'system');
+      } catch(_) {}
     }
+
+    // Language toggle — exposed to window so lang-btn onclick works
+    var _SR_ref = null; // store SR constructor for toggle use
+    window.toggleLang = function() {
+      var newLang = currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
+      var btn = document.getElementById('lang-btn');
+      if (btn) btn.textContent = newLang === 'ru-RU' ? 'RU / UK' : 'UK / RU';
+      recRestarting = true; // suppress auto-restart from onend
+      startRecognition(_SR_ref || (window.SpeechRecognition || window.webkitSpeechRecognition), newLang);
+    };
 
     // Log helper
     function addLog(text, type) {
