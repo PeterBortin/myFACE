@@ -10,9 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
-
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
-
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
   <style>
@@ -37,7 +35,6 @@
       cursor: crosshair;
     }
 
-    /* Static CRT scanline texture */
     body::before {
       content: '';
       position: fixed; inset: 0;
@@ -52,7 +49,6 @@
       z-index: 9999;
     }
 
-    /* Corner HUD brackets */
     .corner {
       position: fixed;
       width: 30px; height: 30px;
@@ -69,7 +65,6 @@
     .corner.bl { bottom: 15px; left: 15px; transform: scaleY(-1); }
     .corner.br { bottom: 15px; right: 15px; transform: scale(-1); }
 
-    /* PRELOADER */
     #preloader {
       position: fixed; inset: 0;
       background: var(--dim);
@@ -170,7 +165,6 @@
       min-height: 14px;
     }
 
-    /* MAIN CONTAINER */
     #container {
       position: relative;
       width: 100vw; height: 100vh;
@@ -187,7 +181,6 @@
       z-index: 1;
     }
 
-    /* HUD OVERLAY */
     .hud-overlay {
       position: absolute; inset: 0;
       z-index: 10;
@@ -212,7 +205,6 @@
       50%       { opacity: 0.3; box-shadow: none; }
     }
 
-    /* TOP-RIGHT CONTROLS */
     .hud-tr {
       position: absolute;
       top: 20px; right: 20px;
@@ -241,7 +233,6 @@
     }
     .ui-btn:active { transform: scale(0.97); }
 
-    /* RETICLE */
     #reticle {
       position: absolute;
       top: 50%; left: 50%;
@@ -254,7 +245,6 @@
     #reticle.visible { opacity: 1; }
     #reticle svg { width: 100%; height: 100%; }
 
-    /* ACQUIRED FLASH */
     #acquired-flash {
       position: absolute; inset: 0;
       pointer-events: none; z-index: 30;
@@ -269,7 +259,6 @@
       100% { opacity: 0; }
     }
 
-    /* TARGET LABEL */
     #target-label {
       position: absolute;
       top: calc(50% + 70px); left: 50%;
@@ -286,7 +275,6 @@
     }
     #target-label.visible { opacity: 1; }
 
-    /* CREATOR TAG */
     #creator {
       position: absolute;
       bottom: 185px; left: 25px;
@@ -295,7 +283,6 @@
       z-index: 20; pointer-events: none;
     }
 
-    /* LANG INDICATOR */
     #lang-indicator {
       position: absolute;
       bottom: 185px; right: 25px;
@@ -304,7 +291,6 @@
       z-index: 20; pointer-events: none;
     }
 
-    /* RIGHT METRICS */
     #metrics {
       position: absolute;
       right: 25px; top: 50%;
@@ -332,7 +318,6 @@
     }
     .metric-value { font-size: 9px; letter-spacing: 2px; color: var(--cyan); }
 
-    /* BOTTOM PANEL */
     .bottom-panel {
       position: absolute;
       bottom: 0; left: 0; right: 0;
@@ -446,75 +431,72 @@
     <video class="input_video" playsinline muted></video>
     <canvas class="output_canvas"></canvas>
 
-<div id="acquired-flash"></div>
+    <div id="acquired-flash"></div>
 
-<div class="hud-overlay">
-  <div class="hud-tl">
-    <div class="hud-row"><div class="hud-dot"></div><span>LINK_STATUS: ACTIVE</span></div>
-    <div class="hud-row" id="target-status"><span>&gt; TARGET: SEEKING...</span></div>
-    <div class="hud-row" id="fps-row"><span>FPS: --</span></div>
-  </div>
-</div>
+    <div class="hud-overlay">
+      <div class="hud-tl">
+        <div class="hud-row"><div class="hud-dot"></div><span>LINK_STATUS: ACTIVE</span></div>
+        <div class="hud-row" id="target-status"><span>&gt; TARGET: SEEKING...</span></div>
+        <div class="hud-row" id="fps-row"><span>FPS: --</span></div>
+      </div>
+    </div>
 
-<div class="hud-tr">
-  <button id="export-btn" class="ui-btn">Export Log</button>
-  <button id="lang-btn" class="ui-btn" onclick="toggleLang()">RU / UK</button>
-  <button id="switch-cam" class="ui-btn">Switch Cam</button>
-</div>
+    <div class="hud-tr">
+      <button id="export-btn" class="ui-btn">Export Log</button>
+      <button id="lang-btn" class="ui-btn" onclick="toggleLang()">RU / UK</button>
+      <button id="switch-cam" class="ui-btn">Switch Cam</button>
+    </div>
 
-<div id="reticle">
-  <svg viewBox="0 0 120 120" fill="none">
-    <g stroke="#00f5ff" stroke-width="1" opacity="0.8">
-      <path d="M 20 10 L 10 10 L 10 20"/>
-      <path d="M 100 10 L 110 10 L 110 20"/>
-      <path d="M 10 100 L 10 110 L 20 110"/>
-      <path d="M 110 100 L 110 110 L 100 110"/>
-      <line x1="60" y1="50" x2="60" y2="56" stroke-width="0.8" opacity="0.5"/>
-      <line x1="60" y1="64" x2="60" y2="70" stroke-width="0.8" opacity="0.5"/>
-      <line x1="50" y1="60" x2="56" y2="60" stroke-width="0.8" opacity="0.5"/>
-      <line x1="64" y1="60" x2="70" y2="60" stroke-width="0.8" opacity="0.5"/>
-      <circle cx="60" cy="60" r="18" stroke-dasharray="8 6" opacity="0.4">
-        <animateTransform attributeName="transform" type="rotate"
-          from="0 60 60" to="360 60 60" dur="4s" repeatCount="indefinite"/>
-      </circle>
-    </g>
-  </svg>
-</div>
+    <div id="reticle">
+      <svg viewBox="0 0 120 120" fill="none">
+        <g stroke="#00f5ff" stroke-width="1" opacity="0.8">
+          <path d="M 20 10 L 10 10 L 10 20"/>
+          <path d="M 100 10 L 110 10 L 110 20"/>
+          <path d="M 10 100 L 10 110 L 20 110"/>
+          <path d="M 110 100 L 110 110 L 100 110"/>
+          <line x1="60" y1="50" x2="60" y2="56" stroke-width="0.8" opacity="0.5"/>
+          <line x1="60" y1="64" x2="60" y2="70" stroke-width="0.8" opacity="0.5"/>
+          <line x1="50" y1="60" x2="56" y2="60" stroke-width="0.8" opacity="0.5"/>
+          <line x1="64" y1="60" x2="70" y2="60" stroke-width="0.8" opacity="0.5"/>
+          <circle cx="60" cy="60" r="18" stroke-dasharray="8 6" opacity="0.4">
+            <animateTransform attributeName="transform" type="rotate"
+              from="0 60 60" to="360 60 60" dur="4s" repeatCount="indefinite"/>
+          </circle>
+        </g>
+      </svg>
+    </div>
 
-<div id="target-label">TARGET ACQUIRED</div>
+    <div id="target-label">TARGET ACQUIRED</div>
 
-<div id="metrics">
-  <div class="metric-block">
-    <div class="metric-label">SYMMETRY</div>
-    <div class="metric-bar"><div class="metric-fill" id="m-symmetry" style="width:0%"></div></div>
-    <div class="metric-value" id="mv-symmetry">--</div>
-  </div>
-  <div class="metric-block">
-    <div class="metric-label">CONFIDENCE</div>
-    <div class="metric-bar"><div class="metric-fill" id="m-conf" style="width:0%"></div></div>
-    <div class="metric-value" id="mv-conf">--</div>
-  </div>
-  <div class="metric-block">
-    <div class="metric-label">MESH PTS</div>
-    <div class="metric-bar"><div class="metric-fill" style="width:78%"></div></div>
-    <div class="metric-value">478</div>
-  </div>
-</div>
+    <div id="metrics">
+      <div class="metric-block">
+        <div class="metric-label">SYMMETRY</div>
+        <div class="metric-bar"><div class="metric-fill" id="m-symmetry" style="width:0%"></div></div>
+        <div class="metric-value" id="mv-symmetry">--</div>
+      </div>
+      <div class="metric-block">
+        <div class="metric-label">CONFIDENCE</div>
+        <div class="metric-bar"><div class="metric-fill" id="m-conf" style="width:0%"></div></div>
+        <div class="metric-value" id="mv-conf">--</div>
+      </div>
+      <div class="metric-block">
+        <div class="metric-label">MESH PTS</div>
+        <div class="metric-bar"><div class="metric-fill" style="width:78%"></div></div>
+        <div class="metric-value">478</div>
+      </div>
+    </div>
 
-<div id="creator">CREATED BY BORTIN</div>
-<div id="lang-indicator">LANG: --</div>
+    <div id="creator">CREATED BY BORTIN</div>
+    <div id="lang-indicator">LANG: --</div>
 
-<div class="bottom-panel">
-  <div id="live-speech-box">...</div>
-  <canvas id="audio_visualizer" width="600" height="60"></canvas>
-  <div id="terminal-box"><div id="log-content"></div></div>
-</div>
-
+    <div class="bottom-panel">
+      <div id="live-speech-box">...</div>
+      <canvas id="audio_visualizer"></canvas>
+      <div id="terminal-box"><div id="log-content"></div></div>
+    </div>
   </div>
 
   <script type="module">
-
-    // DOM refs
     const videoEl      = document.querySelector('.input_video');
     const canvasEl     = document.querySelector('.output_canvas');
     const ctx          = canvasEl.getContext('2d');
@@ -531,7 +513,6 @@
     const fpsRow       = document.getElementById('fps-row');
     const langInd      = document.getElementById('lang-indicator');
 
-    // State
     let facingMode     = 'user';
     let camInstance    = null;
     let audioCtxNode, analyser, freqData;
@@ -544,13 +525,12 @@
     let recRestarting  = false;
     let acquiredLogged = false;
 
-    // Boot sequence
     const bootMessages = [
       { txt: 'INITIALIZING NEURAL CORE...',   cls: 'ok',  delay: 300  },
       { txt: 'LOADING MEDIAPIPE FACE_MESH...', cls: 'ok',  delay: 600  },
       { txt: 'CALIBRATING DEPTH SENSORS...',   cls: 'ok',  delay: 900  },
       { txt: 'BIOMETRIC DATABASE: READY',      cls: 'ok',  delay: 1200 },
-      { txt: 'AUDIO SUBSYSTEM: STANDBY',       cls: 'err', delay: 1500 },
+      { txt: 'AUDIO SUBSYSTEM: STANDBY',       cls: 'ok',  delay: 1500 },
       { txt: 'AWAITING OPERATOR CLEARANCE...', cls: '',    delay: 1800 },
     ];
 
@@ -569,7 +549,6 @@
       }, 2200);
     });
 
-    // Start sequence
     window.startSequence = async function() {
       var btn    = document.getElementById('access-btn');
       var ring   = document.getElementById('ring-container');
@@ -578,14 +557,22 @@
 
       try {
         status.textContent = 'ACCESSING CORE SENSORS...';
+        
+        // Пересоздаем контекст здесь, чтобы браузер разрешил звук после клика
+        audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtxNode.state === 'suspended') {
+            await audioCtxNode.resume();
+        }
+
         var stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         ring.style.display = 'block';
         status.textContent = 'CALIBRATING NEURAL MESH...';
 
-        audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
-        analyser     = audioCtxNode.createAnalyser();
-        analyser.fftSize = 256;
-        audioCtxNode.createMediaStreamSource(stream).connect(analyser);
+        analyser = audioCtxNode.createAnalyser();
+        analyser.fftSize = 128; // Меньше размер для более четких полос
+        const source = audioCtxNode.createMediaStreamSource(stream);
+        source.connect(analyser);
+        
         freqData = new Uint8Array(analyser.frequencyBinCount);
 
         videoEl.srcObject = stream;
@@ -596,7 +583,7 @@
         setTimeout(function() {
           loader.style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
-          // Start visualizer AFTER container is visible so offsetWidth is correct
+          syncCanvasSize();
           startVisualizer();
           initSpeech();
           addLog('SYSTEM ONLINE - BIOMETRIC SCANNING ACTIVE', 'system');
@@ -610,101 +597,81 @@
       }
     };
 
-    // Equalizer — ResizeObserver keeps canvas buffer in sync with CSS layout
-    var vizRunning = false;
+    function syncCanvasSize() {
+        audioCanvas.width  = audioCanvas.clientWidth;
+        audioCanvas.height = audioCanvas.clientHeight;
+    }
+
+    window.addEventListener('resize', syncCanvasSize);
 
     function startVisualizer() {
-      if (vizRunning) return;
-      vizRunning = true;
+      function drawBars() {
+        requestAnimationFrame(drawBars);
+        if (!analyser || !freqData) return;
 
-      // Sync canvas buffer size to its CSS render size
-      var ro = new ResizeObserver(function() {
-        var w = audioCanvas.offsetWidth;
-        var h = audioCanvas.offsetHeight;
-        if (w > 0 && h > 0) {
-          audioCanvas.width  = w;
-          audioCanvas.height = h;
+        analyser.getByteFrequencyData(freqData);
+        
+        const cw = audioCanvas.width;
+        const ch = audioCanvas.height;
+        aCtx.clearRect(0, 0, cw, ch);
+
+        const barCount = freqData.length;
+        const barWidth = cw / barCount;
+        
+        for (let i = 0; i < barCount; i++) {
+          const val = freqData[i] / 255;
+          const bh = val * ch;
+          
+          const g = Math.floor(200 + val * 55);
+          const b = Math.floor(255 * (1 - val * 0.3));
+          
+          aCtx.fillStyle = `rgba(0, ${g}, ${b}, ${0.4 + val * 0.6})`;
+          // Отрисовка полос снизу вверх
+          aCtx.fillRect(i * barWidth, ch - bh, barWidth - 2, bh);
+          
+          // Легкое свечение сверху каждой полосы
+          aCtx.fillStyle = `rgba(0, 245, 255, ${val})`;
+          aCtx.fillRect(i * barWidth, ch - bh, barWidth - 2, 1);
         }
-      });
-      ro.observe(audioCanvas);
-
-      // Force initial sync right now
-      var initW = audioCanvas.offsetWidth  || 600;
-      var initH = audioCanvas.offsetHeight || 60;
-      audioCanvas.width  = initW;
-      audioCanvas.height = initH;
-
+      }
       drawBars();
     }
 
-    function drawBars() {
-      requestAnimationFrame(drawBars);
-      if (!analyser || !freqData) return;
-
-      var cw = audioCanvas.width;
-      var ch = audioCanvas.height;
-      if (cw < 1 || ch < 1) return;
-
-      analyser.getByteFrequencyData(freqData);
-      aCtx.clearRect(0, 0, cw, ch);
-
-      var total = freqData.length;
-      var barW  = cw / total;
-      var gap   = Math.max(barW * 0.15, 1);
-
-      for (var i = 0; i < total; i++) {
-        var v  = freqData[i] / 255;
-        var bh = Math.max(v * ch, 2);
-        var g  = Math.floor(200 + v * 55);
-        var b  = Math.floor(255 * (1 - v * 0.3));
-        var alpha = 0.35 + v * 0.65;
-        aCtx.fillStyle = 'rgba(0,' + g + ',' + b + ',' + alpha + ')';
-        aCtx.fillRect(i * barW, ch - bh, barW - gap, bh);
-      }
-    }
-
-    // Auto language detection based on browser locale
     function detectSpeechLang() {
       var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'ru-RU';
-      // Normalize: 'uk', 'uk-UA', 'uk_UA' all → 'uk-UA'
       if (/^uk/i.test(nav)) return 'uk-UA';
       if (/^ru/i.test(nav)) return 'ru-RU';
-      return 'ru-RU'; // safe fallback
+      return 'ru-RU';
     }
 
-    var currentLang = 'ru-RU'; // set properly in initSpeech
+    var currentLang = 'ru-RU';
+    var _SR_ref = null;
 
-    // Speech recognition — supports ru-RU and uk-UA
     function initSpeech() {
       var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) {
-        addLog('SPEECH ENGINE: NOT SUPPORTED IN THIS BROWSER', 'system');
+        addLog('SPEECH ENGINE: NOT SUPPORTED', 'system');
         langInd.textContent = 'LANG: N/A';
         return;
       }
-
       currentLang = detectSpeechLang();
       _SR_ref = SR;
       startRecognition(SR, currentLang);
     }
 
     function startRecognition(SR, lang) {
-      // Stop existing session cleanly
       if (recognition) {
-        recognition.onend  = null;
-        recognition.onerror = null;
+        recognition.onend = null;
         try { recognition.abort(); } catch(_) {}
-        recognition = null;
       }
       recRestarting = false;
-
       currentLang = lang;
       langInd.textContent = 'LANG: ' + lang.toUpperCase();
 
       recognition = new SR();
-      recognition.continuous     = true;
+      recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang           = lang;
+      recognition.lang = lang;
 
       recognition.onresult = function(e) {
         var interim = '';
@@ -727,234 +694,121 @@
         isSpeaking = false;
         liveSpeech.classList.remove('speaking');
         liveSpeech.textContent = 'IDLE';
-        // Auto-restart unless we're switching languages
         if (!recRestarting) {
-          recRestarting = true;
-          var savedLang = currentLang;
-          var savedSR   = SR;
-          setTimeout(function() {
-            recRestarting = false;
-            startRecognition(savedSR, savedLang);
-          }, 400);
+          setTimeout(() => startRecognition(SR, currentLang), 400);
         }
       };
 
-      recognition.onerror = function(e) {
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-          addLog('MICROPHONE ACCESS DENIED', 'system');
-        } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-          console.warn('Speech error:', e.error);
-        }
-      };
-
-      try {
-        recognition.start();
-        addLog('SPEECH ENGINE: ' + lang.toUpperCase(), 'system');
-      } catch(_) {}
+      try { recognition.start(); addLog('SPEECH ENGINE: ' + lang.toUpperCase(), 'system'); } catch(_) {}
     }
 
-    // Language toggle — exposed to window so lang-btn onclick works
-    var _SR_ref = null; // store SR constructor for toggle use
     window.toggleLang = function() {
+      recRestarting = true;
       var newLang = currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
       var btn = document.getElementById('lang-btn');
-      if (btn) btn.textContent = newLang === 'ru-RU' ? 'RU / UK' : 'UK / RU';
-      recRestarting = true; // suppress auto-restart from onend
-      startRecognition(_SR_ref || (window.SpeechRecognition || window.webkitSpeechRecognition), newLang);
+      btn.textContent = newLang === 'ru-RU' ? 'RU / UK' : 'UK / RU';
+      startRecognition(_SR_ref, newLang);
     };
 
-    // Log helper
     function addLog(text, type) {
-      var ts    = new Date().toLocaleTimeString('ru-RU');
+      var ts = new Date().toLocaleTimeString('ru-RU');
       var entry = document.createElement('div');
       entry.className = type === 'speech' ? 'log-entry speech' : 'log-entry';
-      var safe = text.toUpperCase().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      entry.innerHTML = '<span class="ts">[' + ts + ']</span>' + safe;
+      entry.innerHTML = `<span class="ts">[${ts}]</span>${text.toUpperCase()}`;
       logContent.appendChild(entry);
       terminalBox.scrollTop = terminalBox.scrollHeight;
-      logHistory.push('[' + ts + '] ' + text.toUpperCase());
+      logHistory.push(`[${ts}] ${text.toUpperCase()}`);
     }
 
-    // Export log
     document.getElementById('export-btn').addEventListener('click', function() {
-      if (!logHistory.length) { alert('LOG IS EMPTY'); return; }
-      var content = 'NEURAL SCANNER LOG\n==================\n' + logHistory.join('\n');
-      var blob    = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      var url     = URL.createObjectURL(blob);
-      var a       = document.createElement('a');
-      a.href     = url;
-      a.download = 'neural_log_' + Date.now() + '.txt';
+      if (!logHistory.length) return;
+      var content = 'NEURAL SCANNER LOG\n' + logHistory.join('\n');
+      var blob = new Blob([content], { type: 'text/plain' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `log_${Date.now()}.txt`;
       a.click();
-      URL.revokeObjectURL(url);
     });
 
-    // Camera start / switch
     async function startCamera() {
-      if (camInstance) {
-        try { await camInstance.stop(); } catch(_) {}
-        camInstance = null;
-      }
+      if (camInstance) await camInstance.stop();
       camInstance = new Camera(videoEl, {
-        onFrame: async function() {
-          if (videoEl.readyState >= 2) await faceMesh.send({ image: videoEl });
-        },
-        facingMode: facingMode,
-        width: 1280,
-        height: 720
+        onFrame: async () => { if (videoEl.readyState >= 2) await faceMesh.send({ image: videoEl }); },
+        facingMode: facingMode, width: 1280, height: 720
       });
       await camInstance.start();
       canvasEl.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
     }
 
-    document.getElementById('switch-cam').addEventListener('click', function() {
+    document.getElementById('switch-cam').addEventListener('click', () => {
       facingMode = facingMode === 'user' ? 'environment' : 'user';
       startCamera();
     });
 
-    // Face mesh results
     function onResults(results) {
-      // FPS counter
       frameCount++;
       var now = performance.now();
       if (now - lastFpsTime >= 1000) {
         fpsRow.querySelector('span').textContent = 'FPS: ' + frameCount;
-        frameCount  = 0;
-        lastFpsTime = now;
+        frameCount = 0; lastFpsTime = now;
       }
 
-      var W = videoEl.videoWidth  || canvasEl.clientWidth;
+      var W = videoEl.videoWidth || canvasEl.clientWidth;
       var H = videoEl.videoHeight || canvasEl.clientHeight;
-      if (canvasEl.width  !== W) canvasEl.width  = W;
+      if (canvasEl.width !== W) canvasEl.width = W;
       if (canvasEl.height !== H) canvasEl.height = H;
 
       ctx.save();
       ctx.clearRect(0, 0, W, H);
-
-      // Darkened video background
       ctx.globalAlpha = 0.18;
       ctx.drawImage(results.image, 0, 0, W, H);
       ctx.globalAlpha = 1.0;
 
-      var faces     = results.multiFaceLandmarks;
+      var faces = results.multiFaceLandmarks;
       var hasTarget = !!(faces && faces.length > 0);
 
       if (hasTarget) {
         if (!prevTarget) {
           reticle.classList.add('visible');
           targetLabel.classList.add('visible');
-          acqFlash.classList.remove('flash');
-          void acqFlash.offsetWidth;
           acqFlash.classList.add('flash');
           metricsEl.classList.add('visible');
           targetStatus.querySelector('span').textContent = '> TARGET: ACQUIRED';
-          if (!acquiredLogged) {
-            addLog('BIOMETRIC TARGET ACQUIRED - SCANNING IN PROGRESS', 'system');
-            acquiredLogged = true;
-          }
+          if (!acquiredLogged) { addLog('BIOMETRIC TARGET ACQUIRED', 'system'); acquiredLogged = true; }
         }
 
-        for (var fi = 0; fi < faces.length; fi++) {
-          var lm = faces[fi];
+        const lm = faces[0];
+        const isBlinking = Math.hypot(lm[159].x-lm[145].x, lm[159].y-lm[145].y) < 0.015;
+        const color = isSpeaking ? '#00ff88' : (isBlinking ? '#ff2244' : '#00f5ff');
 
-          // Blink detection
-          var ld = Math.hypot(lm[159].x - lm[145].x, lm[159].y - lm[145].y);
-          var rd = Math.hypot(lm[386].x - lm[374].x, lm[386].y - lm[374].y);
-          var eyesClosed = ld < 0.015 && rd < 0.015;
+        drawConnectors(ctx, lm, FACEMESH_TESSELATION, { color: color + '1a', lineWidth: 0.3 });
+        drawConnectors(ctx, lm, FACEMESH_FACE_OVAL, { color: color + '55', lineWidth: 1 });
+        drawConnectors(ctx, lm, FACEMESH_LIPS, { color: color + 'dd', lineWidth: 1.2 });
+        drawConnectors(ctx, lm, FACEMESH_RIGHT_EYE, { color: color + 'dd', lineWidth: 1.2 });
+        drawConnectors(ctx, lm, FACEMESH_LEFT_EYE, { color: color + 'dd', lineWidth: 1.2 });
 
-          var color = isSpeaking ? '#00ff88' : (eyesClosed ? '#ff2244' : '#00f5ff');
-
-          // Connector shorthand
-          function dc(list, stroke, lw) {
-            drawConnectors(ctx, lm, list, { color: stroke, lineWidth: lw });
-          }
-
-          // 1. Full tesselation — deforms with real face geometry
-          dc(FACEMESH_TESSELATION, color + '1a', 0.35);
-
-          // 2. Face oval
-          dc(FACEMESH_FACE_OVAL, color + '55', 1);
-
-          // 3. Eyes
-          dc(FACEMESH_RIGHT_EYE, color + 'dd', 1.2);
-          dc(FACEMESH_LEFT_EYE,  color + 'dd', 1.2);
-
-          // 4. Iris rings (refineLandmarks pts 469-477)
-          var irisRings = [[469,470,471,472,469],[474,475,476,477,474]];
-          for (var r = 0; r < irisRings.length; r++) {
-            var ring = irisRings[r];
-            ctx.beginPath();
-            for (var k = 0; k < ring.length; k++) {
-              var p = lm[ring[k]];
-              if (!p) continue;
-              if (k === 0) ctx.moveTo(p.x * W, p.y * H);
-              else         ctx.lineTo(p.x * W, p.y * H);
-            }
-            ctx.strokeStyle = color + 'aa';
-            ctx.lineWidth   = 1;
-            ctx.stroke();
-          }
-
-          // 5. Eyebrows
-          dc(FACEMESH_RIGHT_EYEBROW, color + '88', 1);
-          dc(FACEMESH_LEFT_EYEBROW,  color + '88', 1);
-
-          // 6. Lips — FACEMESH_LIPS covers outer + inner contours,
-          //    same approach as FACEMESH_RIGHT_EYE / LEFT_EYE
-          dc(FACEMESH_LIPS, color + 'dd', 1.2);
-
-          // 7. Key landmark dots with glow
-          var keyPts = [1, 4, 6, 10, 152, 234, 454, 33, 263, 61, 291];
-          ctx.fillStyle   = color;
-          ctx.shadowColor = color;
-          ctx.shadowBlur  = 6;
-          for (var d = 0; d < keyPts.length; d++) {
-            var pt = lm[keyPts[d]];
-            if (!pt) continue;
-            ctx.beginPath();
-            ctx.arc(pt.x * W, pt.y * H, 1.8, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          ctx.shadowBlur = 0;
-
-          // 8. Symmetry metric
-          var symm    = Math.abs(lm[234].x - (1 - lm[454].x));
-          var symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
-          document.getElementById('m-symmetry').style.width  = symmPct + '%';
-          document.getElementById('mv-symmetry').textContent = symmPct + '%';
-          document.getElementById('m-conf').style.width      = '91%';
-          document.getElementById('mv-conf').textContent     = '91%';
-        }
-
+        const symm = Math.abs(lm[234].x - (1 - lm[454].x));
+        const symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
+        document.getElementById('m-symmetry').style.width = symmPct + '%';
+        document.getElementById('mv-symmetry').textContent = symmPct + '%';
+        document.getElementById('m-conf').style.width = '94%';
+        document.getElementById('mv-conf').textContent = '94%';
       } else {
         if (prevTarget) {
           reticle.classList.remove('visible');
           targetLabel.classList.remove('visible');
           metricsEl.classList.remove('visible');
           targetStatus.querySelector('span').textContent = '> TARGET: SEEKING...';
-          addLog('TARGET LOST - RESUMING SCAN', 'system');
-          acquiredLogged = false;
+          addLog('TARGET LOST', 'system'); acquiredLogged = false;
         }
       }
-
       prevTarget = hasTarget;
       ctx.restore();
     }
 
-    // Face mesh init
-    var faceMesh = new FaceMesh({
-      locateFile: function(file) {
-        return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + file;
-      }
-    });
-    faceMesh.setOptions({
-      maxNumFaces:            1,
-      refineLandmarks:        true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence:  0.5
-    });
+    var faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
-
   </script>
-
 </body>
 </html>
