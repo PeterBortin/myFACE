@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myFACE</title>
+  <title>myFACE // NEURAL SCANNER</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
@@ -38,7 +38,7 @@
       cursor: crosshair;
     }
 
-    /* ─── SCAN LINE OVERLAY ─── */
+    /* ─── STATIC SCANLINE TEXTURE (no animation) ─── */
     body::before {
       content: '';
       position: fixed; inset: 0;
@@ -46,16 +46,10 @@
         0deg,
         transparent,
         transparent 2px,
-        rgba(0,0,0,0.08) 2px,
-        rgba(0,0,0,0.08) 4px
+        rgba(0,0,0,0.06) 2px,
+        rgba(0,0,0,0.06) 4px
       );
       pointer-events: none; z-index: 9999;
-      animation: scanMove 8s linear infinite;
-    }
-
-    @keyframes scanMove {
-      0% { background-position: 0 0; }
-      100% { background-position: 0 100px; }
     }
 
     /* ─── CORNER BRACKETS ─── */
@@ -483,8 +477,9 @@
 
   <div id="preloader">
     <div class="boot-logo">myFACE</div>
-    <div class="boot-sub">created by bortin</div>
+    <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
 
+```
 <div class="boot-lines" id="boot-lines"></div>
 
 <div class="ring-container" id="ring-container">
@@ -500,8 +495,9 @@
   </svg>
 </div>
 
-<button id="access-btn" onclick="startSequence()"><span>open system</span></button>
-<div id="status-text">avaiting biometric</div>
+<button id="access-btn" onclick="startSequence()"><span>// INITIALIZE SYSTEM //</span></button>
+<div id="status-text">AWAITING BIOMETRIC AUTHORIZATION</div>
+```
 
   </div>
 
@@ -511,6 +507,7 @@
     <video class="input_video" playsinline muted></video>
     <canvas class="output_canvas"></canvas>
 
+```
 <!-- Scan bar -->
 <div id="scan-bar"></div>
 
@@ -520,16 +517,17 @@
 <!-- HUD overlay -->
 <div class="hud-overlay">
   <div class="hud-tl">
-    <div class="hud-row"><div class="hud-dot"></div><span>link: active</span></div>
-    <div class="hud-row" id="target-status"><span>> target: seeking...</span></div>
-    <div class="hud-row" id="fps-row"><span>fps: --</span></div>
+    <div class="hud-row"><div class="hud-dot"></div><span>LINK_STATUS: ACTIVE</span></div>
+    <div class="hud-row" id="target-status"><span>> TARGET: SEEKING...</span></div>
+    <div class="hud-row" id="fps-row"><span>FPS: --</span></div>
   </div>
 </div>
 
 <!-- Controls -->
 <div class="hud-tr">
-  <button id="export-btn" class="ui-btn">export</button>
-  <button id="switch-cam" class="ui-btn">switch cam</button>
+  <button id="export-btn" class="ui-btn">Export Log</button>
+  <button id="lang-btn" class="ui-btn" onclick="switchLang()">Lang: RU</button>
+  <button id="switch-cam" class="ui-btn">Switch Cam</button>
 </div>
 
 <!-- Reticle -->
@@ -578,7 +576,7 @@
 </div>
 
 <!-- Creator -->
-<div id="creator">created by bortin</div>
+<div id="creator">CREATED BY BORTIN</div>
 
 <!-- Bottom panel -->
 <div class="bottom-panel">
@@ -586,6 +584,7 @@
   <canvas id="audio_visualizer"></canvas>
   <div id="terminal-box"><div id="log-content"></div></div>
 </div>
+```
 
   </div>
 
@@ -674,7 +673,6 @@
         setTimeout(() => {
           loader.style.display = 'none';
           document.getElementById('container').style.visibility = 'visible';
-          scanBar.classList.add('active');
           initSpeech();
           addLog('SYSTEM ONLINE — BIOMETRIC SCANNING ACTIVE', 'system');
         }, 800);
@@ -712,7 +710,9 @@
       }
     }
 
-    // ─── SPEECH RECOGNITION (with restart guard) ───
+    // ─── SPEECH RECOGNITION — dual language (RU / UK) ───
+    let speechLang = 'ru-RU';
+
     function initSpeech() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { addLog('SPEECH ENGINE: NOT AVAILABLE IN THIS BROWSER', 'warn'); return; }
@@ -720,7 +720,7 @@
       recognition = new SR();
       recognition.continuous     = true;
       recognition.interimResults = true;
-      recognition.lang           = 'ru-RU';
+      recognition.lang           = speechLang;
 
       recognition.onresult = (e) => {
         let interim = '';
@@ -745,17 +745,28 @@
         liveSpeech.textContent = 'IDLE';
         if (!recStarting) {
           recStarting = true;
-          setTimeout(() => { recStarting = false; recognition.start(); }, 200);
+          setTimeout(() => { recStarting = false; safeStartRecognition(); }, 200);
         }
       };
 
       recognition.onerror = (e) => {
-        if (e.error !== 'no-speech') {
-          console.warn('Speech error:', e.error);
-        }
+        if (e.error !== 'no-speech') console.warn('Speech error:', e.error);
       };
 
-      recognition.start();
+      safeStartRecognition();
+    }
+
+    function safeStartRecognition() {
+      try { recognition.lang = speechLang; recognition.start(); } catch(e) {}
+    }
+
+    function switchLang() {
+      speechLang = speechLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
+      const label = speechLang === 'ru-RU' ? 'RU' : 'UK';
+      document.getElementById('lang-btn').textContent = `Lang: ${label}`;
+      addLog(`SPEECH LANGUAGE: ${speechLang === 'ru-RU' ? 'RUSSIAN' : 'UKRAINIAN'}`, 'system');
+      recStarting = false;
+      try { recognition.stop(); } catch(e) {}
     }
 
     // ─── LOG ───
@@ -823,6 +834,9 @@
         }
 
         for (const landmarks of faces) {
+          const W = canvasEl.width;
+          const H = canvasEl.height;
+
           // Eye open/close detection
           const ld = Math.hypot(landmarks[159].x - landmarks[145].x, landmarks[159].y - landmarks[145].y);
           const rd = Math.hypot(landmarks[386].x - landmarks[374].x, landmarks[386].y - landmarks[374].y);
@@ -830,46 +844,65 @@
 
           // Color logic
           let color;
-          if (isSpeaking)    color = '#00ff88';
+          if (isSpeaking)      color = '#00ff88';
           else if (eyesClosed) color = '#ff2244';
           else                 color = '#00f5ff';
 
-          // Mesh tesselation (subtle)
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, { color: color + '22', lineWidth: 0.4 });
+          // Helper: draw a connector set via MediaPipe's own connector lists
+          const dc = (list, stroke, lw) =>
+            drawConnectors(canvasCtx, landmarks, list, { color: stroke, lineWidth: lw });
 
-          // Eye contours
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, { color: color + 'cc', lineWidth: 1 });
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE,  { color: color + 'cc', lineWidth: 1 });
+          // ── 1. Base tesselation — drawn with actual landmark coords so it deforms with face ──
+          dc(FACEMESH_TESSELATION, color + '1a', 0.35);
 
-          // Face oval
-          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, { color: color + '44', lineWidth: 0.8 });
+          // ── 2. Face oval ──
+          dc(FACEMESH_FACE_OVAL, color + '55', 1);
 
-          // Mouth outer
-          const mouthOuter = [61,146,91,181,84,17,314,405,321,375,291,308,324,318,402,317,14,87,178,88,95,185,40,39,37,0,267,269,270,409];
-          canvasCtx.beginPath();
-          canvasCtx.strokeStyle = color + 'bb';
-          canvasCtx.lineWidth = 1;
-          mouthOuter.forEach((idx, i) => {
-            const p = landmarks[idx];
-            const px = p.x * canvasEl.width;
-            const py = p.y * canvasEl.height;
-            i === 0 ? canvasCtx.moveTo(px, py) : canvasCtx.lineTo(px, py);
-          });
-          canvasCtx.closePath();
-          canvasCtx.stroke();
+          // ── 3. Eyes (same style as before) ──
+          dc(FACEMESH_RIGHT_EYE, color + 'dd', 1.2);
+          dc(FACEMESH_LEFT_EYE,  color + 'dd', 1.2);
 
-          // Landmark dots for key points
-          const keyPoints = [1, 4, 6, 8, 9, 10, 152, 234, 454];
-          keyPoints.forEach(idx => {
-            const p = landmarks[idx];
+          // ── 4. Eye irises (refineLandmarks gives us 468–472 & 473–477) ──
+          // Right iris: 469–472, Left iris: 474–477
+          const rightIris = [469, 470, 471, 472, 469];
+          const leftIris  = [474, 475, 476, 477, 474];
+          [rightIris, leftIris].forEach(ring => {
             canvasCtx.beginPath();
-            canvasCtx.arc(p.x * canvasEl.width, p.y * canvasEl.height, 2, 0, Math.PI * 2);
-            canvasCtx.fillStyle = color;
-            canvasCtx.fill();
+            ring.forEach((idx, i) => {
+              const p = landmarks[idx];
+              if (!p) return;
+              i === 0
+                ? canvasCtx.moveTo(p.x * W, p.y * H)
+                : canvasCtx.lineTo(p.x * W, p.y * H);
+            });
+            canvasCtx.strokeStyle = color + 'aa';
+            canvasCtx.lineWidth   = 1;
+            canvasCtx.stroke();
           });
 
-          // Update metrics
-          const symm = Math.abs(landmarks[234].x - (1 - landmarks[454].x));
+          // ── 5. Eyebrows ──
+          dc(FACEMESH_RIGHT_EYEBROW, color + '88', 1);
+          dc(FACEMESH_LEFT_EYEBROW,  color + '88', 1);
+
+          // ── 6. Lips — outer + inner, same approach as eyes via MediaPipe connector lists ──
+          dc(FACEMESH_LIPS, color + 'dd', 1.2);
+
+          // ── 7. Key landmark dots ──
+          const keyPts = [1, 4, 6, 10, 152, 234, 454, 33, 263, 61, 291];
+          keyPts.forEach(idx => {
+            const p = landmarks[idx];
+            if (!p) return;
+            canvasCtx.beginPath();
+            canvasCtx.arc(p.x * W, p.y * H, 1.8, 0, Math.PI * 2);
+            canvasCtx.fillStyle = color;
+            canvasCtx.shadowColor = color;
+            canvasCtx.shadowBlur  = 6;
+            canvasCtx.fill();
+            canvasCtx.shadowBlur  = 0;
+          });
+
+          // ── 8. Update metrics ──
+          const symm    = Math.abs(landmarks[234].x - (1 - landmarks[454].x));
           const symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
           document.getElementById('m-symmetry').style.width  = symmPct + '%';
           document.getElementById('mv-symmetry').textContent = symmPct + '%';
