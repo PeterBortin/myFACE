@@ -515,7 +515,9 @@
 
     let facingMode     = 'user';
     let camInstance    = null;
-    let audioCtxNode, analyser, freqData;
+    let audioCtxNode   = null;
+    let analyser       = null;
+    let freqData       = null;
     let isSpeaking     = false;
     let logHistory     = [];
     let prevTarget     = false;
@@ -558,7 +560,7 @@
       try {
         status.textContent = 'ACCESSING CORE SENSORS...';
         
-        // Пересоздаем контекст здесь, чтобы браузер разрешил звук после клика
+        // КРИТИЧЕСКИЙ ФИКС: Инициализация AudioContext строго по клику
         audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtxNode.state === 'suspended') {
             await audioCtxNode.resume();
@@ -569,7 +571,7 @@
         status.textContent = 'CALIBRATING NEURAL MESH...';
 
         analyser = audioCtxNode.createAnalyser();
-        analyser.fftSize = 128; // Меньше размер для более четких полос
+        analyser.fftSize = 64; // Оптимально для визуального эквалайзера
         const source = audioCtxNode.createMediaStreamSource(stream);
         source.connect(analyser);
         
@@ -598,8 +600,9 @@
     };
 
     function syncCanvasSize() {
-        audioCanvas.width  = audioCanvas.clientWidth;
-        audioCanvas.height = audioCanvas.clientHeight;
+        if (!audioCanvas) return;
+        audioCanvas.width  = audioCanvas.clientWidth || 600;
+        audioCanvas.height = audioCanvas.clientHeight || 60;
     }
 
     window.addEventListener('resize', syncCanvasSize);
@@ -620,18 +623,19 @@
         
         for (let i = 0; i < barCount; i++) {
           const val = freqData[i] / 255;
-          const bh = val * ch;
+          const bh = Math.max(val * ch, 2); // Минимальная высота 2px
           
           const g = Math.floor(200 + val * 55);
           const b = Math.floor(255 * (1 - val * 0.3));
           
           aCtx.fillStyle = `rgba(0, ${g}, ${b}, ${0.4 + val * 0.6})`;
-          // Отрисовка полос снизу вверх
-          aCtx.fillRect(i * barWidth, ch - bh, barWidth - 2, bh);
+          aCtx.fillRect(i * barWidth, ch - bh, barWidth - 4, bh);
           
-          // Легкое свечение сверху каждой полосы
-          aCtx.fillStyle = `rgba(0, 245, 255, ${val})`;
-          aCtx.fillRect(i * barWidth, ch - bh, barWidth - 2, 1);
+          // Эффект "пикового" свечения
+          if (val > 0.1) {
+              aCtx.fillStyle = `rgba(0, 245, 255, ${val * 0.5})`;
+              aCtx.fillRect(i * barWidth, ch - bh - 2, barWidth - 4, 1);
+          }
         }
       }
       drawBars();
