@@ -63,12 +63,6 @@ body::before {
 .boot-line.err::after { content:' [WARN]'; color:var(--red); }
 @keyframes fadeIn { to{opacity:1} }
 
-/* Equalizer in preloader — starts immediately on mic grant */
-#preload-viz {
-  width:min(340px,80vw); height:44px; margin-bottom:30px;
-  border:1px solid rgba(0,245,255,0.12); background:rgba(0,245,255,0.02);
-}
-
 #access-btn {
   font-family:var(--ft); background:transparent; border:1px solid var(--cyan);
   color:var(--cyan); padding:14px 40px; font-size:11px; letter-spacing:4px;
@@ -262,8 +256,6 @@ body::before {
   <div class="boot-logo">myFACE</div>
   <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
   <div class="boot-lines" id="boot-lines"></div>
-  <!-- Equalizer visible immediately after mic grant -->
-  <canvas id="preload-viz" width="340" height="44"></canvas>
   <div class="ring-wrap" id="ring-wrap">
     <svg viewBox="0 0 70 70">
       <circle cx="35" cy="35" r="30" fill="none" stroke="rgba(0,245,255,0.15)" stroke-width="1"/>
@@ -369,9 +361,7 @@ body::before {
   const termBox     = document.getElementById('terminal-box');
   const logContent  = document.getElementById('log-content');
   const vizCanvas   = document.getElementById('audio_visualizer');
-  const pvCanvas    = document.getElementById('preload-viz'); // preloader viz
   const vCtx        = vizCanvas.getContext('2d');
-  const pvCtx       = pvCanvas.getContext('2d');
   const tgtStatus   = document.getElementById('target-status');
   const reticleEl   = document.getElementById('reticle');
   const tgtLabel    = document.getElementById('target-label');
@@ -430,7 +420,7 @@ body::before {
   });
 
   // ── EQUALIZER CORE ──
-  // Draws onto whichever canvas is passed. Called for both preload-viz and main viz.
+  // Draws onto the given canvas/context.
   function drawEQ(canvas, ctx2d, W, H) {
     if (!analyser || !freqData) {
       // Draw idle flat line when no audio data yet
@@ -480,17 +470,12 @@ body::before {
     ro.observe(vizCanvas);
 
     function loop() {
-      // Preloader viz
-      if (pvCanvas && pvCanvas.offsetParent !== null) {
-        drawEQ(pvCanvas, pvCtx, pvCanvas.width, pvCanvas.height);
-      }
-      // Main viz
+      // Main visualizer only
       var mw = vizCanvas.offsetWidth  || vizCanvas.width  || 600;
       var mh = vizCanvas.offsetHeight || vizCanvas.height || 60;
       if (vizCanvas.width  !== mw) vizCanvas.width  = mw;
       if (vizCanvas.height !== mh) vizCanvas.height = mh;
       drawEQ(vizCanvas, vCtx, vizCanvas.width, vizCanvas.height);
-
       requestAnimationFrame(loop);
     }
     requestAnimationFrame(loop);
@@ -658,9 +643,6 @@ body::before {
   });
 
   // ── 3D PERSPECTIVE FACE FRAME ──
-  // Projects a box in 3D perspective around the detected face bounding box.
-  // Uses 4 vanishing-point corners in screen space to simulate depth.
-
   var frameGlitch    = false;
   var frameGlitchEnd = 0;
   var typeLines      = ['', '', ''];
@@ -670,6 +652,10 @@ body::before {
   var typeTimer      = 0;
   var typeDone       = false;
 
+  // Smoothed bounding box — lerp toward real values each frame
+  var smoothBounds = null;
+  var LERP = 0.18; // lower = smoother/slower, higher = snappier
+
   function getFaceBounds(lm, W, H) {
     var minX = 1, maxX = 0, minY = 1, maxY = 0;
     for (var i = 0; i < lm.length; i++) {
@@ -678,12 +664,28 @@ body::before {
       if (lm[i].y < minY) minY = lm[i].y;
       if (lm[i].y > maxY) maxY = lm[i].y;
     }
-    var pad  = 0.04;
-    var x    = (minX - pad) * W;
-    var y    = (minY - pad) * H;
-    var w    = (maxX - minX + pad * 2) * W;
-    var h    = (maxY - minY + pad * 2) * H;
-    return { x: x, y: y, w: w, h: h };
+    // Larger padding = bigger frame around face
+    var padX = 0.07;
+    var padY = 0.10;
+    return {
+      x: (minX - padX) * W,
+      y: (minY - padY) * H,
+      w: (maxX - minX + padX * 2) * W,
+      h: (maxY - minY + padY * 2) * H
+    };
+  }
+
+  function lerpBounds(target, W, H) {
+    if (!smoothBounds) {
+      // First frame: snap immediately
+      smoothBounds = { x: target.x, y: target.y, w: target.w, h: target.h };
+    } else {
+      smoothBounds.x += (target.x - smoothBounds.x) * LERP;
+      smoothBounds.y += (target.y - smoothBounds.y) * LERP;
+      smoothBounds.w += (target.w - smoothBounds.w) * LERP;
+      smoothBounds.h += (target.h - smoothBounds.h) * LERP;
+    }
+    return smoothBounds;
   }
 
   function drawPerspectiveFrame(lm, W, H, color, now) {
@@ -691,22 +693,21 @@ body::before {
     if (frameCanvas.height !== H) frameCanvas.height = H;
     fctx.clearRect(0, 0, W, H);
 
-    var b = getFaceBounds(lm, W, H);
+    var rawBounds = getFaceBounds(lm, W, H);
+    var b = lerpBounds(rawBounds, W, H);
 
-    // Perspective: back plane is smaller and shifted up/in
-    var depth  = 0.12;
+    // Perspective depth plane
+    var depth  = 0.10;
     var shrink = 1 - depth;
     var fx = b.x, fy = b.y, fw = b.w, fh = b.h;
     var cx = fx + fw / 2, cy = fy + fh / 2;
 
-    // Front face corners
     var TL = { x: fx,      y: fy      };
     var TR = { x: fx + fw, y: fy      };
     var BL = { x: fx,      y: fy + fh };
     var BR = { x: fx + fw, y: fy + fh };
 
-    // Back face corners (perspective shift toward center + up)
-    var shift = fh * depth * 0.5;
+    var shift = fh * depth * 0.45;
     var bTL = { x: cx + (TL.x - cx) * shrink, y: cy + (TL.y - cy) * shrink - shift };
     var bTR = { x: cx + (TR.x - cx) * shrink, y: cy + (TR.y - cy) * shrink - shift };
     var bBL = { x: cx + (BL.x - cx) * shrink, y: cy + (BL.y - cy) * shrink - shift };
@@ -716,47 +717,44 @@ body::before {
     var glitch = frameGlitch && now < frameGlitchEnd;
     var jx = glitch ? (Math.random() - 0.5) * 8 : 0;
     var jy = glitch ? (Math.random() - 0.5) * 4 : 0;
-
     function jp(p) { return { x: p.x + jx, y: p.y + jy }; }
     TL = jp(TL); TR = jp(TR); BL = jp(BL); BR = jp(BR);
     bTL = jp(bTL); bTR = jp(bTR); bBL = jp(bBL); bBR = jp(bBR);
 
     fctx.save();
     fctx.strokeStyle = color + 'cc';
-    fctx.lineWidth   = 1;
+    fctx.lineWidth   = 1.2;
     fctx.shadowColor = color;
-    fctx.shadowBlur  = glitch ? 18 : 8;
+    fctx.shadowBlur  = glitch ? 20 : 10;
 
-    // Front face
+    // Front face rect
     fctx.globalAlpha = 0.9;
     fctx.beginPath();
     fctx.moveTo(TL.x, TL.y); fctx.lineTo(TR.x, TR.y);
     fctx.lineTo(BR.x, BR.y); fctx.lineTo(BL.x, BL.y);
     fctx.closePath(); fctx.stroke();
 
-    // Back face
-    fctx.globalAlpha = 0.35;
+    // Back face rect
+    fctx.globalAlpha = 0.3;
     fctx.beginPath();
     fctx.moveTo(bTL.x, bTL.y); fctx.lineTo(bTR.x, bTR.y);
     fctx.lineTo(bBR.x, bBR.y); fctx.lineTo(bBL.x, bBL.y);
     fctx.closePath(); fctx.stroke();
 
-    // Connecting depth edges (corner pillars)
-    fctx.globalAlpha = 0.45;
-    [[TL, bTL],[TR, bTR],[BL, bBL],[BR, bBR]].forEach(function(pair) {
+    // Depth edge pillars
+    fctx.globalAlpha = 0.4;
+    [[TL,bTL],[TR,bTR],[BL,bBL],[BR,bBR]].forEach(function(pair) {
       fctx.beginPath();
       fctx.moveTo(pair[0].x, pair[0].y);
       fctx.lineTo(pair[1].x, pair[1].y);
       fctx.stroke();
     });
 
-    // Corner tick marks on front face
-    var tick = Math.min(fw, fh) * 0.12;
+    // Corner L-ticks
+    var tick = Math.min(fw, fh) * 0.11;
     fctx.globalAlpha = 1;
-    fctx.lineWidth   = 1.5;
-    [
-      [TL, 1, 1],[TR, -1, 1],[BL, 1, -1],[BR, -1, -1]
-    ].forEach(function(c) {
+    fctx.lineWidth   = 1.8;
+    [[TL,1,1],[TR,-1,1],[BL,1,-1],[BR,-1,-1]].forEach(function(c) {
       var p = c[0], sx = c[1], sy = c[2];
       fctx.beginPath();
       fctx.moveTo(p.x + sx * tick, p.y); fctx.lineTo(p.x, p.y); fctx.lineTo(p.x, p.y + sy * tick);
@@ -765,16 +763,15 @@ body::before {
 
     fctx.restore();
 
-    // Position face-info div at top-left of front face
-    faceInfo.style.left = (TL.x + 8) + 'px';
-    faceInfo.style.top  = (TL.y - 52) + 'px';
+    // Info label: position inside top-right of frame (avoids clipping left side)
+    faceInfo.style.left = (TR.x - 130) + 'px';
+    faceInfo.style.top  = (TL.y + 8) + 'px';
     faceInfo.classList.add('visible');
 
-    // Typewriter for info lines
+    // Typewriter
     if (!typeDone) {
-      var nt = now;
-      if (nt > typeTimer) {
-        typeTimer = nt + 45;
+      if (now > typeTimer) {
+        typeTimer = now + 45;
         if (typeIdx < typeTargets.length) {
           if (typeCharIdx < typeTargets[typeIdx].length) {
             typeLines[typeIdx] += typeTargets[typeIdx][typeCharIdx];
@@ -788,20 +785,18 @@ body::before {
       }
     }
 
-    var suffix = glitch ? (Math.random() > 0.5 ? '_' : ' ') : '';
-    fi0.textContent = typeLines[0] + (typeIdx === 0 ? '_' : '');
-    fi1.textContent = typeLines[1] + (typeIdx === 1 ? '_' : '');
-    fi2.textContent = typeLines[2] + (typeIdx === 2 ? '_' : '') + suffix;
+    var cursor = glitch ? (Math.random() > 0.5 ? '_' : ' ') : '_';
+    fi0.textContent = typeLines[0] + (typeIdx === 0 ? cursor : '');
+    fi1.textContent = typeLines[1] + (typeIdx === 1 ? cursor : '');
+    fi2.textContent = typeLines[2] + (typeIdx === 2 ? cursor : '');
   }
 
   function clearFrame() {
     if (frameCanvas.width && frameCanvas.height) fctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
     faceInfo.classList.remove('visible');
-    typeDone    = false;
-    typeIdx     = 0;
-    typeCharIdx = 0;
-    typeLines   = ['', '', ''];
-    typeTimer   = 0;
+    smoothBounds = null; // reset lerp so next acquire snaps immediately
+    typeDone = false; typeIdx = 0; typeCharIdx = 0;
+    typeLines = ['','','']; typeTimer = 0;
   }
 
   // Trigger periodic glitch
@@ -874,7 +869,26 @@ body::before {
         dc(FACEMESH_LEFT_EYE,     color + 'dd', 1.2);
         dc(FACEMESH_RIGHT_EYEBROW,color + '88', 1);
         dc(FACEMESH_LEFT_EYEBROW, color + '88', 1);
-        dc(FACEMESH_LIPS,         color + 'dd', 1.2);
+
+        // Mouth OPENING only — inner gap between upper and lower lip.
+        // Upper inner lip edge: 13,312,311,310,415,308,324,318,402,317,14,87,178,88,95,61,146,91,181,84,17,314,405,321,375,291
+        // We draw just the inner opening polygon (no outer lip contour).
+        // Upper inner edge landmarks (top of opening): 13,312,311,310,415,308
+        // Lower inner edge: 14,317,402,318,324,308  (closes back to 308)
+        // MediaPipe inner mouth: upper row 13->312->311->310->415->308, lower row 14->317->402->318->324->308
+        var mouthOpen = [13,312,311,310,415,308,324,318,402,317,14,87,178,88,95,13];
+        ctx.beginPath();
+        ctx.strokeStyle = color + 'dd';
+        ctx.lineWidth   = 1.2;
+        ctx.shadowColor = color;
+        ctx.shadowBlur  = 4;
+        mouthOpen.forEach(function(idx, k) {
+          var p = lm[idx]; if (!p) return;
+          if (k === 0) ctx.moveTo(p.x*W, p.y*H); else ctx.lineTo(p.x*W, p.y*H);
+        });
+        ctx.closePath();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
 
         // Iris rings
         [[469,470,471,472,469],[474,475,476,477,474]].forEach(function(ring) {
