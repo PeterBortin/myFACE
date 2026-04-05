@@ -135,17 +135,19 @@ body::before {
 }
 #reticle.visible { opacity:1; }
 
-/* 3D face frame — drawn on overlay canvas */
+/* 3D face frame — drawn on overlay canvas, mirrored same as video */
 #face-frame-canvas {
   position:absolute; inset:0; width:100%; height:100%;
   pointer-events:none; z-index:8;
+  transform: scaleX(-1);
 }
 
-/* Face info label box (top-left of 3D frame) */
+/* Face info label box — anchored to frame, no transition so it moves every frame */
 #face-info {
   position:absolute; z-index:12; pointer-events:none;
-  font-size:9px; letter-spacing:1.5px; line-height:1.7;
-  color:var(--cyan); opacity:0; transition:opacity .3s;
+  font-size:9px; letter-spacing:1.5px; line-height:1.8;
+  color:var(--cyan); opacity:0;
+  text-shadow: 0 0 8px rgba(0,245,255,0.6);
 }
 #face-info.visible { opacity:1; }
 #face-info span { display:block; overflow:hidden; white-space:nowrap; }
@@ -610,7 +612,9 @@ body::before {
       facingMode: facingMode, width: 1280, height: 720
     });
     await camInstance.start();
-    canvasEl.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+    var mirror = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+    canvasEl.style.transform    = mirror;
+    frameCanvas.style.transform = mirror;
     // Update cam button states
     document.getElementById('cam-st-a').textContent = facingMode === 'user' ? 'Front Cam' : 'Back Cam';
     document.getElementById('cam-st-b').textContent = facingMode === 'user' ? 'Switch: Back' : 'Switch: Front';
@@ -763,9 +767,28 @@ body::before {
 
     fctx.restore();
 
-    // Info label: position inside top-right of frame (avoids clipping left side)
-    faceInfo.style.left = (TR.x - 130) + 'px';
-    faceInfo.style.top  = (TL.y + 8) + 'px';
+    // Convert canvas coords → CSS screen coords.
+    // frameCanvas is CSS-mirrored (scaleX(-1)), so X is flipped in screen space.
+    // canvas buffer = W×H, CSS element = rect.width × rect.height
+    var rect   = frameCanvas.getBoundingClientRect();
+    var scaleX = rect.width  / W;
+    var scaleY = rect.height / H;
+
+    // TL in canvas pixels. After CSS scaleX(-1): screen_x = rect.width - (TL.x * scaleX)
+    // We want the label just inside the top-left corner of the front rect (in screen space).
+    var screenTLx = rect.width  - (TL.x * scaleX); // mirrored X
+    var screenTLy = TL.y * scaleY;
+
+    // Clamp so label never goes off-screen left
+    var labelX = Math.max(4, screenTLx - faceInfo.offsetWidth - 6);
+    // If it would go off-screen left, place it just inside the right side of the frame
+    if (labelX < 4) {
+      var screenTRx = rect.width - (TR.x * scaleX);
+      labelX = Math.min(screenTRx + 4, rect.width - faceInfo.offsetWidth - 4);
+    }
+
+    faceInfo.style.left = labelX + 'px';
+    faceInfo.style.top  = Math.max(4, screenTLy + 8) + 'px';
     faceInfo.classList.add('visible');
 
     // Typewriter
@@ -870,25 +893,25 @@ body::before {
         dc(FACEMESH_RIGHT_EYEBROW,color + '88', 1);
         dc(FACEMESH_LEFT_EYEBROW, color + '88', 1);
 
-        // Mouth OPENING only — inner gap between upper and lower lip.
-        // Upper inner lip edge: 13,312,311,310,415,308,324,318,402,317,14,87,178,88,95,61,146,91,181,84,17,314,405,321,375,291
-        // We draw just the inner opening polygon (no outer lip contour).
-        // Upper inner edge landmarks (top of opening): 13,312,311,310,415,308
-        // Lower inner edge: 14,317,402,318,324,308  (closes back to 308)
-        // MediaPipe inner mouth: upper row 13->312->311->310->415->308, lower row 14->317->402->318->324->308
-        var mouthOpen = [13,312,311,310,415,308,324,318,402,317,14,87,178,88,95,13];
+        // Mouth opening — inner lip ring in correct MediaPipe order (smooth, no crossing lines).
+        // Upper inner edge L→R: 78,191,80,81,82,13,312,311,310,415,308
+        // Lower inner edge R→L: 324,318,402,317,14,87,178,88,95,78
+        // Full closed ring traversed in order:
+        var innerLip = [78,191,80,81,82,13,312,311,310,415,308,324,318,402,317,14,87,178,88,95];
+        ctx.save();
         ctx.beginPath();
         ctx.strokeStyle = color + 'dd';
         ctx.lineWidth   = 1.2;
         ctx.shadowColor = color;
         ctx.shadowBlur  = 4;
-        mouthOpen.forEach(function(idx, k) {
-          var p = lm[idx]; if (!p) return;
-          if (k === 0) ctx.moveTo(p.x*W, p.y*H); else ctx.lineTo(p.x*W, p.y*H);
-        });
+        for (var mi = 0; mi < innerLip.length; mi++) {
+          var mp = lm[innerLip[mi]]; if (!mp) continue;
+          if (mi === 0) ctx.moveTo(mp.x*W, mp.y*H);
+          else          ctx.lineTo(mp.x*W, mp.y*H);
+        }
         ctx.closePath();
         ctx.stroke();
-        ctx.shadowBlur = 0;
+        ctx.restore();
 
         // Iris rings
         [[469,470,471,472,469],[474,475,476,477,474]].forEach(function(ring) {
