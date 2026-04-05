@@ -24,13 +24,11 @@
     body { background:var(--dim); overflow:hidden; font-family:var(--fm); color:var(--cyan); cursor:crosshair; }
 
 ```
-/* CRT lines */
 body::before {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:9999;
   background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
 }
 
-/* Corner brackets */
 .corner { position:fixed; width:30px; height:30px; z-index:1000; pointer-events:none; }
 .corner::before,.corner::after { content:''; position:absolute; background:var(--cyan); }
 .corner::before { width:100%; height:2px; top:0; }
@@ -63,11 +61,6 @@ body::before {
 .boot-line.err::after { content:' [WARN]'; color:var(--red); }
 @keyframes fadeIn { to{opacity:1} }
 
-#preload-viz {
-  width:min(340px,80vw); height:44px; margin-bottom:30px;
-  border:1px solid rgba(0,245,255,0.12); background:rgba(0,245,255,0.02);
-}
-
 #access-btn {
   font-family:var(--ft); background:transparent; border:1px solid var(--cyan);
   color:var(--cyan); padding:14px 40px; font-size:11px; letter-spacing:4px;
@@ -92,9 +85,10 @@ body::before {
 /* ── MAIN ── */
 #container { position:relative; width:100vw; height:100vh; visibility:hidden; }
 .input_video { display:none; }
+/* canvas без CSS-зеркала — зеркало делаем в JS */
 .output_canvas {
   position:absolute; inset:0; width:100%; height:100%;
-  object-fit:cover; transform:scaleX(-1); z-index:1;
+  object-fit:cover; z-index:1;
 }
 
 .hud-tl {
@@ -135,23 +129,22 @@ body::before {
 }
 #reticle.visible { opacity:1; }
 
-#face-frame-canvas {
-  position:absolute; inset:0; width:100%; height:100%;
-  pointer-events:none; z-index:8;
-}
-
+/* Надпись над лбом — без рамки, центрируется по X через JS */
 #face-info {
   position:absolute; z-index:12; pointer-events:none;
-  font-size:9px; letter-spacing:1.5px; line-height:1.7;
+  font-size:9px; letter-spacing:1.5px; line-height:1.8;
   color:var(--cyan); opacity:0; transition:opacity .3s;
+  text-align:center; transform:translateX(-50%);
+  white-space:nowrap;
+  text-shadow:0 0 8px var(--cyan);
 }
 #face-info.visible { opacity:1; }
-#face-info span { display:block; overflow:hidden; white-space:nowrap; }
+#face-info span { display:block; }
 @keyframes glitchText {
-  0%  { clip-path:inset(0 0 90% 0); transform:translate(-2px,0); }
-  15% { clip-path:inset(30% 0 50% 0); transform:translate(2px,0); }
-  30% { clip-path:inset(70% 0 10% 0); transform:translate(-1px,0); }
-  50%,100% { clip-path:none; transform:none; }
+  0%  { clip-path:inset(0 0 90% 0); transform:translateX(-50%) translate(-2px,0); }
+  15% { clip-path:inset(30% 0 50% 0); transform:translateX(-50%) translate(2px,0); }
+  30% { clip-path:inset(70% 0 10% 0); transform:translateX(-50%) translate(-1px,0); }
+  50%,100% { clip-path:none; transform:translateX(-50%); }
 }
 #face-info.glitch { animation:glitchText .35s steps(1); }
 
@@ -189,10 +182,7 @@ body::before {
 }
 #live-speech-box.speaking { color:var(--green); text-shadow:0 0 20px var(--green); }
 
-#audio_visualizer {
-  width:100%; height:60px; margin-bottom:10px; display:block;
-  position:relative;
-}
+#audio_visualizer { width:100%; height:60px; margin-bottom:10px; display:block; }
 #viz-label {
   position:absolute; right:0; top:-14px;
   font-size:7px; letter-spacing:3px; color:rgba(0,245,255,0.3); pointer-events:none;
@@ -242,13 +232,12 @@ body::before {
 <div class="corner bl"></div>
 <div class="corner br"></div>
 
-<!-- PRELOADER -->
+<!-- PRELOADER (эквалайзер убран) -->
 
 <div id="preloader">
   <div class="boot-logo">myFACE</div>
   <div class="boot-sub">NEURAL BIOMETRIC SCANNER v2.0</div>
   <div class="boot-lines" id="boot-lines"></div>
-  <canvas id="preload-viz" width="340" height="44"></canvas>
   <div class="ring-wrap" id="ring-wrap">
     <svg viewBox="0 0 70 70">
       <circle cx="35" cy="35" r="30" fill="none" stroke="rgba(0,245,255,0.15)" stroke-width="1"/>
@@ -268,7 +257,6 @@ body::before {
 <div id="container">
   <video class="input_video" playsinline muted></video>
   <canvas class="output_canvas"></canvas>
-  <canvas id="face-frame-canvas"></canvas>
   <div id="acquired-flash"></div>
 
   <div class="hud-tl">
@@ -309,6 +297,7 @@ body::before {
   </div>
 
   <div id="target-label">TARGET ACQUIRED</div>
+  <!-- Надпись над лбом (рамка убрана) -->
   <div id="face-info"><span id="fi-0"></span><span id="fi-1"></span><span id="fi-2"></span></div>
 
   <div id="metrics">
@@ -345,35 +334,31 @@ body::before {
 <script type="module">
 
   // ── DOM ──
-  const videoEl     = document.querySelector('.input_video');
-  const canvasEl    = document.querySelector('.output_canvas');
-  const ctx         = canvasEl.getContext('2d');
-  const frameCanvas = document.getElementById('face-frame-canvas');
-  const fctx        = frameCanvas.getContext('2d');
-  const liveSpeech  = document.getElementById('live-speech-box');
-  const termBox     = document.getElementById('terminal-box');
-  const logContent  = document.getElementById('log-content');
-  const vizCanvas   = document.getElementById('audio_visualizer');
-  const pvCanvas    = document.getElementById('preload-viz');
-  const vCtx        = vizCanvas.getContext('2d');
-  const pvCtx       = pvCanvas.getContext('2d');
-  const tgtStatus   = document.getElementById('target-status');
-  const reticleEl   = document.getElementById('reticle');
-  const tgtLabel    = document.getElementById('target-label');
-  const acqFlash    = document.getElementById('acquired-flash');
-  const metricsEl   = document.getElementById('metrics');
-  const fpsRow      = document.getElementById('fps-row');
-  const langInd     = document.getElementById('lang-indicator');
-  const faceInfo    = document.getElementById('face-info');
-  const fi0         = document.getElementById('fi-0');
-  const fi1         = document.getElementById('fi-1');
-  const fi2         = document.getElementById('fi-2');
+  const videoEl    = document.querySelector('.input_video');
+  const canvasEl   = document.querySelector('.output_canvas');
+  const ctx        = canvasEl.getContext('2d');
+  const liveSpeech = document.getElementById('live-speech-box');
+  const termBox    = document.getElementById('terminal-box');
+  const logContent = document.getElementById('log-content');
+  const vizCanvas  = document.getElementById('audio_visualizer');
+  const vCtx       = vizCanvas.getContext('2d');
+  const tgtStatus  = document.getElementById('target-status');
+  const reticleEl  = document.getElementById('reticle');
+  const tgtLabel   = document.getElementById('target-label');
+  const acqFlash   = document.getElementById('acquired-flash');
+  const metricsEl  = document.getElementById('metrics');
+  const fpsRow     = document.getElementById('fps-row');
+  const langInd    = document.getElementById('lang-indicator');
+  const faceInfo   = document.getElementById('face-info');
+  const fi0        = document.getElementById('fi-0');
+  const fi1        = document.getElementById('fi-1');
+  const fi2        = document.getElementById('fi-2');
 
   // ── State ──
   let facingMode    = 'user';
   let camInstance   = null;
   let audioCtxNode, analyser, freqData;
-  let activeStream  = null; // хранит MediaStream для корректного завершения
+  let activeStream  = null;
   let isSpeaking    = false;
   let logHistory    = [];
   let prevTarget    = false;
@@ -384,20 +369,9 @@ body::before {
   let acquiredLogged= false;
   let currentLang   = 'ru-RU';
   let _SR           = null;
+  let mirrorX       = true; // фронтальная камера — зеркалим
 
-  // ── Mouth landmark indices (MediaPipe FaceMesh) ──
-  // Outer lip contour (61 точка — угол рта, обход по часовой)
-  const MOUTH_OUTER = [
-    [61,146],[146,91],[91,181],[181,84],[84,17],[17,314],[314,405],[405,321],[321,375],[375,291],
-    [61,185],[185,40],[40,39],[39,37],[37,0],[0,267],[267,269],[269,270],[270,409],[409,291]
-  ];
-  // Внутренний контур рта
-  const MOUTH_INNER = [
-    [78,95],[95,88],[88,178],[178,87],[87,14],[14,317],[317,402],[402,318],[318,324],[324,308],
-    [78,191],[191,80],[80,81],[81,82],[82,13],[13,312],[312,311],[311,310],[310,415],[415,308]
-  ];
-
-  // ── Boot messages ──
+  // ── Boot ──
   const bootMsgs = [
     { txt:'INITIALIZING NEURAL CORE...',    cls:'ok',  d:300  },
     { txt:'LOADING MEDIAPIPE FACE_MESH...',  cls:'ok',  d:600  },
@@ -422,80 +396,58 @@ body::before {
     }, 2200);
   });
 
-  // ── Cleanup: останавливаем микрофон/камеру при закрытии ──
+  // ── Cleanup ──
   function releaseMediaResources() {
-    // Остановить все треки активного стрима
     if (activeStream) {
-      activeStream.getTracks().forEach(function(track) {
-        track.stop();
-      });
+      activeStream.getTracks().forEach(function(t) { t.stop(); });
       activeStream = null;
     }
-    // Остановить аудио-контекст
     if (audioCtxNode && audioCtxNode.state !== 'closed') {
       audioCtxNode.close().catch(function() {});
     }
-    // Остановить распознавание речи
     if (recognition) {
-      recRestarting = true; // предотвратить авто-рестарт
+      recRestarting = true;
       try { recognition.abort(); } catch(_) {}
       recognition = null;
     }
-    // Остановить камеру MediaPipe
     if (camInstance) {
       try { camInstance.stop(); } catch(_) {}
       camInstance = null;
     }
   }
 
-  // Закрытие вкладки / окна
-  window.addEventListener('beforeunload', function() {
-    releaseMediaResources();
-  });
+  window.addEventListener('beforeunload', releaseMediaResources);
 
-  // Переход на другую вкладку (страница скрыта) — опционально,
-  // можно убрать если нужна работа в фоне
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'hidden') {
-      // Останавливаем только распознавание речи чтобы не тратить ресурсы
-      if (recognition) {
-        try { recognition.abort(); } catch(_) {}
-      }
+      if (recognition) { try { recognition.abort(); } catch(_) {} }
     } else if (document.visibilityState === 'visible') {
-      // Возобновляем распознавание при возврате
       if (_SR && !recRestarting) {
         setTimeout(function() { startRecognition(currentLang); }, 300);
       }
     }
   });
 
-  // ── EQUALIZER ──
-  function drawEQ(canvas, ctx2d, W, H) {
+  // ── EQUALIZER (только основной канвас) ──
+  function drawEQ(W, H) {
     if (!analyser || !freqData) {
-      ctx2d.clearRect(0, 0, W, H);
-      ctx2d.strokeStyle = 'rgba(0,245,255,0.15)';
-      ctx2d.lineWidth   = 1;
-      ctx2d.beginPath();
-      ctx2d.moveTo(0, H / 2);
-      ctx2d.lineTo(W, H / 2);
-      ctx2d.stroke();
+      vCtx.clearRect(0, 0, W, H);
+      vCtx.strokeStyle = 'rgba(0,245,255,0.15)';
+      vCtx.lineWidth = 1;
+      vCtx.beginPath(); vCtx.moveTo(0, H/2); vCtx.lineTo(W, H/2); vCtx.stroke();
       return;
     }
     analyser.getByteFrequencyData(freqData);
-    ctx2d.clearRect(0, 0, W, H);
-    var N    = freqData.length;
-    var barW = W / N;
-    var gap  = Math.max(barW * 0.12, 0.8);
+    vCtx.clearRect(0, 0, W, H);
+    var N = freqData.length, barW = W / N, gap = Math.max(barW * 0.12, 0.8);
     for (var i = 0; i < N; i++) {
-      var v     = freqData[i] / 255;
-      var barH  = Math.max(v * H, 1.5);
-      var green = Math.floor(200 + v * 55);
-      var blue  = Math.floor(255 * (1 - v * 0.3));
-      var alpha = 0.3 + v * 0.7;
-      ctx2d.fillStyle = 'rgba(0,' + green + ',' + blue + ',' + alpha + ')';
-      ctx2d.fillRect(i * barW, H - barH, barW - gap, barH);
-      ctx2d.fillStyle = 'rgba(0,' + green + ',' + blue + ',' + (alpha * 0.25) + ')';
-      ctx2d.fillRect(i * barW, 0, barW - gap, barH * 0.4);
+      var v = freqData[i] / 255;
+      var barH = Math.max(v * H, 1.5);
+      var g = Math.floor(200 + v * 55), b = Math.floor(255 * (1 - v * 0.3)), a = 0.3 + v * 0.7;
+      vCtx.fillStyle = 'rgba(0,' + g + ',' + b + ',' + a + ')';
+      vCtx.fillRect(i * barW, H - barH, barW - gap, barH);
+      vCtx.fillStyle = 'rgba(0,' + g + ',' + b + ',' + (a * 0.25) + ')';
+      vCtx.fillRect(i * barW, 0, barW - gap, barH * 0.4);
     }
   }
 
@@ -504,48 +456,41 @@ body::before {
     if (eqRunning) return;
     eqRunning = true;
     var ro = new ResizeObserver(function() {
-      var w = vizCanvas.offsetWidth;
-      var h = vizCanvas.offsetHeight;
+      var w = vizCanvas.offsetWidth, h = vizCanvas.offsetHeight;
       if (w > 0 && h > 0) { vizCanvas.width = w; vizCanvas.height = h; }
     });
     ro.observe(vizCanvas);
-    function loop() {
-      if (pvCanvas && pvCanvas.offsetParent !== null) {
-        drawEQ(pvCanvas, pvCtx, pvCanvas.width, pvCanvas.height);
-      }
-      var mw = vizCanvas.offsetWidth  || vizCanvas.width  || 600;
+    (function loop() {
+      var mw = vizCanvas.offsetWidth || vizCanvas.width || 600;
       var mh = vizCanvas.offsetHeight || vizCanvas.height || 60;
-      if (vizCanvas.width  !== mw) vizCanvas.width  = mw;
+      if (vizCanvas.width !== mw) vizCanvas.width = mw;
       if (vizCanvas.height !== mh) vizCanvas.height = mh;
-      drawEQ(vizCanvas, vCtx, vizCanvas.width, vizCanvas.height);
+      drawEQ(vizCanvas.width, vizCanvas.height);
       requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
+    })();
   }
 
   // ── startSequence ──
   window.startSequence = async function() {
-    var btn    = document.getElementById('access-btn');
-    var ring   = document.getElementById('ring-wrap');
+    var btn = document.getElementById('access-btn');
+    var ring = document.getElementById('ring-wrap');
     var status = document.getElementById('status-text');
     btn.style.display = 'none';
     try {
       status.textContent = 'ACCESSING CORE SENSORS...';
       var stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      activeStream = stream; // сохраняем для последующего освобождения
-
+      activeStream = stream;
       ring.style.display = 'block';
       status.textContent = 'CALIBRATING NEURAL MESH...';
 
       audioCtxNode = new (window.AudioContext || window.webkitAudioContext)();
-      analyser     = audioCtxNode.createAnalyser();
-      analyser.fftSize               = 512;
+      analyser = audioCtxNode.createAnalyser();
+      analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.75;
       audioCtxNode.createMediaStreamSource(stream).connect(analyser);
       freqData = new Uint8Array(analyser.frequencyBinCount);
 
       startEQ();
-
       videoEl.srcObject = stream;
       await startCamera();
 
@@ -557,11 +502,10 @@ body::before {
         initSpeech();
         addLog('SYSTEM ONLINE - BIOMETRIC SCANNING ACTIVE', 'system');
       }, 800);
-
     } catch(err) {
       status.textContent = 'FATAL ERROR: ACCESS DENIED';
-      btn.style.display  = 'block';
-      document.getElementById('ring-wrap').style.display = 'none';
+      btn.style.display = 'block';
+      ring.style.display = 'none';
       console.error(err);
     }
   };
@@ -569,8 +513,7 @@ body::before {
   // ── Language ──
   function detectLang() {
     var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'ru-RU';
-    if (/^uk/i.test(nav)) return 'uk-UA';
-    return 'ru-RU';
+    return /^uk/i.test(nav) ? 'uk-UA' : 'ru-RU';
   }
   function updateLangBtn(lang) {
     var isRU = lang === 'ru-RU';
@@ -590,20 +533,13 @@ body::before {
 
   function startRecognition(lang) {
     if (recognition) {
-      recognition.onend   = null;
-      recognition.onerror = null;
+      recognition.onend = null; recognition.onerror = null;
       try { recognition.abort(); } catch(_) {}
       recognition = null;
     }
-    recRestarting = false;
-    currentLang   = lang;
-    updateLangBtn(lang);
-
+    recRestarting = false; currentLang = lang; updateLangBtn(lang);
     recognition = new _SR();
-    recognition.continuous     = true;
-    recognition.interimResults = true;
-    recognition.lang           = lang;
-
+    recognition.continuous = true; recognition.interimResults = true; recognition.lang = lang;
     recognition.onresult = function(e) {
       var interim = '';
       for (var i = e.resultIndex; i < e.results.length; i++) {
@@ -636,14 +572,14 @@ body::before {
 
   window.toggleLang = function() {
     if (!_SR) return;
-    var next = currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU';
     recRestarting = true;
-    startRecognition(next);
+    startRecognition(currentLang === 'ru-RU' ? 'uk-UA' : 'ru-RU');
   };
 
   // ── Camera ──
   async function startCamera() {
     if (camInstance) { try { await camInstance.stop(); } catch(_) {} camInstance = null; }
+    mirrorX = (facingMode === 'user');
     camInstance = new Camera(videoEl, {
       onFrame: async function() {
         if (videoEl.readyState >= 2) await faceMesh.send({ image: videoEl });
@@ -651,7 +587,6 @@ body::before {
       facingMode: facingMode, width: 1280, height: 720
     });
     await camInstance.start();
-    canvasEl.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
     document.getElementById('cam-st-a').textContent = facingMode === 'user' ? 'Front Cam' : 'Back Cam';
     document.getElementById('cam-st-b').textContent = facingMode === 'user' ? 'Switch: Back' : 'Switch: Front';
   }
@@ -663,7 +598,7 @@ body::before {
 
   // ── Log ──
   function addLog(text, type) {
-    var ts    = new Date().toLocaleTimeString('ru-RU');
+    var ts = new Date().toLocaleTimeString('ru-RU');
     var entry = document.createElement('div');
     entry.className = type === 'speech' ? 'log-entry speech' : 'log-entry';
     var safe = text.toUpperCase().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -676,196 +611,173 @@ body::before {
   document.getElementById('export-btn').addEventListener('click', function() {
     if (!logHistory.length) { alert('LOG IS EMPTY'); return; }
     var blob = new Blob(['NEURAL SCANNER LOG\n==================\n' + logHistory.join('\n')], { type:'text/plain;charset=utf-8' });
-    var url  = URL.createObjectURL(blob);
-    var a    = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
     a.href = url; a.download = 'neural_log_' + Date.now() + '.txt'; a.click();
     URL.revokeObjectURL(url);
   });
 
-  // ── 3D PERSPECTIVE FACE FRAME ──
+  // ── Face info (надпись над лбом) ──
   var frameGlitch    = false;
   var frameGlitchEnd = 0;
   var typeLines      = ['', '', ''];
   var typeTargets    = ['ID: --', 'CONF: --', 'SCAN: ACTIVE'];
-  var typeIdx        = 0;
-  var typeCharIdx    = 0;
-  var typeTimer      = 0;
-  var typeDone       = false;
+  var typeIdx        = 0, typeCharIdx = 0, typeTimer = 0, typeDone = false;
 
-  function getFaceBounds(lm, W, H) {
-    var minX = 1, maxX = 0, minY = 1, maxY = 0;
-    for (var i = 0; i < lm.length; i++) {
-      if (lm[i].x < minX) minX = lm[i].x;
-      if (lm[i].x > maxX) maxX = lm[i].x;
-      if (lm[i].y < minY) minY = lm[i].y;
-      if (lm[i].y > maxY) maxY = lm[i].y;
-    }
-    var pad = 0.04;
-    return {
-      x: (minX - pad) * W,
-      y: (minY - pad) * H,
-      w: (maxX - minX + pad * 2) * W,
-      h: (maxY - minY + pad * 2) * H
-    };
-  }
+  // Перевод нормализованных координат → пиксели с учётом зеркала
+  function mpx(lmX, W) { return mirrorX ? (1 - lmX) * W : lmX * W; }
+  function mpy(lmY, H) { return lmY * H; }
 
-  function drawPerspectiveFrame(lm, W, H, color, now) {
-    if (frameCanvas.width  !== W) frameCanvas.width  = W;
-    if (frameCanvas.height !== H) frameCanvas.height = H;
-    fctx.clearRect(0, 0, W, H);
+  function updateFaceInfo(lm, W, H, now) {
+    // Точка лба: landmark 10 (верхушка головы) — центрируем надпись по X
+    var topPt = lm[10];
+    var foreX = mpx(topPt.x, W);
+    var foreY = mpy(topPt.y, H) - 22;
+    foreY = Math.max(foreY, 4);
 
-    var b = getFaceBounds(lm, W, H);
-    var depth  = 0.12;
-    var shrink = 1 - depth;
-    var fx = b.x, fy = b.y, fw = b.w, fh = b.h;
-    var cx = fx + fw / 2, cy = fy + fh / 2;
-
-    var TL = { x: fx,      y: fy      };
-    var TR = { x: fx + fw, y: fy      };
-    var BL = { x: fx,      y: fy + fh };
-    var BR = { x: fx + fw, y: fy + fh };
-
-    var shift = fh * depth * 0.5;
-    var bTL = { x: cx + (TL.x - cx) * shrink, y: cy + (TL.y - cy) * shrink - shift };
-    var bTR = { x: cx + (TR.x - cx) * shrink, y: cy + (TR.y - cy) * shrink - shift };
-    var bBL = { x: cx + (BL.x - cx) * shrink, y: cy + (BL.y - cy) * shrink - shift };
-    var bBR = { x: cx + (BR.x - cx) * shrink, y: cy + (BR.y - cy) * shrink - shift };
-
-    var glitch = frameGlitch && now < frameGlitchEnd;
-    var jx = glitch ? (Math.random() - 0.5) * 8 : 0;
-    var jy = glitch ? (Math.random() - 0.5) * 4 : 0;
-
-    function jp(p) { return { x: p.x + jx, y: p.y + jy }; }
-    TL = jp(TL); TR = jp(TR); BL = jp(BL); BR = jp(BR);
-    bTL = jp(bTL); bTR = jp(bTR); bBL = jp(bBL); bBR = jp(bBR);
-
-    fctx.save();
-    fctx.strokeStyle = color + 'cc';
-    fctx.lineWidth   = 1;
-    fctx.shadowColor = color;
-    fctx.shadowBlur  = glitch ? 18 : 8;
-
-    fctx.globalAlpha = 0.9;
-    fctx.beginPath();
-    fctx.moveTo(TL.x, TL.y); fctx.lineTo(TR.x, TR.y);
-    fctx.lineTo(BR.x, BR.y); fctx.lineTo(BL.x, BL.y);
-    fctx.closePath(); fctx.stroke();
-
-    fctx.globalAlpha = 0.35;
-    fctx.beginPath();
-    fctx.moveTo(bTL.x, bTL.y); fctx.lineTo(bTR.x, bTR.y);
-    fctx.lineTo(bBR.x, bBR.y); fctx.lineTo(bBL.x, bBL.y);
-    fctx.closePath(); fctx.stroke();
-
-    fctx.globalAlpha = 0.45;
-    [[TL, bTL],[TR, bTR],[BL, bBL],[BR, bBR]].forEach(function(pair) {
-      fctx.beginPath();
-      fctx.moveTo(pair[0].x, pair[0].y);
-      fctx.lineTo(pair[1].x, pair[1].y);
-      fctx.stroke();
-    });
-
-    var tick = Math.min(fw, fh) * 0.12;
-    fctx.globalAlpha = 1;
-    fctx.lineWidth   = 1.5;
-    [
-      [TL, 1, 1],[TR, -1, 1],[BL, 1, -1],[BR, -1, -1]
-    ].forEach(function(c) {
-      var p = c[0], sx = c[1], sy = c[2];
-      fctx.beginPath();
-      fctx.moveTo(p.x + sx * tick, p.y); fctx.lineTo(p.x, p.y); fctx.lineTo(p.x, p.y + sy * tick);
-      fctx.stroke();
-    });
-
-    fctx.restore();
-
-    faceInfo.style.left = (TL.x + 8) + 'px';
-    faceInfo.style.top  = (TL.y - 52) + 'px';
+    faceInfo.style.left = foreX + 'px';
+    faceInfo.style.top  = foreY + 'px';
     faceInfo.classList.add('visible');
 
-    if (!typeDone) {
-      var nt = now;
-      if (nt > typeTimer) {
-        typeTimer = nt + 45;
-        if (typeIdx < typeTargets.length) {
-          if (typeCharIdx < typeTargets[typeIdx].length) {
-            typeLines[typeIdx] += typeTargets[typeIdx][typeCharIdx];
-            typeCharIdx++;
-          } else {
-            typeIdx++;
-            typeCharIdx = 0;
-            if (typeIdx >= typeTargets.length) typeDone = true;
-          }
+    if (!typeDone && now > typeTimer) {
+      typeTimer = now + 45;
+      if (typeIdx < typeTargets.length) {
+        if (typeCharIdx < typeTargets[typeIdx].length) {
+          typeLines[typeIdx] += typeTargets[typeIdx][typeCharIdx++];
+        } else {
+          typeIdx++; typeCharIdx = 0;
+          if (typeIdx >= typeTargets.length) typeDone = true;
         }
       }
     }
 
-    var suffix = glitch ? (Math.random() > 0.5 ? '_' : ' ') : '';
+    var glitch = frameGlitch && now < frameGlitchEnd;
+    var sfx = glitch ? (Math.random() > 0.5 ? '_' : ' ') : '';
     fi0.textContent = typeLines[0] + (typeIdx === 0 ? '_' : '');
     fi1.textContent = typeLines[1] + (typeIdx === 1 ? '_' : '');
-    fi2.textContent = typeLines[2] + (typeIdx === 2 ? '_' : '') + suffix;
+    fi2.textContent = typeLines[2] + (typeIdx === 2 ? '_' : '') + sfx;
   }
 
-  function clearFrame() {
-    if (frameCanvas.width && frameCanvas.height) fctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
+  function clearFaceInfo() {
     faceInfo.classList.remove('visible');
-    typeDone    = false;
-    typeIdx     = 0;
-    typeCharIdx = 0;
-    typeLines   = ['', '', ''];
-    typeTimer   = 0;
+    typeDone = false; typeIdx = 0; typeCharIdx = 0;
+    typeLines = ['', '', '']; typeTimer = 0;
   }
 
   function triggerGlitch() {
-    frameGlitch    = true;
+    frameGlitch = true;
     frameGlitchEnd = performance.now() + 200 + Math.random() * 300;
     faceInfo.classList.add('glitch');
-    setTimeout(function() {
-      frameGlitch = false;
-      faceInfo.classList.remove('glitch');
-    }, 500);
+    setTimeout(function() { frameGlitch = false; faceInfo.classList.remove('glitch'); }, 500);
   }
   setInterval(triggerGlitch, 3000 + Math.random() * 4000);
 
-  // ── Отрисовка рта вручную через landmarks ──
-  // Рисует внешний и внутренний контур губ как замкнутые кривые через точки,
-  // а не как набор отдельных сегментов — получается плавная форма рта.
-  function drawMouth(lm, W, H, color, alpha_outer, alpha_inner, lw) {
-    // Индексы внешнего контура губ (MediaPipe, по часовой)
-    const outerTop    = [61,185,40,39,37,0,267,269,270,409,291];
-    const outerBottom = [61,146,91,181,84,17,314,405,321,375,291];
-    // Индексы внутреннего контура
-    const innerTop    = [78,191,80,81,82,13,312,311,310,415,308];
-    const innerBottom = [78,95,88,178,87,14,317,402,318,324,308];
+  // ── Отрисовка сетки через реальные landmark-координаты ──
+  // Ключевой момент: используем mpx() вместо lm.x*W — это учитывает зеркало.
+  // Все функции рисуют точки напрямую по координатам лица.
 
-    function drawContour(indices, alphaVal) {
-      ctx.beginPath();
-      ctx.globalAlpha = alphaVal;
-      for (var i = 0; i < indices.length; i++) {
-        var p = lm[indices[i]];
-        if (!p) continue;
-        var px = p.x * W, py = p.y * H;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = lw;
-      ctx.shadowColor = color;
-      ctx.shadowBlur  = 6;
-      ctx.stroke();
+  function drawTesselation(lm, W, H, color) {
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 0.4;
+    ctx.beginPath();
+    var tess = FACEMESH_TESSELATION;
+    for (var i = 0; i < tess.length; i++) {
+      var a = lm[tess[i][0]], b = lm[tess[i][1]];
+      if (!a || !b) continue;
+      ctx.moveTo(mpx(a.x, W), mpy(a.y, H));
+      ctx.lineTo(mpx(b.x, W), mpy(b.y, H));
     }
+    ctx.stroke();
+    ctx.restore();
+  }
 
-    // Внешние губы
-    drawContour(outerTop,    alpha_outer);
-    drawContour(outerBottom, alpha_outer);
+  function drawLandmarkContour(lm, indices, W, H, color, lw, alpha, close) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = lw;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 5;
+    ctx.beginPath();
+    var started = false;
+    for (var i = 0; i < indices.length; i++) {
+      var p = lm[indices[i]];
+      if (!p) continue;
+      if (!started) { ctx.moveTo(mpx(p.x, W), mpy(p.y, H)); started = true; }
+      else          { ctx.lineTo(mpx(p.x, W), mpy(p.y, H)); }
+    }
+    if (close) ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
 
-    // Внутренние губы (зазор рта)
-    drawContour(innerTop,    alpha_inner);
-    drawContour(innerBottom, alpha_inner);
+  function drawOval(lm, W, H, color) {
+    var oval = [10,338,297,332,284,251,389,356,454,323,361,288,
+                397,365,379,378,400,377,152,148,176,149,150,136,
+                172,58,132,93,234,127,162,21,54,103,67,109,10];
+    drawLandmarkContour(lm, oval, W, H, color, 1.2, 0.5, false);
+  }
 
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur  = 0;
+  function drawEyes(lm, W, H, color) {
+    // Правый глаз
+    var rEye = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246,33];
+    // Левый глаз
+    var lEye = [263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466,263];
+    // Правая бровь
+    var rBrow = [70,63,105,66,107,55,65,52,53,46];
+    // Левая бровь
+    var lBrow = [300,293,334,296,336,285,295,282,283,276];
+    drawLandmarkContour(lm, rEye,  W, H, color, 1.3, 0.9, false);
+    drawLandmarkContour(lm, lEye,  W, H, color, 1.3, 0.9, false);
+    drawLandmarkContour(lm, rBrow, W, H, color, 1.0, 0.6, false);
+    drawLandmarkContour(lm, lBrow, W, H, color, 1.0, 0.6, false);
+  }
+
+  function drawMouth(lm, W, H, color) {
+    // Внешний контур верхней губы (от угла до угла, через центр)
+    var outerTop    = [61,185,40,39,37,0,267,269,270,409,291];
+    // Внешний контур нижней губы
+    var outerBottom = [291,375,321,405,314,17,84,181,91,146,61];
+    // Внутренний контур верхней
+    var innerTop    = [78,191,80,81,82,13,312,311,310,415,308];
+    // Внутренний контур нижней
+    var innerBottom = [308,324,318,402,317,14,87,178,88,95,78];
+
+    drawLandmarkContour(lm, outerTop,    W, H, color, 1.4, 0.9, false);
+    drawLandmarkContour(lm, outerBottom, W, H, color, 1.4, 0.9, false);
+    drawLandmarkContour(lm, innerTop,    W, H, color, 1.0, 0.6, false);
+    drawLandmarkContour(lm, innerBottom, W, H, color, 1.0, 0.6, false);
+  }
+
+  function drawIris(lm, W, H, color) {
+    [[469,470,471,472],[474,475,476,477]].forEach(function(ring) {
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 1.3;
+      ctx.shadowColor = color; ctx.shadowBlur = 8;
+      ctx.beginPath();
+      for (var i = 0; i <= ring.length; i++) {
+        var p = lm[ring[i % ring.length]]; if (!p) continue;
+        if (i === 0) ctx.moveTo(mpx(p.x, W), mpy(p.y, H));
+        else         ctx.lineTo(mpx(p.x, W), mpy(p.y, H));
+      }
+      ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function drawKeyDots(lm, W, H, color) {
+    ctx.save();
+    ctx.fillStyle   = color;
+    ctx.shadowColor = color; ctx.shadowBlur = 6;
+    [1,4,6,10,152,234,454,33,263,61,291].forEach(function(idx) {
+      var p = lm[idx]; if (!p) return;
+      ctx.beginPath(); ctx.arc(mpx(p.x, W), mpy(p.y, H), 1.8, 0, Math.PI*2); ctx.fill();
+    });
+    ctx.restore();
   }
 
   // ── Face Mesh results ──
@@ -884,8 +796,18 @@ body::before {
 
     ctx.save();
     ctx.clearRect(0, 0, W, H);
-    ctx.globalAlpha = 0.18;
-    ctx.drawImage(results.image, 0, 0, W, H);
+
+    // Рисуем видео с ручным зеркалом (фронтальная камера)
+    if (mirrorX) {
+      ctx.save();
+      ctx.translate(W, 0); ctx.scale(-1, 1);
+      ctx.globalAlpha = 0.18;
+      ctx.drawImage(results.image, 0, 0, W, H);
+      ctx.restore();
+    } else {
+      ctx.globalAlpha = 0.18;
+      ctx.drawImage(results.image, 0, 0, W, H);
+    }
     ctx.globalAlpha = 1;
 
     var faces     = results.multiFaceLandmarks;
@@ -917,39 +839,19 @@ body::before {
         var eyesClosed = ld < 0.015 && rd < 0.015;
         var color = isSpeaking ? '#00ff88' : (eyesClosed ? '#ff2244' : '#00f5ff');
 
-        function dc(list, stroke, lw) { drawConnectors(ctx, lm, list, { color: stroke, lineWidth: lw }); }
+        // Вся сетка рисуется через mpx/mpy — точно по лицу, учитывает зеркало
+        drawTesselation(lm, W, H, color);
+        drawOval(lm, W, H, color);
+        drawEyes(lm, W, H, color);
+        drawMouth(lm, W, H, color);
+        drawIris(lm, W, H, color);
+        drawKeyDots(lm, W, H, color);
 
-        dc(FACEMESH_TESSELATION,   color + '18', 0.3);
-        dc(FACEMESH_FACE_OVAL,     color + '55', 1);
-        dc(FACEMESH_RIGHT_EYE,     color + 'dd', 1.2);
-        dc(FACEMESH_LEFT_EYE,      color + 'dd', 1.2);
-        dc(FACEMESH_RIGHT_EYEBROW, color + '88', 1);
-        dc(FACEMESH_LEFT_EYEBROW,  color + '88', 1);
+        // Надпись над лбом (без рамки)
+        updateFaceInfo(lm, W, H, now);
 
-        // ── РОТ: рисуем вручную, плавными контурами ──
-        drawMouth(lm, W, H, color, 0.85, 0.55, 1.3);
-
-        // Iris rings
-        [[469,470,471,472,469],[474,475,476,477,474]].forEach(function(ring) {
-          ctx.beginPath();
-          ring.forEach(function(idx, k) {
-            var p = lm[idx]; if (!p) return;
-            if (k === 0) ctx.moveTo(p.x*W, p.y*H); else ctx.lineTo(p.x*W, p.y*H);
-          });
-          ctx.strokeStyle = color + 'aa'; ctx.lineWidth = 1; ctx.stroke();
-        });
-
-        // Key dots
-        ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 6;
-        [1,4,6,10,152,234,454,33,263,61,291].forEach(function(idx) {
-          var p = lm[idx]; if (!p) return;
-          ctx.beginPath(); ctx.arc(p.x*W, p.y*H, 1.8, 0, Math.PI*2); ctx.fill();
-        });
-        ctx.shadowBlur = 0;
-
-        drawPerspectiveFrame(lm, W, H, color, now);
-
-        var symm    = Math.abs(lm[234].x - (1 - lm[454].x));
+        // Metrics
+        var symm = Math.abs(lm[234].x - (1 - lm[454].x));
         var symmPct = Math.max(0, Math.min(100, Math.round((1 - symm * 10) * 100)));
         document.getElementById('m-symmetry').style.width  = symmPct + '%';
         document.getElementById('mv-symmetry').textContent = symmPct + '%';
@@ -963,11 +865,10 @@ body::before {
         tgtLabel.classList.remove('visible');
         metricsEl.classList.remove('visible');
         tgtStatus.querySelector('span').textContent = '> TARGET: SEEKING...';
-        clearFrame();
+        clearFaceInfo();
         addLog('TARGET LOST - RESUMING SCAN', 'system');
         acquiredLogged = false;
       }
-      if (frameCanvas.width) fctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
     }
 
     prevTarget = hasTarget;
